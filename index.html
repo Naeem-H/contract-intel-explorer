@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://aiuwscxsbsgaeunyhiak.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <title>Esheria Contract Intelligence</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell nav">
+      <a class="brand" href="./" aria-label="Esheria Contract Intelligence home">
+        <span class="brand-mark" aria-hidden="true">E</span>
+        <span>Esheria <small>Contract Intelligence</small></span>
+      </a>
+      <button id="clear-token" class="button secondary" type="button" hidden>Clear token</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section id="auth-view" class="auth-panel" aria-labelledby="auth-title">
+      <p class="eyebrow">Protected research workspace</p>
+      <h1 id="auth-title">Trace contract intelligence back to its evidence.</h1>
+      <p class="lede">Enter the explorer bearer token supplied through Esheria’s secure credential channel.</p>
+      <form id="token-form" class="token-form" method="post" autocomplete="off">
+        <label for="access-token">Explorer access token</label>
+        <div class="token-row">
+          <input id="access-token" type="password" required minlength="24" maxlength="512" autocomplete="off" spellcheck="false">
+          <button id="connect" class="button primary" type="submit">Open workspace</button>
+        </div>
+      </form>
+      <p class="storage-note">The token is kept only in this page’s memory, sent only as an authorization header to the Esheria API, and cleared when you sign out, reload, navigate away, or close the tab.</p>
+      <p id="auth-status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="workspace" hidden>
+      <section class="hero" aria-labelledby="workspace-title">
+        <div>
+          <p class="eyebrow">Evidence before inference</p>
+          <h1 id="workspace-title">Contract language you can trace.</h1>
+          <p class="lede">Search observed clauses, inspect source context, and keep generated interpretations visibly separate from source wording.</p>
+        </div>
+        <aside class="principle">
+          <strong>Evidence standard</strong>
+          Published results are source-linked and rights-gated. Generated labels and interpretations are not source facts or legal advice.
+        </aside>
+      </section>
+
+      <p id="workspace-status" class="status" role="status" aria-live="polite"></p>
+
+      <section class="search-panel" aria-labelledby="search-title">
+        <h2 id="search-title">Search published clause evidence</h2>
+        <form id="search-form" class="search-form">
+          <label class="wide" for="query">Words or concepts</label>
+          <label for="kind">Document class</label>
+          <label for="source">Source slug</label>
+          <span aria-hidden="true"></span>
+          <input id="query" class="wide" name="q" type="search" minlength="2" maxlength="200" required placeholder="e.g. limitation of liability">
+          <select id="kind" name="kind">
+            <option value="">All classes</option>
+            <option value="contract">Contracts</option>
+            <option value="amendment">Amendments</option>
+            <option value="notice">Notices</option>
+            <option value="template">Templates</option>
+            <option value="metadata">Metadata</option>
+            <option value="other">Other</option>
+          </select>
+          <input id="source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="sec_edgar">
+          <button id="search-submit" class="button primary" type="submit">Search</button>
+        </form>
+        <div class="quick-search" aria-label="Suggested searches">
+          <span>Try:</span>
+          <button type="button" data-query="termination for convenience">termination</button>
+          <button type="button" data-query="limitation of liability">liability caps</button>
+          <button type="button" data-query="change of control">change of control</button>
+          <button type="button" data-query="governing law">governing law</button>
+        </div>
+      </section>
+
+      <section aria-labelledby="snapshot-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Current corpus</p>
+            <h2 id="snapshot-title">Published evidence snapshot</h2>
+          </div>
+          <button id="refresh-summary" class="button secondary" type="button">Refresh</button>
+        </div>
+        <div id="summary-cards" class="metric-grid" aria-live="polite"></div>
+        <div class="snapshot-grid">
+          <article class="panel">
+            <h3>Published document classes</h3>
+            <div id="kind-breakdown"></div>
+          </article>
+          <article class="panel">
+            <h3>Acquisition and processing</h3>
+            <div id="operations"></div>
+          </article>
+        </div>
+        <p id="summary-freshness" class="muted"></p>
+      </section>
+
+      <section id="results-section" aria-labelledby="results-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Clause results</p>
+            <h2 id="results-title">Search the corpus</h2>
+            <p id="search-status" class="muted" aria-live="polite">Enter a query to inspect observed wording.</p>
+          </div>
+          <div class="pager">
+            <button id="previous" class="button secondary" type="button" disabled>Previous</button>
+            <button id="next" class="button secondary" type="button" disabled>Next</button>
+          </div>
+        </div>
+        <div id="results" class="results">
+          <p class="empty">Results show clause excerpts, document context, and direct source links.</p>
+        </div>
+      </section>
+    </section>
+
+    <section class="limitations" aria-labelledby="limitations-title">
+      <p class="eyebrow">Read with care</p>
+      <h2 id="limitations-title">Coverage and limitations</h2>
+      <div class="limit-grid">
+        <article><strong>Coverage bias</strong><p>Public disclosures are selective, jurisdictionally uneven, often redacted, and not representative of all negotiated contracts.</p></article>
+        <article><strong>Evidence boundaries</strong><p>Search results may omit schedules, referenced documents, amendments, or context that has not yet been acquired and linked.</p></article>
+        <article><strong>Observed vs generated</strong><p>Observed wording is evidence. Generated themes, summaries, party resolutions, and claims remain interpretations with stated support and review status.</p></article>
+        <article><strong>Legal reliance</strong><p>This research interface is not legal advice. Verify source documents, completeness, governing law, dates, and later changes before relying on a result.</p></article>
+      </div>
+      <div id="corpus-disclosure" class="corpus-disclosure"></div>
+    </section>
+  </main>
+
+  <dialog id="detail-dialog" aria-labelledby="detail-title">
+    <div class="dialog-header">
+      <strong id="detail-title">Agreement evidence</strong>
+      <button id="close-dialog" class="icon-button" type="button" aria-label="Close agreement details">×</button>
+    </div>
+    <div id="detail-body" class="dialog-body"></div>
+  </dialog>
+
+  <noscript>This explorer requires JavaScript to call the protected read-only API.</noscript>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>
