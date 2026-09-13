@@ -986,15 +986,23 @@ function boot() {
       const definitions = array(clause.defined_terms).slice(0, 50);
       for (const definitionValue of definitions) {
         const definition = record(definitionValue);
-        card.append(
-          element(
-            "p",
-            "observed-text",
-            `Defined term “${displayText(definition.term)}”: ${
-              boundedText(definition.definition, 8_000)
-            }`,
-          ),
+        const definitionBox = element(
+          "p",
+          "observed-text",
+          `Defined term “${displayText(definition.term)}”: ${
+            boundedText(definition.definition, 8_000)
+          }`,
         );
+        if (Number.isSafeInteger(definition.char_start) && Number.isSafeInteger(definition.char_end)) {
+          definitionBox.append(
+            element(
+              "span",
+              "muted",
+              ` Source characters ${definition.char_start}–${definition.char_end}.`,
+            ),
+          );
+        }
+        card.append(definitionBox);
       }
       const references = array(clause.cross_references).slice(0, 50);
       for (const referenceValue of references) {
