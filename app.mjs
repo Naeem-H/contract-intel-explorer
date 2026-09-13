@@ -15,6 +15,9 @@ const DOCUMENT_KINDS = new Set([
 ]);
 const MAX_RESPONSE_BYTES = 6 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 12_000;
+export const COMPARISON_MIN_ITEMS = 2;
+export const COMPARISON_MAX_ITEMS = 4;
+export const COMPARISON_CONTEXT_CLAUSES = 5;
 
 export class ApiError extends Error {
   constructor(message, status = 0, code = "request_failed", requestId = null) {
@@ -150,6 +153,127 @@ export function buildAgreementPath(
   const params = new URLSearchParams({ clauses: String(clauseLimit) });
   if (anchorClauseId) params.set("clause", anchorClauseId);
   return `/api/agreements/${agreementId}?${params.toString()}`;
+}
+
+export function comparisonSelectionKey(value) {
+  const item = record(value);
+  const agreementId = typeof item.agreement_id === "string"
+    ? item.agreement_id
+    : "";
+  const clauseId = typeof item.clause_id === "string" ? item.clause_id : "";
+  return UUID_PATTERN.test(agreementId) && UUID_PATTERN.test(clauseId)
+    ? `${agreementId}:${clauseId}`
+    : null;
+}
+
+export function comparisonAccessibleLabel(value) {
+  const item = record(value);
+  const sequence = displayText(item.clause_sequence, "unknown sequence");
+  const heading = displayText(item.clause_heading, "untitled clause");
+  const agreement = displayText(item.observed_title, "untitled agreement");
+  const source = displayText(item.source_name, "unknown source");
+  return `Select clause ${sequence} · ${heading} from ${agreement} · ${source} for comparison`;
+}
+
+export function textBasisPresentation(value) {
+  if (value === "observed") {
+    return {
+      key: "observed",
+      label: "Observed source text",
+      className: "basis-observed",
+    };
+  }
+  if (value === "reviewed") {
+    return {
+      key: "reviewed",
+      label: "Human-reviewed transcription",
+      className: "basis-reviewed",
+    };
+  }
+  if (value === "generated") {
+    return {
+      key: "generated",
+      label: "Generated OCR transcription",
+      className: "basis-generated",
+    };
+  }
+  return {
+    key: "unknown",
+    label: "Unknown text basis",
+    className: "basis-unknown",
+  };
+}
+
+export function formatEvidenceLocation(value) {
+  const clause = record(value);
+  if (
+    typeof clause.evidence_location === "string" &&
+    clause.evidence_location.trim()
+  ) return clause.evidence_location.trim();
+
+  const location = record(clause.evidence_location);
+  const parts = [];
+  if (typeof location.archive_member_name === "string" && location.archive_member_name) {
+    parts.push(`Archive member ${location.archive_member_name}`);
+  }
+  if (
+    typeof location.archive_member_sha256 === "string" &&
+    /^[0-9a-f]{64}$/.test(location.archive_member_sha256)
+  ) parts.push(`member SHA-256 ${location.archive_member_sha256}`);
+
+  const pageStart = Number.isSafeInteger(clause.page_start)
+    ? clause.page_start
+    : Number.isSafeInteger(location.page_start)
+    ? location.page_start
+    : null;
+  const pageEnd = Number.isSafeInteger(clause.page_end)
+    ? clause.page_end
+    : Number.isSafeInteger(location.page_end)
+    ? location.page_end
+    : null;
+  if (pageStart !== null && pageStart > 0) {
+    parts.push(`Page ${pageStart}${pageEnd !== null && pageEnd !== pageStart ? `–${pageEnd}` : ""}`);
+  }
+
+  const charStart = Number.isSafeInteger(location.character_start)
+    ? location.character_start
+    : Number.isSafeInteger(clause.char_start)
+    ? clause.char_start
+    : null;
+  const charEnd = Number.isSafeInteger(location.character_end)
+    ? location.character_end
+    : Number.isSafeInteger(clause.char_end)
+    ? clause.char_end
+    : null;
+  if (charStart !== null && charEnd !== null && charEnd > charStart) {
+    parts.push(`Characters ${charStart}–${charEnd}`);
+  }
+  return parts.join(" · ") || "Location unavailable";
+}
+
+export function comparisonEvidence(payload, expectedClauseId) {
+  if (typeof expectedClauseId !== "string" || !UUID_PATTERN.test(expectedClauseId)) {
+    throw new TypeError("Comparison clause identifier is invalid");
+  }
+  const data = record(record(payload).data);
+  if (data.anchor_clause_id !== expectedClauseId) {
+    throw new ApiError("The bounded response did not identify the selected clause.");
+  }
+  const clauses = array(data.clauses)
+    .slice(0, COMPARISON_CONTEXT_CLAUSES)
+    .map(record);
+  const anchor = clauses.find((clause) => clause.id === expectedClauseId);
+  if (!anchor || typeof anchor.observed_text !== "string") {
+    throw new ApiError("The selected clause wording was not returned.");
+  }
+  return {
+    agreement: record(data.agreement),
+    source: record(data.source),
+    clauseWindow: record(data.clause_window),
+    anchor,
+    context: clauses.filter((clause) => clause.id !== expectedClauseId),
+    truncated: data.truncated === true,
+  };
 }
 
 export function safeExternalUrl(value) {
@@ -407,6 +531,8 @@ function boot() {
     limit: 20,
     hasMore: false,
     searching: false,
+    comparing: false,
+    comparisonSelection: new Map(),
   };
 
   const authView = byId("auth-view");
@@ -431,8 +557,13 @@ function boot() {
   const results = byId("results");
   const previous = byId("previous");
   const next = byId("next");
+  const comparisonStatus = byId("comparison-status");
+  const clearComparisonButton = byId("clear-comparison");
+  const openComparisonButton = byId("open-comparison");
   const detailDialog = byId("detail-dialog");
   const detailBody = byId("detail-body");
+  const comparisonDialog = byId("comparison-dialog");
+  const comparisonBody = byId("comparison-body");
 
   function showWorkspace() {
     authView.hidden = true;
@@ -448,10 +579,16 @@ function boot() {
     kindBreakdown.replaceChildren();
     operations.replaceChildren();
     corpusDisclosure.replaceChildren();
+    state.comparisonSelection.clear();
+    state.comparing = false;
     results.replaceChildren(
       element("p", "empty", "Sign in to search published evidence."),
     );
+    detailBody.replaceChildren();
+    comparisonBody.replaceChildren();
     closeDialog(detailDialog);
+    closeDialog(comparisonDialog);
+    updateComparisonControls();
     workspace.hidden = true;
     clearButton.hidden = true;
     authView.hidden = false;
@@ -640,6 +777,362 @@ function boot() {
     }
   }
 
+  function updateComparisonControls(message = null, kind = "") {
+    const selected = state.comparisonSelection.size;
+    clearComparisonButton.disabled = selected === 0 || state.comparing;
+    openComparisonButton.disabled = selected < COMPARISON_MIN_ITEMS ||
+      selected > COMPARISON_MAX_ITEMS || state.comparing;
+    comparisonStatus.className = kind === "error" ? "status error" : "muted";
+    comparisonStatus.textContent = message ?? (selected === 0
+      ? "Select 2–4 results to compare recorded wording and bounded context."
+      : selected === 1
+      ? "1 result selected. Select at least one more result."
+      : selected === COMPARISON_MAX_ITEMS
+      ? "4 results selected (maximum). Ready to compare."
+      : `${selected} results selected. Ready to compare.`);
+
+    for (const input of results.querySelectorAll(".compare-input")) {
+      const key = input.getAttribute("data-comparison-key") ?? "";
+      const selectedHere = state.comparisonSelection.has(key);
+      input.checked = selectedHere;
+      input.disabled = state.comparing ||
+        (selected >= COMPARISON_MAX_ITEMS && !selectedHere);
+      input.title = input.disabled && !selectedHere
+        ? "The comparison already has four results"
+        : "";
+    }
+  }
+
+  function clearComparison() {
+    state.comparisonSelection.clear();
+    comparisonBody.replaceChildren();
+    if (comparisonDialog.hasAttribute("open")) closeDialog(comparisonDialog);
+    updateComparisonControls();
+  }
+
+  function toggleComparison(item, input) {
+    const key = comparisonSelectionKey(item);
+    if (!key) return;
+    if (input.checked) {
+      if (state.comparisonSelection.size >= COMPARISON_MAX_ITEMS) {
+        input.checked = false;
+        updateComparisonControls(
+          "A comparison can contain at most four results. Remove one before adding another.",
+          "error",
+        );
+        return;
+      }
+      state.comparisonSelection.set(key, item);
+    } else {
+      state.comparisonSelection.delete(key);
+    }
+    updateComparisonControls();
+  }
+
+  function comparisonChoice(item, key) {
+    const label = element("label", "compare-choice");
+    const input = element("input", "compare-input");
+    input.type = "checkbox";
+    input.checked = state.comparisonSelection.has(key);
+    input.setAttribute("data-comparison-key", key);
+    input.setAttribute(
+      "aria-label",
+      comparisonAccessibleLabel(item),
+    );
+    input.addEventListener("change", () => toggleComparison(item, input));
+    append(label, input, element("span", "", "Select for comparison"));
+    return label;
+  }
+
+  function clauseHeading(clause) {
+    const prefix = clause.label
+      ? `${displayText(clause.label)} · `
+      : `Clause ${displayText(clause.sequence)} · `;
+    return `${prefix}${displayText(clause.heading, "Untitled clause")}`;
+  }
+
+  function clauseLocation(clause) {
+    return formatEvidenceLocation(clause);
+  }
+
+  function comparisonColumn(selection, evidence, position) {
+    const agreement = evidence.agreement;
+    const source = evidence.source;
+    const clause = evidence.anchor;
+    const basis = textBasisPresentation(clause.text_basis ?? agreement.text_basis);
+    const column = element("article", "comparison-column");
+    column.setAttribute("aria-labelledby", `comparison-clause-${position}`);
+    append(
+      column,
+      element("span", `badge ${basis.className}`, `${basis.label} · clause evidence`),
+      element(
+        "h3",
+        "",
+        displayText(agreement.observed_title, selection.observed_title),
+      ),
+      element(
+        "p",
+        "muted",
+        `Observed execution date · ${
+          displayText(agreement.observed_execution_date, "not stated")
+        }`,
+      ),
+    );
+    const classification = element("section", "generated");
+    append(
+      classification,
+      element(
+        "strong",
+        "",
+        "Generated document classification · not source wording",
+      ),
+      element(
+        "p",
+        "",
+        `Class: ${
+          displayText(agreement.document_kind, selection.document_kind)
+        } · recorded basis: ${
+          displayText(agreement.document_kind_basis, "generated")
+        }`,
+      ),
+    );
+    column.append(classification);
+
+    const provenance = element("section", "comparison-source");
+    const humanReview = source.human_review_required === true
+      ? "Required / pending"
+      : source.human_review_required === false
+      ? "Not required in recorded assessment"
+      : "Not stated";
+    const redistribution = source.redistribution_allowed === true
+      ? "Allowed in recorded assessment"
+      : source.redistribution_allowed === false
+      ? "Not allowed in recorded assessment"
+      : "Not stated";
+    append(
+      provenance,
+      element("h4", "", "Observed source and provenance"),
+      dataList([
+        ["Source", displayText(source.observed_name, selection.source_name)],
+        ["Publisher", displayText(source.observed_publisher, "Not stated")],
+        ["Source ID", displayText(source.observed_external_id, "Not stated")],
+        ["Artifact SHA-256", displayText(agreement.artifact_sha256)],
+      ]),
+    );
+    const original = sourceLink(
+      source.observed_canonical_url || selection.source_url,
+      "Open recorded source ↗",
+    );
+    if (original) provenance.append(original);
+    column.append(provenance);
+
+    const sourcePolicy = element("section", "generated");
+    append(
+      sourcePolicy,
+      element(
+        "strong",
+        "",
+        "Source-use assessment · not source wording",
+      ),
+      dataList([
+        [
+          "Assessment status",
+          displayText(source.policy_assessment_status, "Not stated"),
+        ],
+        ["Human/legal review", humanReview],
+        ["Redistribution", redistribution],
+      ]),
+    );
+    const terms = sourceLink(
+      source.observed_terms_url,
+      "Open recorded source-use terms ↗",
+    );
+    if (terms) sourcePolicy.append(terms);
+    if (source.human_review_required === true) {
+      sourcePolicy.append(
+        element(
+          "p",
+          "source-review",
+          "Qualified human/legal review of the source-use terms remains required before relying on reuse permissions.",
+        ),
+      );
+    }
+    column.append(sourcePolicy);
+
+    const wording = element("section", "comparison-wording");
+    const heading = element(
+      "h4",
+      "",
+      `${basis.label} · ${clauseHeading(clause)}`,
+    );
+    heading.id = `comparison-clause-${position}`;
+    append(
+      wording,
+      heading,
+      element("p", "muted", clauseLocation(clause)),
+      element("p", "observed-text", displayText(clause.observed_text)),
+      element(
+        "p",
+        "muted",
+        `Text SHA-256 ${displayText(clause.observed_text_sha256)}`,
+      ),
+    );
+    column.append(wording);
+
+    if (clause.generated_clause_type || clause.generated_summary) {
+      const generated = element("section", "generated");
+      append(
+        generated,
+        element("strong", "", "Generated labels · not source wording"),
+        clause.generated_clause_type
+          ? element(
+            "p",
+            "",
+            `Clause type: ${displayText(clause.generated_clause_type)}`,
+          )
+          : null,
+        clause.generated_summary
+          ? element("p", "", boundedText(clause.generated_summary, 4_000))
+          : null,
+      );
+      column.append(generated);
+    }
+
+    const context = element("details", "comparison-context");
+    const window = evidence.clauseWindow;
+    const first = displayText(window.first_sequence, "?");
+    const last = displayText(window.last_sequence, "?");
+    context.append(
+      element(
+        "summary",
+        "",
+        `Bounded context · clauses ${first}–${last}`,
+      ),
+      element(
+        "p",
+        "muted",
+        evidence.truncated
+          ? "Surrounding clauses are shown below with their recorded text basis. This is not the complete agreement."
+          : "Surrounding clauses are shown below with their recorded text basis.",
+      ),
+    );
+    for (const nearby of evidence.context) {
+      const neighbor = element("article", "context-clause");
+      const neighborBasis = textBasisPresentation(
+        nearby.text_basis ?? agreement.text_basis,
+      );
+      const neighborSequence = Number(nearby.sequence);
+      const anchorSequence = Number(clause.sequence);
+      const relation = Number.isFinite(neighborSequence) &&
+          Number.isFinite(anchorSequence)
+        ? neighborSequence < anchorSequence
+          ? "Before matched clause"
+          : "After matched clause"
+        : "Surrounding clause";
+      append(
+        neighbor,
+        element(
+          "span",
+          `badge ${neighborBasis.className}`,
+          `${relation} · ${neighborBasis.label}`,
+        ),
+        element("h4", "", clauseHeading(nearby)),
+        element("p", "muted", clauseLocation(nearby)),
+        element("p", "observed-text", displayText(nearby.observed_text)),
+      );
+      context.append(neighbor);
+    }
+    if (!evidence.context.length) {
+      context.append(
+        element("p", "muted", "No surrounding clauses were returned."),
+      );
+    }
+    column.append(context);
+    return column;
+  }
+
+  async function compareSelected() {
+    const selected = [...state.comparisonSelection.values()];
+    if (
+      !state.token || state.comparing ||
+      selected.length < COMPARISON_MIN_ITEMS ||
+      selected.length > COMPARISON_MAX_ITEMS
+    ) return;
+
+    state.comparing = true;
+    updateComparisonControls("Loading bounded source context…");
+    const loading = element(
+      "p",
+      "muted",
+      "Loading selected clause evidence…",
+    );
+    loading.setAttribute("role", "status");
+    comparisonBody.replaceChildren(loading);
+    openDialog(comparisonDialog);
+    const token = state.token;
+    const settled = await Promise.allSettled(selected.map(async (item) => {
+      const payload = await requestJson(
+        buildAgreementPath(
+          item.agreement_id,
+          COMPARISON_CONTEXT_CLAUSES,
+          item.clause_id,
+        ),
+        token,
+      );
+      return comparisonEvidence(payload, item.clause_id);
+    }));
+
+    if (state.token !== token) {
+      state.comparing = false;
+      return;
+    }
+
+    const unauthorized = settled.find((result) =>
+      result.status === "rejected" && result.reason instanceof ApiError &&
+      result.reason.status === 401
+    );
+    if (unauthorized) {
+      state.comparing = false;
+      signOut(
+        "The token was not accepted or has changed. Enter the current explorer token.",
+      );
+      return;
+    }
+
+    const grid = element("div", "comparison-grid");
+    grid.tabIndex = 0;
+    grid.setAttribute("aria-label", "Side-by-side precedent clauses");
+    settled.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        grid.append(comparisonColumn(selected[index], result.value, index));
+      } else {
+        const error = element("article", "comparison-column");
+        append(
+          error,
+          element("h3", "", displayText(selected[index].clause_heading)),
+          element(
+            "p",
+            "status error",
+            result.reason instanceof Error
+              ? result.reason.message
+              : "This precedent could not be loaded.",
+          ),
+        );
+        grid.append(error);
+      }
+    });
+    comparisonBody.replaceChildren(
+      element(
+        "p",
+        "comparison-note",
+        "Each wording sample shows its recorded text basis and provenance. Generated labels are isolated and marked; the context is deliberately bounded.",
+      ),
+      grid,
+    );
+    state.comparing = false;
+    updateComparisonControls();
+  }
+
   function resultCard(itemValue) {
     const item = record(itemValue);
     const card = element("article", "result-card");
@@ -649,6 +1142,12 @@ function boot() {
       "span",
       "badge",
       displayText(item.document_kind, "unclassified"),
+    );
+    const resultBasis = textBasisPresentation(item.text_basis);
+    const basis = element(
+      "span",
+      `badge ${resultBasis.className}`,
+      resultBasis.label,
     );
     const title = element(
       "h3",
@@ -667,7 +1166,7 @@ function boot() {
         ? element("span", "", date(item.observed_published_at))
         : null,
     );
-    append(headingGroup, kind, title, meta);
+    append(headingGroup, kind, basis, title, meta);
     const score = Number(item.rank);
     append(
       top,
@@ -690,6 +1189,10 @@ function boot() {
         UUID_PATTERN.test(item.clause_id)
       ? item.clause_id
       : null;
+    const comparisonKey = comparisonSelectionKey(item);
+    if (comparisonKey) {
+      actions.append(comparisonChoice(item, comparisonKey));
+    }
     if (UUID_PATTERN.test(agreementId)) {
       const inspect = element(
         "button",
@@ -735,6 +1238,7 @@ function boot() {
     searchStatus.textContent = rows.length
       ? `Showing results ${start}–${end}. Search is evidence retrieval, not a completeness guarantee.`
       : "No results returned. Coverage may be incomplete.";
+    updateComparisonControls();
   }
 
   async function performSearch() {
@@ -829,6 +1333,7 @@ function boot() {
     const data = record(record(payload).data);
     const agreement = record(data.agreement);
     const source = record(data.source);
+    const agreementBasis = textBasisPresentation(agreement.text_basis);
     const clauseWindow = record(data.clause_window);
     const anchorClauseId = typeof data.anchor_clause_id === "string" &&
         UUID_PATTERN.test(data.anchor_clause_id)
@@ -856,12 +1361,13 @@ function boot() {
           }`,
         ],
         ["Artifact SHA-256", displayText(agreement.artifact_sha256)],
+        ["Text basis", agreementBasis.label],
         ["Clauses", count(data.clause_count)],
       ]),
     );
     const sourceUrl = sourceLink(
       source.observed_canonical_url,
-      "Open authoritative source ↗",
+      "Open recorded source ↗",
     );
     if (sourceUrl) {
       const sourceParagraph = element("p");
@@ -897,15 +1403,11 @@ function boot() {
         const card = element("div", "party");
         append(
           card,
-          element(
-            "strong",
-            "",
-            displayText(party.observed_name, "Unnamed party"),
-          ),
+          element("strong", "", displayText(party.observed_name, "Unnamed party")),
           element(
             "p",
             "muted",
-            `Observed role: ${displayText(party.observed_role)}`,
+            `${agreementBasis.label} role: ${displayText(party.observed_role)}`,
           ),
           party.generated_role
             ? element(
@@ -923,7 +1425,7 @@ function boot() {
     }
 
     const clauses = array(data.clauses).slice(0, 40);
-    const clauseSection = section("Observed clauses");
+    const clauseSection = section("Agreement clauses");
     if (anchorClauseId && clauseWindow.mode === "anchored") {
       const first = displayText(clauseWindow.first_sequence, "?");
       const last = displayText(clauseWindow.last_sequence, "?");
@@ -948,6 +1450,9 @@ function boot() {
     }
     for (const clauseValue of clauses) {
       const clause = record(clauseValue);
+      const clauseBasis = textBasisPresentation(
+        clause.text_basis ?? agreement.text_basis,
+      );
       const card = element("article", "clause");
       const isAnchor = anchorClauseId !== null && clause.id === anchorClauseId;
       if (isAnchor) {
@@ -960,11 +1465,12 @@ function boot() {
       append(
         card,
         isAnchor ? element("span", "badge match-badge", "Search match") : null,
+        element("span", `badge ${clauseBasis.className}`, clauseBasis.label),
         element("h3", "", heading),
         element(
           "p",
           "muted",
-          displayText(clause.evidence_location, "Location unavailable"),
+          formatEvidenceLocation(clause),
         ),
         element("p", "observed-text", boundedText(clause.observed_text)),
       );
@@ -986,10 +1492,13 @@ function boot() {
       const definitions = array(clause.defined_terms).slice(0, 50);
       for (const definitionValue of definitions) {
         const definition = record(definitionValue);
+        const definitionBasis = textBasisPresentation(
+          definition.definition_basis ?? clause.text_basis ?? agreement.text_basis,
+        );
         const definitionBox = element(
           "p",
           "observed-text",
-          `Defined term “${displayText(definition.term)}”: ${
+          `${definitionBasis.label} defined term “${displayText(definition.term)}”: ${
             boundedText(definition.definition, 8_000)
           }`,
         );
@@ -1007,10 +1516,17 @@ function boot() {
       const references = array(clause.cross_references).slice(0, 50);
       for (const referenceValue of references) {
         const reference = record(referenceValue);
+        const referenceBasis = textBasisPresentation(
+          reference.observation_basis ?? reference.basis,
+        );
         const referenceBox = element("div", "relationship");
         append(
           referenceBox,
-          element("span", "badge observed", "Observed reference"),
+          element(
+            "span",
+            `badge ${referenceBasis.className}`,
+            `${referenceBasis.label} reference`,
+          ),
           element(
             "p",
             "observed-text",
@@ -1213,15 +1729,30 @@ function boot() {
     "click",
     () => closeDialog(detailDialog),
   );
+  byId("close-comparison").addEventListener(
+    "click",
+    () => closeDialog(comparisonDialog),
+  );
+  clearComparisonButton.addEventListener("click", clearComparison);
+  openComparisonButton.addEventListener("click", compareSelected);
   detailDialog.addEventListener("click", (event) => {
     if (event.target === detailDialog) closeDialog(detailDialog);
+  });
+  comparisonDialog.addEventListener("click", (event) => {
+    if (event.target === comparisonDialog) closeDialog(comparisonDialog);
   });
 
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    state.query = queryInput.value.trim();
-    state.kind = kindInput.value;
-    state.source = sourceInput.value.trim().toLowerCase();
+    const query = queryInput.value.trim();
+    const kind = kindInput.value;
+    const source = sourceInput.value.trim().toLowerCase();
+    if (
+      query !== state.query || kind !== state.kind || source !== state.source
+    ) clearComparison();
+    state.query = query;
+    state.kind = kind;
+    state.source = source;
     state.offset = 0;
     performSearch();
   });
@@ -1245,6 +1776,7 @@ function boot() {
   // Scrub the bearer before the page is cached and reset the UI if restored.
   window.addEventListener("pagehide", () => {
     state.token = null;
+    state.comparisonSelection.clear();
     tokenInput.value = "";
   });
   window.addEventListener("pageshow", (event) => {
@@ -1253,6 +1785,7 @@ function boot() {
     }
   });
 
+  updateComparisonControls();
   tokenInput.focus();
 }
 

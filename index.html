@@ -114,6 +114,16 @@
             <button id="next" class="button secondary" type="button" disabled>Next</button>
           </div>
         </div>
+        <div id="comparison-toolbar" class="comparison-toolbar" aria-labelledby="comparison-toolbar-title">
+          <div>
+            <strong id="comparison-toolbar-title">Compare precedents</strong>
+            <span id="comparison-status" class="muted" role="status" aria-live="polite">Select 2–4 results to compare recorded wording and bounded context.</span>
+          </div>
+          <div class="comparison-actions">
+            <button id="clear-comparison" class="button secondary" type="button" disabled>Clear selection</button>
+            <button id="open-comparison" class="button primary" type="button" disabled>Compare selected</button>
+          </div>
+        </div>
         <div id="results" class="results">
           <p class="empty">Results show clause excerpts, document context, and direct source links.</p>
         </div>
@@ -139,6 +149,17 @@
       <button id="close-dialog" class="icon-button" type="button" aria-label="Close agreement details">×</button>
     </div>
     <div id="detail-body" class="dialog-body"></div>
+  </dialog>
+
+  <dialog id="comparison-dialog" class="comparison-dialog" aria-labelledby="comparison-title" aria-describedby="comparison-subtitle">
+    <div class="dialog-header">
+      <div>
+        <strong id="comparison-title">Precedent comparison</strong>
+        <span id="comparison-subtitle" class="dialog-subtitle">Exact observed clauses with a five-clause source window</span>
+      </div>
+      <button id="close-comparison" class="icon-button" type="button" aria-label="Close precedent comparison">×</button>
+    </div>
+    <div id="comparison-body" class="dialog-body"></div>
   </dialog>
 
   <noscript>This explorer requires JavaScript to call the protected read-only API.</noscript>
