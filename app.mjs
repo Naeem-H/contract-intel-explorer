@@ -119,7 +119,7 @@ export function buildAgreementPath(agreementId, clauseLimit = 40) {
   if (typeof agreementId !== "string" || !UUID_PATTERN.test(agreementId)) {
     throw new TypeError("Agreement identifier is invalid");
   }
-  if (!Number.isInteger(clauseLimit) || clauseLimit < 1 || clauseLimit > 100) {
+  if (!Number.isInteger(clauseLimit) || clauseLimit < 1 || clauseLimit > 40) {
     throw new TypeError("Clause limit is outside the allowed range");
   }
   return `/api/agreements/${agreementId}?clauses=${clauseLimit}`;
@@ -451,6 +451,10 @@ function boot() {
     const corpus = record(metrics.corpus);
     const quality = record(metrics.quality);
     const processing = record(metrics.processing);
+    const failures = record(root.failures);
+    const failureGroups = array(failures.groups);
+    const sourceBreakdown = array(root.sources);
+    const evidenceQuality = record(root.evidence_quality);
 
     summaryCards.replaceChildren(
       metric(
@@ -502,7 +506,55 @@ function boot() {
         "Average extraction confidence",
         displayText(quality.average_current_extraction_confidence),
       ],
+      [
+        "Exact clause offsets",
+        `${count(evidenceQuality.exact_offset_matches)} / ${
+          count(evidenceQuality.current_clauses)
+        }`,
+      ],
+      [
+        "Evidence integrity",
+        evidenceQuality.integrity_passed === true
+          ? "Passed"
+          : evidenceQuality.audit_stale === true
+          ? "Audit stale"
+          : "Needs review",
+      ],
+      [
+        "Last full evidence audit",
+        date(evidenceQuality.audited_at),
+      ],
+      [
+        "Clause references",
+        `${count(evidenceQuality.resolved_clause_relationships)} resolved · ${
+          count(evidenceQuality.unresolved_clause_references)
+        } observed unresolved`,
+      ],
       ["Last successful run", date(acquisition.last_successful_run_at)],
+      [
+        "Failed/dead-letter (30 days)",
+        count(failures.total_failed_or_dead_letter),
+      ],
+      [
+        "Top failure class",
+        failureGroups.length
+          ? `${displayText(record(failureGroups[0]).source_slug)} · ${
+            displayText(
+              record(failureGroups[0]).failure_class ||
+                record(failureGroups[0]).error_code,
+            )
+          } (${count(record(failureGroups[0]).count)})`
+          : "None",
+      ],
+      ...sourceBreakdown.slice(0, 10).map((sourceValue) => {
+        const source = record(sourceValue);
+        return [
+          `Source · ${displayText(source.source_slug)}`,
+          `${count(source.useful_distinct_agreements)} useful · ${
+            count(source.current_clauses)
+          } clauses`,
+        ];
+      }),
     ]));
 
     summaryFreshness.textContent = `Snapshot generated ${
