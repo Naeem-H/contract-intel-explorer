@@ -58,7 +58,21 @@ function isAllowedApiTarget(url) {
   const match = pathname.match(/^\/api\/(agreements|claims)\/([^/]+)$/);
   if (!match || !UUID_PATTERN.test(match[2])) return false;
   if (match[1] === "claims") return url.search === "";
-  return [...url.searchParams.keys()].every((key) => key === "clauses");
+  const allowed = new Set(["clauses", "clause"]);
+  if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
+    return false;
+  }
+  if (
+    url.searchParams.getAll("clauses").length > 1 ||
+    url.searchParams.getAll("clause").length > 1
+  ) return false;
+  const clauseLimit = url.searchParams.get("clauses");
+  if (
+    clauseLimit !== null &&
+    (!/^[1-9]\d*$/.test(clauseLimit) || Number(clauseLimit) > 40)
+  ) return false;
+  const anchorClauseId = url.searchParams.get("clause");
+  return anchorClauseId === null || UUID_PATTERN.test(anchorClauseId);
 }
 
 export function apiUrl(path) {
@@ -115,14 +129,27 @@ export function buildSearchPath({
   return `/api/search?${params.toString()}`;
 }
 
-export function buildAgreementPath(agreementId, clauseLimit = 40) {
+export function buildAgreementPath(
+  agreementId,
+  clauseLimit = 40,
+  anchorClauseId = null,
+) {
   if (typeof agreementId !== "string" || !UUID_PATTERN.test(agreementId)) {
     throw new TypeError("Agreement identifier is invalid");
   }
   if (!Number.isInteger(clauseLimit) || clauseLimit < 1 || clauseLimit > 40) {
     throw new TypeError("Clause limit is outside the allowed range");
   }
-  return `/api/agreements/${agreementId}?clauses=${clauseLimit}`;
+  if (
+    anchorClauseId !== null &&
+    (typeof anchorClauseId !== "string" ||
+      !UUID_PATTERN.test(anchorClauseId))
+  ) {
+    throw new TypeError("Anchor clause identifier is invalid");
+  }
+  const params = new URLSearchParams({ clauses: String(clauseLimit) });
+  if (anchorClauseId) params.set("clause", anchorClauseId);
+  return `/api/agreements/${agreementId}?${params.toString()}`;
 }
 
 export function safeExternalUrl(value) {
@@ -629,6 +656,10 @@ function boot() {
     const agreementId = typeof item.agreement_id === "string"
       ? item.agreement_id
       : "";
+    const clauseId = typeof item.clause_id === "string" &&
+        UUID_PATTERN.test(item.clause_id)
+      ? item.clause_id
+      : null;
     if (UUID_PATTERN.test(agreementId)) {
       const inspect = element(
         "button",
@@ -636,7 +667,10 @@ function boot() {
         "Inspect agreement context →",
       );
       inspect.type = "button";
-      inspect.addEventListener("click", () => loadAgreement(agreementId));
+      inspect.addEventListener(
+        "click",
+        () => loadAgreement(agreementId, clauseId),
+      );
       actions.append(inspect);
     }
     actions.append(sourceLink(item.source_url));
@@ -765,6 +799,11 @@ function boot() {
     const data = record(record(payload).data);
     const agreement = record(data.agreement);
     const source = record(data.source);
+    const clauseWindow = record(data.clause_window);
+    const anchorClauseId = typeof data.anchor_clause_id === "string" &&
+        UUID_PATTERN.test(data.anchor_clause_id)
+      ? data.anchor_clause_id
+      : null;
     const fragment = document.createDocumentFragment();
     fragment.append(
       element(
@@ -855,23 +894,42 @@ function boot() {
 
     const clauses = array(data.clauses).slice(0, 40);
     const clauseSection = section("Observed clauses");
+    if (anchorClauseId && clauseWindow.mode === "anchored") {
+      const first = displayText(clauseWindow.first_sequence, "?");
+      const last = displayText(clauseWindow.last_sequence, "?");
+      clauseSection.append(
+        element(
+          "p",
+          "focus-note",
+          `Search-result context: showing the clause window ${first}–${last}. The exact matched clause is highlighted below.`,
+        ),
+      );
+    }
     if (data.truncated === true) {
       clauseSection.append(
         element(
           "p",
           "muted",
-          "Only the first 40 clauses are shown in this bounded view.",
+          anchorClauseId
+            ? "This is a bounded window around the matched clause, not the complete agreement."
+            : "Only the first 40 clauses are shown in this bounded view.",
         ),
       );
     }
     for (const clauseValue of clauses) {
       const clause = record(clauseValue);
       const card = element("article", "clause");
+      const isAnchor = anchorClauseId !== null && clause.id === anchorClauseId;
+      if (isAnchor) {
+        card.classList.add("matched-clause");
+        card.setAttribute("aria-label", "Matched search clause");
+      }
       const heading = clause.heading
         ? `${displayText(clause.sequence)} · ${displayText(clause.heading)}`
         : `Clause ${displayText(clause.sequence)}`;
       append(
         card,
+        isAnchor ? element("span", "badge match-badge", "Search match") : null,
         element("h3", "", heading),
         element(
           "p",
@@ -985,9 +1043,13 @@ function boot() {
     }
 
     detailBody.replaceChildren(fragment);
+    const matchedClause = detailBody.querySelector(".matched-clause");
+    if (matchedClause instanceof HTMLElement) {
+      matchedClause.scrollIntoView({ block: "center" });
+    }
   }
 
-  async function loadAgreement(agreementId) {
+  async function loadAgreement(agreementId, anchorClauseId = null) {
     if (!state.token) return;
     detailBody.replaceChildren(
       element("p", "muted", "Loading agreement evidence…"),
@@ -995,7 +1057,7 @@ function boot() {
     openDialog(detailDialog);
     try {
       const payload = await requestJson(
-        buildAgreementPath(agreementId),
+        buildAgreementPath(agreementId, 40, anchorClauseId),
         state.token,
       );
       renderAgreement(payload);

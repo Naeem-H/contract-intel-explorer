@@ -100,6 +100,9 @@ dialog::backdrop { background: rgb(2 7 5 / 78%); backdrop-filter: blur(4px); }
 .detail-heading { margin: 6px 0 10px; font: 500 30px/1.12 ui-serif, Georgia, serif; }
 .detail-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 .clause, .party, .relationship, .claim, .claim-evidence { margin: 10px 0; padding: 13px; border: 1px solid #293b32; border-radius: 9px; background: #0a1410; }
+.focus-note { padding: 11px 13px; border: 1px solid #6b5730; border-radius: 9px; color: #ead49c; background: rgb(67 50 18 / 45%); }
+.clause.matched-clause { border-color: var(--gold); background: rgb(56 43 18 / 42%); box-shadow: 0 0 0 2px rgb(227 188 106 / 13%); }
+.match-badge { margin-bottom: 8px; color: #171105; background: var(--gold); }
 .observed-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .generated { margin-top: 10px; padding: 10px; border: 1px solid #4a3c20; border-radius: 8px; color: #d8ceb5; background: rgb(52 41 20 / 45%); }
 .generated strong { color: var(--gold); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
