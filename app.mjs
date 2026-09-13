@@ -268,6 +268,26 @@ function boundedText(value, maximum = 24_000) {
     : text;
 }
 
+function referenceResolutionLabel(value) {
+  const labels = {
+    unattempted: "Target not resolved yet",
+    resolved: "Exact local target resolved",
+    unresolved_no_match: "Unresolved: no exact local target",
+    unresolved_ambiguous: "Unresolved: multiple exact local targets",
+    unresolved_plural: "Unresolved: plural reference",
+    unresolved_subsection: "Unresolved: subsection reference was truncated",
+    unresolved_unsupported: "Unresolved: unsupported reference form",
+  };
+  return labels[value] || "Target resolution unavailable";
+}
+
+function referenceResolutionProvenance(value) {
+  if (value === "observed") return "Observed target link";
+  if (value === "reviewed") return "Human-reviewed target link";
+  if (value === "generated") return "Generated target resolution";
+  return "Target resolution";
+}
+
 function count(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed.toLocaleString() : "—";
@@ -534,22 +554,32 @@ function boot() {
         displayText(quality.average_current_extraction_confidence),
       ],
       [
-        "Exact clause offsets",
-        `${count(evidenceQuality.exact_offset_matches)} / ${
+        "Write-guarded clause offsets",
+        `${count(evidenceQuality.write_guarded_clauses_with_exact_offsets)} / ${
           count(evidenceQuality.current_clauses)
         }`,
       ],
       [
-        "Evidence integrity",
+        "Evidence checkpoint",
         evidenceQuality.integrity_passed === true
-          ? "Passed"
+          ? "Passed (trigger-backed)"
           : evidenceQuality.audit_stale === true
-          ? "Audit stale"
+          ? "Checkpoint or full audit stale"
           : "Needs review",
       ],
       [
-        "Last full evidence audit",
-        date(evidenceQuality.audited_at),
+        "Last fast checkpoint",
+        date(evidenceQuality.checkpointed_at),
+      ],
+      [
+        "Last full SHA audit",
+        date(evidenceQuality.full_audited_at || evidenceQuality.audited_at),
+      ],
+      [
+        "Full-audit clause coverage",
+        `${count(evidenceQuality.baseline_full_clause_hash_matches)} / ${
+          count(evidenceQuality.baseline_full_current_clauses)
+        }`,
       ],
       [
         "Clause references",
@@ -965,6 +995,64 @@ function boot() {
             }`,
           ),
         );
+      }
+      const references = array(clause.cross_references).slice(0, 50);
+      for (const referenceValue of references) {
+        const reference = record(referenceValue);
+        const referenceBox = element("div", "relationship");
+        append(
+          referenceBox,
+          element("span", "badge observed", "Observed reference"),
+          element(
+            "p",
+            "observed-text",
+            displayText(
+              reference.observed_reference,
+              "Reference wording was not captured.",
+            ),
+          ),
+        );
+        const targetId = typeof reference.target_clause_id === "string" &&
+            UUID_PATTERN.test(reference.target_clause_id)
+          ? reference.target_clause_id
+          : null;
+        const resolutionBasis = reference.target_resolution_basis;
+        const resolution = element(
+          "div",
+          resolutionBasis === "generated" ? "generated" : "relationship",
+        );
+        append(
+          resolution,
+          element(
+            "strong",
+            "",
+            referenceResolutionProvenance(resolutionBasis),
+          ),
+          element(
+            "p",
+            "",
+            targetId
+              ? `Clause ${displayText(reference.target_sequence)} · ${
+                displayText(reference.target_heading, "Untitled clause")
+              } · ${referenceResolutionLabel(reference.target_resolution_status)}`
+              : referenceResolutionLabel(reference.target_resolution_status),
+          ),
+        );
+        if (targetId) {
+          const inspect = element(
+            "button",
+            "text-button",
+            "View referenced clause →",
+          );
+          inspect.type = "button";
+          inspect.addEventListener(
+            "click",
+            () => loadAgreement(agreement.id, targetId),
+          );
+          resolution.append(inspect);
+        }
+        referenceBox.append(resolution);
+        card.append(referenceBox);
       }
       clauseSection.append(card);
     }
