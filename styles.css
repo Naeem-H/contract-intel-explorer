@@ -106,6 +106,11 @@ input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rg
 .party-result-title { margin: 11px 0 5px; color: var(--ink); font: 500 17px/1.3 ui-serif, Georgia, serif; }
 .party-list { margin: 11px 0; padding: 10px 12px; border-left: 2px solid var(--gold); color: #d8ceb5; background: rgb(52 41 20 / 35%); }
 .party-list p { margin: 4px 0; }
+.dossier-theme { display: grid; gap: 12px; }
+.dossier-examples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.dossier-example { padding: 13px; border: 1px solid #293b32; border-radius: 9px; background: #0a1410; }
+.dossier-example h4 { margin: 8px 0 5px; }
+.dossier-example .excerpt { max-height: 260px; overflow: auto; }
 .meta { display: flex; flex-wrap: wrap; gap: 5px 13px; color: var(--muted); font-size: 12px; }
 .badge { display: inline-flex; width: max-content; padding: 3px 7px; border-radius: 999px; color: #9cebc0; background: var(--green-dark); font-size: 10px; font-weight: 760; letter-spacing: .06em; text-transform: uppercase; }
 .badge.basis-reviewed { color: #b9e3f7; background: #173442; }
@@ -168,7 +173,7 @@ noscript { display: block; padding: 20px; color: var(--danger); text-align: cent
 [hidden] { display: none !important; }
 
 @media (max-width: 900px) {
-  .hero, .guided-heading, .snapshot-grid { grid-template-columns: 1fr; }
+  .hero, .guided-heading, .snapshot-grid, .dossier-examples { grid-template-columns: 1fr; }
   .guide-steps { grid-template-columns: 1fr; }
   .starter-grid, .guide-legend { grid-template-columns: 1fr 1fr; }
   .search-form { grid-template-columns: 1fr 1fr; gap: 9px; }

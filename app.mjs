@@ -72,6 +72,11 @@ function isAllowedApiTarget(url) {
     ) return false;
     return [...url.searchParams.keys()].every((key) => allowed.has(key));
   }
+  if (pathname === "/api/party-dossier") {
+    const allowed = new Set(["party", "themes", "examples"]);
+    return url.searchParams.getAll("party").length === 1 &&
+      [...url.searchParams.keys()].every((key) => allowed.has(key));
+  }
   const match = pathname.match(/^\/api\/(agreements|claims)\/([^/]+)$/);
   if (!match || !UUID_PATTERN.test(match[2])) return false;
   if (match[1] === "claims") return url.search === "";
@@ -159,6 +164,32 @@ export function buildPartyClauseSearchPath({ party, ...input }) {
   const params = new URL(clausePath, "https://route.invalid").searchParams;
   params.set("party", normalizedParty);
   return `/api/party-clauses?${params.toString()}`;
+}
+
+export function buildPartyDossierPath({
+  party,
+  themeLimit = 12,
+  examplesPerTheme = 2,
+}) {
+  const partyPath = buildPartySearchPath({ query: party });
+  const normalizedParty = new URL(partyPath, "https://route.invalid")
+    .searchParams.get("q");
+  if (!normalizedParty) throw new TypeError("Party name is invalid");
+  if (!Number.isInteger(themeLimit) || themeLimit < 1 || themeLimit > 20) {
+    throw new TypeError("Theme limit is outside the allowed range");
+  }
+  if (
+    !Number.isInteger(examplesPerTheme) || examplesPerTheme < 1 ||
+    examplesPerTheme > 3
+  ) {
+    throw new TypeError("Examples per theme is outside the allowed range");
+  }
+  const params = new URLSearchParams({
+    party: normalizedParty,
+    themes: String(themeLimit),
+    examples: String(examplesPerTheme),
+  });
+  return `/api/party-dossier?${params.toString()}`;
 }
 
 export function buildAgreementPath(
@@ -807,6 +838,7 @@ function boot() {
     partyLimit: 20,
     partyHasMore: false,
     partySearching: false,
+    partyDossierLoading: false,
   };
 
   const authView = byId("auth-view");
@@ -832,6 +864,11 @@ function boot() {
   const partyResults = byId("party-results");
   const partyPrevious = byId("party-previous");
   const partyNext = byId("party-next");
+  const partyDossierSection = byId("party-dossier-section");
+  const partyDossierTitle = byId("party-dossier-title");
+  const partyDossierStatus = byId("party-dossier-status");
+  const partyDossierSummary = byId("party-dossier-summary");
+  const partyDossierThemes = byId("party-dossier-themes");
   const searchForm = byId("search-form");
   const queryInput = byId("query");
   const clausePartyInput = byId("clause-party");
@@ -896,6 +933,7 @@ function boot() {
     state.partyOffset = 0;
     state.partyHasMore = false;
     state.partySearching = false;
+    state.partyDossierLoading = false;
     state.clauseParty = "";
     partyPrevious.disabled = true;
     partyNext.disabled = true;
@@ -906,6 +944,9 @@ function boot() {
       element("p", "empty", "Sign in to search published evidence."),
     );
     partyResults.replaceChildren();
+    partyDossierSection.hidden = true;
+    partyDossierSummary.replaceChildren();
+    partyDossierThemes.replaceChildren();
     detailBody.replaceChildren();
     comparisonBody.replaceChildren();
     exportStatus.textContent = "";
@@ -1678,6 +1719,16 @@ function boot() {
         searchForm.scrollIntoView({ behavior: "smooth", block: "center" });
       });
       actions.append(useParty);
+      const dossier = element(
+        "button",
+        "text-button",
+        "Build exact-name negotiation dossier →",
+      );
+      dossier.type = "button";
+      dossier.addEventListener("click", () =>
+        loadPartyDossier(item.observed_party_name)
+      );
+      actions.append(dossier);
     }
     append(actions, sourceLink(item.source_url));
     append(card, top, title, metadata, partyEvidence, partyList, actions);
@@ -1732,6 +1783,168 @@ function boot() {
     } finally {
       state.partySearching = false;
       partySearchButton.disabled = false;
+    }
+  }
+
+  function renderPartyDossier(payload) {
+    const root = record(record(payload).data);
+    const scope = record(root.party_scope);
+    const coverage = record(root.coverage);
+    const themes = array(root.theme_coverage).slice(0, 20);
+    const sources = array(coverage.sources);
+    partyDossierTitle.textContent = `Observed-party dossier · ${
+      displayText(scope.query, scope.normalized_query)
+    }`;
+    partyDossierSummary.replaceChildren(
+      metric(
+        "Document records",
+        count(coverage.document_records),
+        "Not unique relationships",
+      ),
+      metric(
+        "Observed clauses",
+        count(coverage.observed_clauses),
+        "Current published evidence",
+      ),
+      metric(
+        "Theme groups",
+        count(themes.length),
+        "Generated/reviewed labels",
+      ),
+      metric(
+        "Party records",
+        count(scope.matched_party_records),
+        "Identity resolution not applied",
+      ),
+      metric(
+        "Sources",
+        count(sources.length),
+        "Rights-gated source systems",
+      ),
+    );
+    partyDossierThemes.replaceChildren();
+    if (!themes.length) {
+      partyDossierThemes.append(
+        element(
+          "p",
+          "empty",
+          "No generated or reviewed clause themes were found for this exact observed name.",
+        ),
+      );
+    }
+    for (const themeValue of themes) {
+      const theme = record(themeValue);
+      const card = element("article", "result-card dossier-theme");
+      const top = element("div", "result-top");
+      const heading = element("div");
+      append(
+        heading,
+        element("span", "badge basis-generated", "Generated theme label"),
+        element(
+          "h3",
+          "",
+          displayText(theme.theme, "unclassified").replaceAll("_", " "),
+        ),
+        element(
+          "p",
+          "muted tiny",
+          `${count(theme.clause_matches)} matching clause tags across ${
+            count(theme.document_records)
+          } document records · not a prevalence measure`,
+        ),
+      );
+      top.append(
+        heading,
+        element(
+          "span",
+          "muted tiny",
+          `Detector confidence ${displayText(theme.detector_confidence_min)}–${
+            displayText(theme.detector_confidence_max)
+          }`,
+        ),
+      );
+      const examples = element("div", "dossier-examples");
+      for (const exampleValue of array(theme.examples).slice(0, 3)) {
+        const example = record(exampleValue);
+        const exampleCard = element("article", "dossier-example");
+        append(
+          exampleCard,
+          element("span", "badge basis-observed", "Observed source text"),
+          element(
+            "h4",
+            "",
+            displayText(
+              example.clause_heading,
+              example.observed_title || "Untitled clause",
+            ),
+          ),
+          element(
+            "p",
+            "muted tiny",
+            `${displayText(example.observed_title, "Untitled agreement")} · ${
+              displayText(example.source_name, example.source_slug)
+            } · ${displayText(example.observed_party_role, "role not stated")}`,
+          ),
+          element(
+            "p",
+            "excerpt",
+            boundedText(example.observed_text_excerpt, 2_000),
+          ),
+          element(
+            "p",
+            "muted tiny",
+            `Clause SHA-256 ${displayText(example.observed_text_sha256)} · artifact ${
+              displayText(example.artifact_sha256)
+            }${example.observed_text_excerpt_truncated ? " · excerpt truncated" : ""}`,
+          ),
+        );
+        const actions = element("div", "result-actions");
+        if (
+          typeof example.agreement_id === "string" &&
+          UUID_PATTERN.test(example.agreement_id) &&
+          typeof example.clause_id === "string" &&
+          UUID_PATTERN.test(example.clause_id)
+        ) {
+          const inspect = element(
+            "button",
+            "text-button",
+            "Inspect clause in context →",
+          );
+          inspect.type = "button";
+          inspect.addEventListener("click", () =>
+            loadAgreement(example.agreement_id, example.clause_id)
+          );
+          actions.append(inspect);
+        }
+        append(actions, sourceLink(example.source_url));
+        exampleCard.append(actions);
+        examples.append(exampleCard);
+      }
+      card.append(top, examples);
+      partyDossierThemes.append(card);
+    }
+    partyDossierStatus.textContent = scope.low_specificity_warning === true
+      ? "This is a low-specificity observed name. Treat every result as ambiguous and inspect source evidence."
+      : `${count(coverage.document_records)} exact-name document records. Identity resolution was not applied; theme counts are navigation aids, not market prevalence.`;
+  }
+
+  async function loadPartyDossier(partyName) {
+    if (!state.token || state.partyDossierLoading) return;
+    state.partyDossierLoading = true;
+    partyDossierSection.hidden = false;
+    partyDossierTitle.textContent = `Observed-party dossier · ${partyName}`;
+    partyDossierStatus.textContent = "Building a bounded evidence dossier…";
+    partyDossierSummary.replaceChildren();
+    partyDossierThemes.replaceChildren(element("div", "result-card skeleton"));
+    partyDossierSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    try {
+      const path = buildPartyDossierPath({ party: partyName });
+      renderPartyDossier(await requestJson(path, state.token));
+    } catch (error) {
+      partyDossierThemes.replaceChildren();
+      handleFailure(error, partyDossierStatus);
+    } finally {
+      state.partyDossierLoading = false;
     }
   }
 
@@ -2447,6 +2660,11 @@ function boot() {
     if (!state.partyHasMore) return;
     state.partyOffset = Math.min(1_000, state.partyOffset + state.partyLimit);
     performPartySearch();
+  });
+  byId("close-party-dossier").addEventListener("click", () => {
+    partyDossierSection.hidden = true;
+    partyDossierSummary.replaceChildren();
+    partyDossierThemes.replaceChildren();
   });
 
   searchForm.addEventListener("submit", (event) => {
