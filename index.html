@@ -200,8 +200,12 @@
       <div>
         <strong id="comparison-title">Precedent comparison</strong>
         <span id="comparison-subtitle" class="dialog-subtitle">Exact observed clauses with a five-clause source window</span>
+        <span id="comparison-export-status" class="dialog-subtitle" role="status" aria-live="polite"></span>
       </div>
-      <button id="close-comparison" class="icon-button" type="button" aria-label="Close precedent comparison">×</button>
+      <div class="dialog-actions">
+        <button id="export-comparison" class="button secondary" type="button" disabled>Download citation JSON</button>
+        <button id="close-comparison" class="icon-button" type="button" aria-label="Close precedent comparison">×</button>
+      </div>
     </div>
     <div id="comparison-body" class="dialog-body"></div>
   </dialog>

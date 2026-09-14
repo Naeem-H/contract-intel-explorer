@@ -18,6 +18,7 @@ const REQUEST_TIMEOUT_MS = 12_000;
 export const COMPARISON_MIN_ITEMS = 2;
 export const COMPARISON_MAX_ITEMS = 4;
 export const COMPARISON_CONTEXT_CLAUSES = 5;
+export const CITATION_TEXT_MAX_CHARS = 100_000;
 
 export class ApiError extends Error {
   constructor(message, status = 0, code = "request_failed", requestId = null) {
@@ -213,7 +214,10 @@ export function formatEvidenceLocation(value) {
 
   const location = record(clause.evidence_location);
   const parts = [];
-  if (typeof location.archive_member_name === "string" && location.archive_member_name) {
+  if (
+    typeof location.archive_member_name === "string" &&
+    location.archive_member_name
+  ) {
     parts.push(`Archive member ${location.archive_member_name}`);
   }
   if (
@@ -232,7 +236,11 @@ export function formatEvidenceLocation(value) {
     ? location.page_end
     : null;
   if (pageStart !== null && pageStart > 0) {
-    parts.push(`Page ${pageStart}${pageEnd !== null && pageEnd !== pageStart ? `–${pageEnd}` : ""}`);
+    parts.push(
+      `Page ${pageStart}${
+        pageEnd !== null && pageEnd !== pageStart ? `–${pageEnd}` : ""
+      }`,
+    );
   }
 
   const charStart = Number.isSafeInteger(location.character_start)
@@ -252,12 +260,16 @@ export function formatEvidenceLocation(value) {
 }
 
 export function comparisonEvidence(payload, expectedClauseId) {
-  if (typeof expectedClauseId !== "string" || !UUID_PATTERN.test(expectedClauseId)) {
+  if (
+    typeof expectedClauseId !== "string" || !UUID_PATTERN.test(expectedClauseId)
+  ) {
     throw new TypeError("Comparison clause identifier is invalid");
   }
   const data = record(record(payload).data);
   if (data.anchor_clause_id !== expectedClauseId) {
-    throw new ApiError("The bounded response did not identify the selected clause.");
+    throw new ApiError(
+      "The bounded response did not identify the selected clause.",
+    );
   }
   const clauses = array(data.clauses)
     .slice(0, COMPARISON_CONTEXT_CLAUSES)
@@ -272,6 +284,9 @@ export function comparisonEvidence(payload, expectedClauseId) {
     clauseWindow: record(data.clause_window),
     anchor,
     context: clauses.filter((clause) => clause.id !== expectedClauseId),
+    agreementDateEvidence: array(data.agreement_date_evidence)
+      .slice(0, 20)
+      .map(record),
     truncated: data.truncated === true,
   };
 }
@@ -286,6 +301,204 @@ export function safeExternalUrl(value) {
   } catch {
     return null;
   }
+}
+
+function citationText(value, maximum = CITATION_TEXT_MAX_CHARS) {
+  if (typeof value !== "string") return { text: null, truncated: false };
+  return value.length > maximum
+    ? { text: value.slice(0, maximum), truncated: true }
+    : { text: value, truncated: false };
+}
+
+function citationClause(value) {
+  const clause = record(value);
+  const observed = citationText(clause.observed_text);
+  return {
+    id: typeof clause.id === "string" ? clause.id : null,
+    sequence: Number.isSafeInteger(clause.sequence) ? clause.sequence : null,
+    label: typeof clause.label === "string" ? clause.label : null,
+    heading: typeof clause.heading === "string" ? clause.heading : null,
+    text_basis: typeof clause.text_basis === "string"
+      ? clause.text_basis
+      : null,
+    observed_text: observed.text,
+    observed_text_truncated: observed.truncated,
+    observed_text_sha256: typeof clause.observed_text_sha256 === "string"
+      ? clause.observed_text_sha256
+      : null,
+    location: {
+      display: formatEvidenceLocation(clause),
+      page_start: Number.isSafeInteger(clause.page_start)
+        ? clause.page_start
+        : null,
+      page_end: Number.isSafeInteger(clause.page_end) ? clause.page_end : null,
+      char_start: Number.isSafeInteger(clause.char_start)
+        ? clause.char_start
+        : null,
+      char_end: Number.isSafeInteger(clause.char_end) ? clause.char_end : null,
+      evidence_location: isRecord(clause.evidence_location)
+        ? clause.evidence_location
+        : null,
+    },
+    generated_interpretation: {
+      clause_type: typeof clause.generated_clause_type === "string"
+        ? clause.generated_clause_type
+        : null,
+      summary: typeof clause.generated_summary === "string"
+        ? clause.generated_summary
+        : null,
+      themes: array(clause.themes).slice(0, 50).map(record),
+    },
+  };
+}
+
+export function buildCitationManifest({
+  query = "",
+  kind = "",
+  source = "",
+  entries = [],
+  generatedAt = new Date().toISOString(),
+} = {}) {
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 4) {
+    throw new TypeError("Citation export requires 1–4 evidence entries");
+  }
+  const timestamp = new Date(generatedAt);
+  if (Number.isNaN(timestamp.valueOf())) {
+    throw new TypeError("Citation export timestamp is invalid");
+  }
+  const normalizedQuery = typeof query === "string" ? query.trim() : "";
+  const normalizedKind = typeof kind === "string" && DOCUMENT_KINDS.has(kind)
+    ? kind
+    : null;
+  const normalizedSource = typeof source === "string" &&
+      SOURCE_PATTERN.test(source.trim().toLowerCase())
+    ? source.trim().toLowerCase()
+    : null;
+
+  const citations = entries.map((entryValue, index) => {
+    const entry = record(entryValue);
+    const selection = record(entry.selection);
+    const evidence = record(entry.evidence);
+    const selectionKey = comparisonSelectionKey(selection);
+    if (
+      !selectionKey || evidence.anchor?.id !== selection.clause_id ||
+      typeof evidence.anchor?.observed_text !== "string"
+    ) {
+      throw new TypeError(
+        "Citation evidence does not match its selected clause",
+      );
+    }
+    const agreement = record(evidence.agreement);
+    if (agreement.id !== selection.agreement_id) {
+      throw new TypeError(
+        "Citation evidence does not match its selected agreement",
+      );
+    }
+    const sourceRecord = record(evidence.source);
+    const context = array(evidence.context).slice(
+      0,
+      COMPARISON_CONTEXT_CLAUSES - 1,
+    );
+    return {
+      citation_number: index + 1,
+      retrieval: {
+        rank: Number.isFinite(Number(selection.rank))
+          ? Number(selection.rank)
+          : null,
+        observed_published_at:
+          typeof selection.observed_published_at === "string"
+            ? selection.observed_published_at
+            : null,
+      },
+      source: {
+        slug: typeof sourceRecord.slug === "string" ? sourceRecord.slug : null,
+        name: typeof sourceRecord.observed_name === "string"
+          ? sourceRecord.observed_name
+          : (typeof selection.source_name === "string"
+            ? selection.source_name
+            : null),
+        publisher: typeof sourceRecord.observed_publisher === "string"
+          ? sourceRecord.observed_publisher
+          : null,
+        external_id: typeof sourceRecord.observed_external_id === "string"
+          ? sourceRecord.observed_external_id
+          : null,
+        canonical_url: safeExternalUrl(
+          sourceRecord.observed_canonical_url || selection.source_url,
+        ),
+        terms_url: safeExternalUrl(sourceRecord.observed_terms_url),
+        policy_assessment_status:
+          typeof sourceRecord.policy_assessment_status === "string"
+            ? sourceRecord.policy_assessment_status
+            : null,
+        human_review_required: sourceRecord.human_review_required === true
+          ? true
+          : sourceRecord.human_review_required === false
+          ? false
+          : null,
+      },
+      agreement: {
+        id: selection.agreement_id,
+        title: typeof agreement.observed_title === "string"
+          ? agreement.observed_title
+          : (typeof selection.observed_title === "string"
+            ? selection.observed_title
+            : null),
+        document_kind: typeof agreement.document_kind === "string"
+          ? agreement.document_kind
+          : (typeof selection.document_kind === "string"
+            ? selection.document_kind
+            : null),
+        document_kind_basis: typeof agreement.document_kind_basis === "string"
+          ? agreement.document_kind_basis
+          : null,
+        artifact_sha256: typeof agreement.artifact_sha256 === "string"
+          ? agreement.artifact_sha256
+          : null,
+        extraction_method: typeof agreement.extraction_method === "string"
+          ? agreement.extraction_method
+          : null,
+        extraction_version: typeof agreement.extraction_version === "string"
+          ? agreement.extraction_version
+          : null,
+        text_basis: typeof agreement.text_basis === "string"
+          ? agreement.text_basis
+          : null,
+        dates: {
+          observed_execution_date: agreement.observed_execution_date ?? null,
+          observed_effective_date: agreement.observed_effective_date ?? null,
+          observed_termination_date: agreement.observed_termination_date ??
+            null,
+          selection_provenance: record(agreement.agreement_date_selections),
+          evidence: array(evidence.agreementDateEvidence).slice(0, 20),
+        },
+      },
+      matched_clause: citationClause(evidence.anchor),
+      bounded_context: {
+        is_complete_agreement: evidence.truncated !== true,
+        response_truncated: evidence.truncated === true,
+        window: record(evidence.clauseWindow),
+        neighboring_clauses: context.map(citationClause),
+      },
+    };
+  });
+
+  return {
+    schema: "esheria.contract-citations.v1",
+    generated_at: timestamp.toISOString(),
+    retrieval_scope: {
+      query: normalizedQuery || null,
+      document_kind: normalizedKind,
+      source: normalizedSource,
+      selected_count: citations.length,
+    },
+    limitations: [
+      "This export contains only the selected published evidence and bounded context; it is not a representative market sample.",
+      "Observed wording is evidence. Generated classifications, themes, summaries and date types are interpretations, not source facts.",
+      "Verify the recorded source, completeness, amendments and governing law before legal or commercial reliance.",
+    ],
+    citations,
+  };
 }
 
 async function readBoundedJson(response) {
@@ -544,6 +757,7 @@ function boot() {
     searching: false,
     comparing: false,
     comparisonSelection: new Map(),
+    comparisonEvidence: [],
   };
 
   const authView = byId("auth-view");
@@ -572,6 +786,8 @@ function boot() {
   const comparisonStatus = byId("comparison-status");
   const clearComparisonButton = byId("clear-comparison");
   const openComparisonButton = byId("open-comparison");
+  const exportComparisonButton = byId("export-comparison");
+  const exportStatus = byId("comparison-export-status");
   const detailDialog = byId("detail-dialog");
   const detailBody = byId("detail-body");
   const comparisonDialog = byId("comparison-dialog");
@@ -588,7 +804,8 @@ function boot() {
       if (selected) selectedGuide = button.getAttribute("data-guide") ?? "";
     }
     if (selectedGuide) {
-      guideStatus.textContent = `${selectedGuide} starter selected. Filters below still apply; verify every result against its observed wording and recorded source.`;
+      guideStatus.textContent =
+        `${selectedGuide} starter selected. Filters below still apply; verify every result against its observed wording and recorded source.`;
       return;
     }
     guideStatus.textContent = query
@@ -611,6 +828,7 @@ function boot() {
     operations.replaceChildren();
     corpusDisclosure.replaceChildren();
     state.comparisonSelection.clear();
+    state.comparisonEvidence = [];
     state.comparing = false;
     syncGuideSelection("");
     results.replaceChildren(
@@ -618,6 +836,7 @@ function boot() {
     );
     detailBody.replaceChildren();
     comparisonBody.replaceChildren();
+    exportStatus.textContent = "";
     closeDialog(detailDialog);
     closeDialog(comparisonDialog);
     updateComparisonControls();
@@ -814,14 +1033,17 @@ function boot() {
     clearComparisonButton.disabled = selected === 0 || state.comparing;
     openComparisonButton.disabled = selected < COMPARISON_MIN_ITEMS ||
       selected > COMPARISON_MAX_ITEMS || state.comparing;
+    exportComparisonButton.disabled = state.comparing ||
+      state.comparisonEvidence.length === 0;
     comparisonStatus.className = kind === "error" ? "status error" : "muted";
-    comparisonStatus.textContent = message ?? (selected === 0
-      ? "Select 2–4 results to compare recorded wording and bounded context."
-      : selected === 1
-      ? "1 result selected. Select at least one more result."
-      : selected === COMPARISON_MAX_ITEMS
-      ? "4 results selected (maximum). Ready to compare."
-      : `${selected} results selected. Ready to compare.`);
+    comparisonStatus.textContent = message ??
+      (selected === 0
+        ? "Select 2–4 results to compare recorded wording and bounded context."
+        : selected === 1
+        ? "1 result selected. Select at least one more result."
+        : selected === COMPARISON_MAX_ITEMS
+        ? "4 results selected (maximum). Ready to compare."
+        : `${selected} results selected. Ready to compare.`);
 
     for (const input of results.querySelectorAll(".compare-input")) {
       const key = input.getAttribute("data-comparison-key") ?? "";
@@ -837,7 +1059,9 @@ function boot() {
 
   function clearComparison() {
     state.comparisonSelection.clear();
+    state.comparisonEvidence = [];
     comparisonBody.replaceChildren();
+    exportStatus.textContent = "";
     if (comparisonDialog.hasAttribute("open")) closeDialog(comparisonDialog);
     updateComparisonControls();
   }
@@ -858,6 +1082,9 @@ function boot() {
     } else {
       state.comparisonSelection.delete(key);
     }
+    state.comparisonEvidence = [];
+    exportStatus.textContent =
+      "Selection changed; compare again before exporting.";
     updateComparisonControls();
   }
 
@@ -891,7 +1118,9 @@ function boot() {
     const agreement = evidence.agreement;
     const source = evidence.source;
     const clause = evidence.anchor;
-    const basis = textBasisPresentation(clause.text_basis ?? agreement.text_basis);
+    const basis = textBasisPresentation(
+      clause.text_basis ?? agreement.text_basis,
+    );
     const executionDate = agreementDatePresentation(
       agreement,
       "execution",
@@ -901,7 +1130,11 @@ function boot() {
     column.setAttribute("aria-labelledby", `comparison-clause-${position}`);
     append(
       column,
-      element("span", `badge ${basis.className}`, `${basis.label} · clause evidence`),
+      element(
+        "span",
+        `badge ${basis.className}`,
+        `${basis.label} · clause evidence`,
+      ),
       element(
         "h3",
         "",
@@ -910,7 +1143,9 @@ function boot() {
       element(
         "p",
         "muted",
-        `${executionDate.label} · ${displayText(executionDate.value, "not stated")}`,
+        `${executionDate.label} · ${
+          displayText(executionDate.value, "not stated")
+        }`,
       ),
     );
     const classification = element("section", "generated");
@@ -1095,6 +1330,8 @@ function boot() {
     ) return;
 
     state.comparing = true;
+    state.comparisonEvidence = [];
+    exportStatus.textContent = "";
     updateComparisonControls("Loading bounded source context…");
     const loading = element(
       "p",
@@ -1137,8 +1374,13 @@ function boot() {
     const grid = element("div", "comparison-grid");
     grid.tabIndex = 0;
     grid.setAttribute("aria-label", "Side-by-side precedent clauses");
+    const loadedEntries = [];
     settled.forEach((result, index) => {
       if (result.status === "fulfilled") {
+        loadedEntries.push({
+          selection: selected[index],
+          evidence: result.value,
+        });
         grid.append(comparisonColumn(selected[index], result.value, index));
       } else {
         const error = element("article", "comparison-column");
@@ -1162,10 +1404,57 @@ function boot() {
         "comparison-note",
         "Each wording sample shows its recorded text basis and provenance. Generated labels are isolated and marked; the context is deliberately bounded.",
       ),
+      element(
+        "p",
+        "comparison-scope",
+        `Retrieval scope: ${state.query || "unspecified query"} · ${
+          state.kind || "all document classes"
+        } · ${
+          state.source || "all published sources"
+        }. This selected set is not a representative market sample.`,
+      ),
       grid,
     );
+    state.comparisonEvidence = loadedEntries;
+    exportStatus.textContent = loadedEntries.length
+      ? `${loadedEntries.length} evidence citation${
+        loadedEntries.length === 1 ? "" : "s"
+      } ready for JSON export.`
+      : "No evidence was loaded, so no citation file is available.";
     state.comparing = false;
     updateComparisonControls();
+  }
+
+  function exportComparison() {
+    if (!state.comparisonEvidence.length) return;
+    try {
+      const manifest = buildCitationManifest({
+        query: state.query,
+        kind: state.kind,
+        source: state.source,
+        entries: state.comparisonEvidence,
+      });
+      const blob = new Blob([`${JSON.stringify(manifest, null, 2)}\n`], {
+        type: "application/json;charset=utf-8",
+      });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = element("a");
+      link.href = objectUrl;
+      link.download = `esheria-contract-citations-${
+        manifest.generated_at.slice(0, 10)
+      }.json`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      exportStatus.textContent =
+        "Citation JSON downloaded. It contains no access token or private object path.";
+    } catch (error) {
+      exportStatus.textContent = error instanceof Error
+        ? error.message
+        : "Citation export could not be created.";
+    }
   }
 
   function resultCard(itemValue) {
@@ -1464,7 +1753,10 @@ function boot() {
           element(
             "p",
             "observed-text",
-            displayText(dateEvidence.observed_quote, "No supporting quote returned."),
+            displayText(
+              dateEvidence.observed_quote,
+              "No supporting quote returned.",
+            ),
           ),
           element(
             "p",
@@ -1493,7 +1785,11 @@ function boot() {
         const card = element("div", "party");
         append(
           card,
-          element("strong", "", displayText(party.observed_name, "Unnamed party")),
+          element(
+            "strong",
+            "",
+            displayText(party.observed_name, "Unnamed party"),
+          ),
           element(
             "p",
             "muted",
@@ -1583,16 +1879,20 @@ function boot() {
       for (const definitionValue of definitions) {
         const definition = record(definitionValue);
         const definitionBasis = textBasisPresentation(
-          definition.definition_basis ?? clause.text_basis ?? agreement.text_basis,
+          definition.definition_basis ?? clause.text_basis ??
+            agreement.text_basis,
         );
         const definitionBox = element(
           "p",
           "observed-text",
-          `${definitionBasis.label} defined term “${displayText(definition.term)}”: ${
-            boundedText(definition.definition, 8_000)
-          }`,
+          `${definitionBasis.label} defined term “${
+            displayText(definition.term)
+          }”: ${boundedText(definition.definition, 8_000)}`,
         );
-        if (Number.isSafeInteger(definition.char_start) && Number.isSafeInteger(definition.char_end)) {
+        if (
+          Number.isSafeInteger(definition.char_start) &&
+          Number.isSafeInteger(definition.char_end)
+        ) {
           definitionBox.append(
             element(
               "span",
@@ -1648,7 +1948,9 @@ function boot() {
             targetId
               ? `Clause ${displayText(reference.target_sequence)} · ${
                 displayText(reference.target_heading, "Untitled clause")
-              } · ${referenceResolutionLabel(reference.target_resolution_status)}`
+              } · ${
+                referenceResolutionLabel(reference.target_resolution_status)
+              }`
               : referenceResolutionLabel(reference.target_resolution_status),
           ),
         );
@@ -1825,6 +2127,7 @@ function boot() {
   );
   clearComparisonButton.addEventListener("click", clearComparison);
   openComparisonButton.addEventListener("click", compareSelected);
+  exportComparisonButton.addEventListener("click", exportComparison);
   detailDialog.addEventListener("click", (event) => {
     if (event.target === detailDialog) closeDialog(detailDialog);
   });
@@ -1868,6 +2171,7 @@ function boot() {
   window.addEventListener("pagehide", () => {
     state.token = null;
     state.comparisonSelection.clear();
+    state.comparisonEvidence = [];
     tokenInput.value = "";
   });
   window.addEventListener("pageshow", (event) => {

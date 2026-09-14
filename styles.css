@@ -133,6 +133,7 @@ dialog::backdrop { background: rgb(2 7 5 / 78%); backdrop-filter: blur(4px); }
 .dialog-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 18px; border-bottom: 1px solid var(--line); background: rgb(13 23 19 / 96%); }
 .dialog-body { padding: 20px; }
 .dialog-subtitle { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.dialog-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .comparison-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(280px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 8px; }
 .comparison-grid:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .comparison-column { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
@@ -148,6 +149,7 @@ dialog::backdrop { background: rgb(2 7 5 / 78%); backdrop-filter: blur(4px); }
 .context-clause { margin-top: 10px; padding: 10px; border: 1px solid #293b32; border-radius: 8px; background: #0a1410; }
 .context-clause p { margin-bottom: 0; }
 .comparison-note { margin: 0 0 14px; color: var(--muted); }
+.comparison-scope { margin: -4px 0 14px; padding: 10px 12px; border-left: 2px solid var(--gold); color: #d0c8b3; background: rgb(52 41 20 / 30%); font-size: 12px; }
 .icon-button { width: 33px; height: 33px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; }
 .detail-heading { margin: 6px 0 10px; font: 500 30px/1.12 ui-serif, Georgia, serif; }
 .detail-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
@@ -186,6 +188,8 @@ noscript { display: block; padding: 20px; color: var(--danger); text-align: cent
   .section-heading, .result-top { align-items: start; flex-direction: column; }
   .comparison-toolbar { position: static; align-items: stretch; flex-direction: column; }
   .comparison-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .dialog-header { align-items: start; }
+  .dialog-actions { align-items: stretch; flex-direction: column-reverse; }
 }
 
 @media (prefers-reduced-motion: reduce) {
