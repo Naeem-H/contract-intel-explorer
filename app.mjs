@@ -359,6 +359,7 @@ export function comparisonEvidence(payload, expectedClauseId) {
     agreementDateEvidence: array(data.agreement_date_evidence)
       .slice(0, 20)
       .map(record),
+    anchorContext: record(data.anchor_context),
     truncated: data.truncated === true,
   };
 }
@@ -420,6 +421,190 @@ function citationClause(value) {
         ? clause.generated_summary
         : null,
       themes: array(clause.themes).slice(0, 50).map(record),
+    },
+  };
+}
+
+function citationInteger(value) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function citationAnchorContext(value) {
+  const context = record(value);
+  if (context.api_version !== "anchor-clause-context-v1") return null;
+  const coverage = record(context.coverage);
+  const limits = record(context.limits);
+  return {
+    schema: "esheria.anchor-clause-context.v1",
+    anchor_clause_id: typeof context.anchor_clause_id === "string" &&
+        UUID_PATTERN.test(context.anchor_clause_id)
+      ? context.anchor_clause_id
+      : null,
+    definition_candidates: array(context.definition_candidates).slice(0, 20)
+      .map((value) => {
+        const definition = record(value);
+        const observed = citationText(definition.definition, 4_000);
+        return {
+          term: typeof definition.term === "string" ? definition.term : null,
+          definition: observed.text,
+          definition_truncated: observed.truncated ||
+            definition.definition_truncated === true,
+          definition_sha256: typeof definition.definition_sha256 === "string"
+            ? definition.definition_sha256
+            : null,
+          definition_basis: typeof definition.definition_basis === "string"
+            ? definition.definition_basis
+            : null,
+          usage_match_basis: typeof definition.usage_match_basis === "string"
+            ? definition.usage_match_basis
+            : null,
+          usage_match_method: typeof definition.usage_match_method === "string"
+            ? definition.usage_match_method
+            : null,
+          ambiguous_definition_occurrences:
+            definition.ambiguous_definition_occurrences === true,
+          defining_clause_id:
+            typeof definition.defining_clause_id === "string" &&
+              UUID_PATTERN.test(definition.defining_clause_id)
+              ? definition.defining_clause_id
+              : null,
+          defining_clause_sequence: citationInteger(
+            definition.defining_clause_sequence,
+          ),
+          defining_clause_heading:
+            typeof definition.defining_clause_heading === "string"
+              ? definition.defining_clause_heading
+              : null,
+          defining_clause_sha256:
+            typeof definition.defining_clause_sha256 === "string"
+              ? definition.defining_clause_sha256
+              : null,
+          char_start: citationInteger(definition.char_start),
+          char_end: citationInteger(definition.char_end),
+        };
+      }),
+    resolved_reference_targets: array(context.resolved_reference_targets)
+      .slice(0, 20).map((value) => {
+        const reference = record(value);
+        const target = citationText(reference.target_text, 8_000);
+        return {
+          observed_reference: typeof reference.observed_reference === "string"
+            ? reference.observed_reference
+            : null,
+          observed_evidence_location: isRecord(
+              reference.observed_evidence_location,
+            )
+            ? reference.observed_evidence_location
+            : null,
+          observation_basis: typeof reference.observation_basis === "string"
+            ? reference.observation_basis
+            : null,
+          observation_confidence: Number.isFinite(
+              Number(reference.observation_confidence),
+            )
+            ? Number(reference.observation_confidence)
+            : null,
+          target_clause_id: typeof reference.target_clause_id === "string" &&
+              UUID_PATTERN.test(reference.target_clause_id)
+            ? reference.target_clause_id
+            : null,
+          target_sequence: citationInteger(reference.target_sequence),
+          target_heading: typeof reference.target_heading === "string"
+            ? reference.target_heading
+            : null,
+          target_text: target.text,
+          target_text_truncated: target.truncated ||
+            reference.target_text_truncated === true,
+          target_text_sha256: typeof reference.target_text_sha256 === "string"
+            ? reference.target_text_sha256
+            : null,
+          target_location: {
+            page_start: citationInteger(reference.target_page_start),
+            page_end: citationInteger(reference.target_page_end),
+            char_start: citationInteger(reference.target_char_start),
+            char_end: citationInteger(reference.target_char_end),
+            evidence_location: isRecord(reference.target_evidence_location)
+              ? reference.target_evidence_location
+              : null,
+          },
+          target_resolution_status:
+            typeof reference.target_resolution_status === "string"
+              ? reference.target_resolution_status
+              : null,
+          target_resolution_basis:
+            typeof reference.target_resolution_basis === "string"
+              ? reference.target_resolution_basis
+              : null,
+          target_resolution_method:
+            typeof reference.target_resolution_method === "string"
+              ? reference.target_resolution_method
+              : null,
+          target_resolution_confidence: Number.isFinite(
+              Number(reference.target_resolution_confidence),
+            )
+            ? Number(reference.target_resolution_confidence)
+            : null,
+        };
+      }),
+    unresolved_references: array(context.unresolved_references).slice(0, 20)
+      .map((value) => {
+        const reference = record(value);
+        return {
+          observed_reference: typeof reference.observed_reference === "string"
+            ? reference.observed_reference
+            : null,
+          observed_evidence_location: isRecord(
+              reference.observed_evidence_location,
+            )
+            ? reference.observed_evidence_location
+            : null,
+          observation_basis: typeof reference.observation_basis === "string"
+            ? reference.observation_basis
+            : null,
+          target_resolution_status:
+            typeof reference.target_resolution_status === "string"
+              ? reference.target_resolution_status
+              : null,
+          target_resolution_basis:
+            typeof reference.target_resolution_basis === "string"
+              ? reference.target_resolution_basis
+              : null,
+          target_resolution_method:
+            typeof reference.target_resolution_method === "string"
+              ? reference.target_resolution_method
+              : null,
+        };
+      }),
+    coverage: {
+      definition_candidates_total: citationInteger(
+        coverage.definition_candidates_total,
+      ),
+      resolved_reference_targets_total: citationInteger(
+        coverage.resolved_reference_targets_total,
+      ),
+      unresolved_references_total: citationInteger(
+        coverage.unresolved_references_total,
+      ),
+      unresolved_statuses: isRecord(coverage.unresolved_statuses)
+        ? coverage.unresolved_statuses
+        : {},
+    },
+    limits: {
+      definition_candidates: citationInteger(limits.definition_candidates),
+      definition_characters: citationInteger(limits.definition_characters),
+      reference_targets: citationInteger(limits.reference_targets),
+      target_text_characters: citationInteger(limits.target_text_characters),
+      definition_usage_match_is_generated:
+        limits.definition_usage_match_is_generated === true,
+      definition_usage_match_is_legal_interpretation:
+        limits.definition_usage_match_is_legal_interpretation === true,
+      reference_resolution_is_legal_interpretation:
+        limits.reference_resolution_is_legal_interpretation === true,
+      unresolved_references_are_preserved:
+        limits.unresolved_references_are_preserved === true,
+      same_current_extraction_only:
+        limits.same_current_extraction_only === true,
     },
   };
 }
@@ -552,11 +737,12 @@ export function buildCitationManifest({
         window: record(evidence.clauseWindow),
         neighboring_clauses: context.map(citationClause),
       },
+      connected_context: citationAnchorContext(evidence.anchorContext),
     };
   });
 
   return {
-    schema: "esheria.contract-citations.v1",
+    schema: "esheria.contract-citations.v2",
     generated_at: timestamp.toISOString(),
     retrieval_scope: {
       query: normalizedQuery || null,
@@ -567,6 +753,7 @@ export function buildCitationManifest({
     limitations: [
       "This export contains only the selected published evidence and bounded context; it is not a representative market sample.",
       "Observed wording is evidence. Generated classifications, themes, summaries and date types are interpretations, not source facts.",
+      "Definition-use matching and target resolution are generated navigation aids; unresolved references are preserved rather than guessed.",
       "Verify the recorded source, completeness, amendments and governing law before legal or commercial reliance.",
     ],
     citations,
