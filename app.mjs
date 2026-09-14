@@ -962,6 +962,7 @@ function boot() {
     const failureGroups = array(failures.groups);
     const sourceBreakdown = array(root.sources);
     const evidenceQuality = record(root.evidence_quality);
+    const partySummary = record(root.party_summary);
 
     summaryCards.replaceChildren(
       metric(
@@ -1009,6 +1010,20 @@ function boot() {
         count(corpus.useful_distinct_agreements),
       ],
       ["Current extractions", count(corpus.current_extractions)],
+      [
+        "Searchable party observations",
+        `${count(partySummary.searchable_party_observations)} across ${
+          count(partySummary.searchable_agreements)
+        } agreements`,
+      ],
+      [
+        "Distinct observed party names",
+        count(partySummary.distinct_observed_names),
+      ],
+      [
+        "Low-specificity party names",
+        count(partySummary.low_specificity_name_observations),
+      ],
       [
         "Average extraction confidence",
         displayText(quality.average_current_extraction_confidence),
@@ -1082,6 +1097,7 @@ function boot() {
       disclosure.coverage,
       disclosure.observed_vs_generated,
       disclosure.legal_reliance,
+      partySummary.measurement,
     ].filter((value) => typeof value === "string");
     corpusDisclosure.replaceChildren(
       ...disclosureLines.map((line) => element("p", "", line)),
