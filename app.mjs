@@ -18,6 +18,7 @@ const REQUEST_TIMEOUT_MS = 12_000;
 export const COMPARISON_MIN_ITEMS = 2;
 export const COMPARISON_MAX_ITEMS = 4;
 export const COMPARISON_CONTEXT_CLAUSES = 5;
+export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
 
 export class ApiError extends Error {
@@ -361,6 +362,42 @@ export function comparisonEvidence(payload, expectedClauseId) {
       .map(record),
     anchorContext: record(data.anchor_context),
     truncated: data.truncated === true,
+  };
+}
+
+export function comparisonConnectedContext(value) {
+  const context = record(value);
+  if (context.api_version !== "anchor-clause-context-v1") return null;
+  const definitionCandidates = array(context.definition_candidates).slice(
+    0,
+    COMPARISON_CONNECTED_CONTEXT_ITEMS,
+  ).map(record);
+  const resolvedReferenceTargets = array(context.resolved_reference_targets)
+    .slice(0, COMPARISON_CONNECTED_CONTEXT_ITEMS).map(record);
+  const unresolvedReferences = array(context.unresolved_references).slice(
+    0,
+    COMPARISON_CONNECTED_CONTEXT_ITEMS,
+  ).map(record);
+  const coverage = record(context.coverage);
+  const totals = {
+    definitionCandidates: citationInteger(
+      coverage.definition_candidates_total,
+    ) ?? definitionCandidates.length,
+    resolvedReferenceTargets: citationInteger(
+      coverage.resolved_reference_targets_total,
+    ) ?? resolvedReferenceTargets.length,
+    unresolvedReferences: citationInteger(
+      coverage.unresolved_references_total,
+    ) ?? unresolvedReferences.length,
+  };
+  return {
+    definitionCandidates,
+    resolvedReferenceTargets,
+    unresolvedReferences,
+    totals,
+    previewLimited: totals.definitionCandidates > definitionCandidates.length ||
+      totals.resolvedReferenceTargets > resolvedReferenceTargets.length ||
+      totals.unresolvedReferences > unresolvedReferences.length,
   };
 }
 
@@ -1582,6 +1619,153 @@ function boot() {
           : null,
       );
       column.append(generated);
+    }
+
+    const connectedContext = comparisonConnectedContext(evidence.anchorContext);
+    if (connectedContext) {
+      const connected = element(
+        "details",
+        "comparison-context connected-comparison-context",
+      );
+      connected.append(
+        element(
+          "summary",
+          "",
+          `Connected context · ${
+            count(connectedContext.totals.definitionCandidates)
+          } definitions · ${
+            count(connectedContext.totals.resolvedReferenceTargets)
+          } resolved · ${
+            count(connectedContext.totals.unresolvedReferences)
+          } unresolved`,
+        ),
+        element(
+          "p",
+          "muted",
+          "Observed definitions and target wording are evidence. Term-use matching and target resolution are generated navigation aids, not legal interpretations.",
+        ),
+      );
+      if (connectedContext.definitionCandidates.length) {
+        connected.append(element("h4", "", "Definitions used by this clause"));
+        for (const definition of connectedContext.definitionCandidates) {
+          const card = element("article", "context-clause");
+          append(
+            card,
+            element("span", "badge observed", "Observed definition"),
+            element("span", "badge generated", "Generated term-use match"),
+            element(
+              "h4",
+              "",
+              `“${displayText(definition.term, "Unnamed term")}” · clause ${
+                displayText(definition.defining_clause_sequence, "?")
+              }`,
+            ),
+            element(
+              "p",
+              "observed-text",
+              boundedText(definition.definition, 4_000),
+            ),
+            element(
+              "p",
+              "muted",
+              `Definition SHA-256 ${
+                displayText(definition.definition_sha256, "not available")
+              }${
+                definition.definition_truncated
+                  ? " · definition text truncated by the bounded API"
+                  : ""
+              }${
+                definition.ambiguous_definition_occurrences
+                  ? " · multiple definition occurrences"
+                  : ""
+              }`,
+            ),
+          );
+          connected.append(card);
+        }
+      }
+      if (connectedContext.resolvedReferenceTargets.length) {
+        connected.append(element("h4", "", "Referenced provisions"));
+        for (const reference of connectedContext.resolvedReferenceTargets) {
+          const card = element("article", "context-clause");
+          append(
+            card,
+            element(
+              "span",
+              reference.target_resolution_basis === "generated"
+                ? "badge generated"
+                : "badge observed",
+              referenceResolutionProvenance(reference.target_resolution_basis),
+            ),
+            element(
+              "h4",
+              "",
+              `${
+                displayText(reference.observed_reference, "Reference")
+              } → clause ${displayText(reference.target_sequence, "?")}`,
+            ),
+            element(
+              "p",
+              "muted",
+              displayText(
+                reference.target_heading,
+                "Untitled referenced clause",
+              ),
+            ),
+            element(
+              "p",
+              "observed-text",
+              boundedText(reference.target_text, 8_000),
+            ),
+            element(
+              "p",
+              "muted",
+              `Target text SHA-256 ${
+                displayText(reference.target_text_sha256, "not available")
+              }${
+                reference.target_text_truncated
+                  ? " · target text truncated by the bounded API"
+                  : ""
+              }`,
+            ),
+          );
+          connected.append(card);
+        }
+      }
+      if (connectedContext.unresolvedReferences.length) {
+        connected.append(element("h4", "", "References needing inspection"));
+        for (const reference of connectedContext.unresolvedReferences) {
+          const card = element("article", "context-clause");
+          append(
+            card,
+            element("span", "badge generated", "Generated resolution status"),
+            element(
+              "h4",
+              "",
+              displayText(
+                reference.observed_reference,
+                "Reference unavailable",
+              ),
+            ),
+            element(
+              "p",
+              "muted",
+              referenceResolutionLabel(reference.target_resolution_status),
+            ),
+          );
+          connected.append(card);
+        }
+      }
+      connected.append(
+        element(
+          "p",
+          "muted",
+          connectedContext.previewLimited
+            ? "Comparison shows the first five items in each category. Open the agreement or export citation JSON for the larger bounded packet."
+            : "The complete connected-context packet returned for this clause is shown above.",
+        ),
+      );
+      column.append(connected);
     }
 
     const context = element("details", "comparison-context");
