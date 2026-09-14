@@ -102,6 +102,9 @@ input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rg
 .result-card:has(.compare-input:checked) { border-color: #579273; box-shadow: 0 0 0 2px rgb(124 224 173 / 10%); }
 .result-top { display: flex; justify-content: space-between; gap: 15px; }
 .result-card h3 { margin: 7px 0 5px; font: 500 20px/1.25 ui-serif, Georgia, serif; }
+.party-result-title { margin: 11px 0 5px; color: var(--ink); font: 500 17px/1.3 ui-serif, Georgia, serif; }
+.party-list { margin: 11px 0; padding: 10px 12px; border-left: 2px solid var(--gold); color: #d8ceb5; background: rgb(52 41 20 / 35%); }
+.party-list p { margin: 4px 0; }
 .meta { display: flex; flex-wrap: wrap; gap: 5px 13px; color: var(--muted); font-size: 12px; }
 .badge { display: inline-flex; width: max-content; padding: 3px 7px; border-radius: 999px; color: #9cebc0; background: var(--green-dark); font-size: 10px; font-weight: 760; letter-spacing: .06em; text-transform: uppercase; }
 .badge.basis-reviewed { color: #b9e3f7; background: #173442; }

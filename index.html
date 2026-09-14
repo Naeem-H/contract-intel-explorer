@@ -101,6 +101,36 @@
         <p id="guide-status" class="muted guide-status" role="status" aria-live="polite">Choose a starter or enter your own search below. Document and source filters still apply.</p>
       </section>
 
+      <section class="search-panel" aria-labelledby="party-search-title">
+        <p class="eyebrow">Vendor and counterparty trail</p>
+        <h2 id="party-search-title">Find published agreements by party</h2>
+        <p class="search-note">Search exact observed party-name text. Results are document records, not resolved legal entities, award counts, spend, market share, or a complete portfolio.</p>
+        <form id="party-search-form" class="search-form">
+          <label class="wide" for="party-query">Party name</label>
+          <label for="party-kind">Document class</label>
+          <label for="party-source">Source slug</label>
+          <span aria-hidden="true"></span>
+          <input id="party-query" class="wide" name="q" type="search" minlength="2" maxlength="200" required placeholder="e.g. G4S Limited">
+          <select id="party-kind" name="kind">
+            <option value="">All classes</option>
+            <option value="contract">Contracts</option>
+            <option value="amendment">Amendments</option>
+            <option value="notice">Notices</option>
+            <option value="template">Templates</option>
+            <option value="metadata">Metadata</option>
+            <option value="other">Other</option>
+          </select>
+          <input id="party-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="uk_find_a_tender">
+          <button id="party-search-submit" class="button primary" type="submit">Find agreements</button>
+        </form>
+        <p id="party-search-status" class="muted" role="status" aria-live="polite">Enter an observed buyer, supplier, filing entity, or stated party name.</p>
+        <div id="party-results" class="results"></div>
+        <div class="pager">
+          <button id="party-previous" class="button secondary" type="button" disabled>Previous</button>
+          <button id="party-next" class="button secondary" type="button" disabled>Next</button>
+        </div>
+      </section>
+
       <section class="search-panel" aria-labelledby="search-title">
         <h2 id="search-title">Search published clause evidence</h2>
         <form id="search-form" class="search-form">

@@ -55,7 +55,7 @@ function isAllowedApiTarget(url) {
     pathname === "/api/summary" ||
     pathname === "/api/metrics"
   ) return url.search === "";
-  if (pathname === "/api/search") {
+  if (pathname === "/api/search" || pathname === "/api/parties") {
     const allowed = new Set(["q", "limit", "offset", "kind", "source"]);
     return [...url.searchParams.keys()].every((key) => allowed.has(key));
   }
@@ -133,6 +133,10 @@ export function buildSearchPath({
   return `/api/search?${params.toString()}`;
 }
 
+export function buildPartySearchPath(input) {
+  return buildSearchPath(input).replace(/^\/api\/search\?/, "/api/parties?");
+}
+
 export function buildAgreementPath(
   agreementId,
   clauseLimit = 40,
@@ -203,6 +207,19 @@ export function textBasisPresentation(value) {
     label: "Unknown text basis",
     className: "basis-unknown",
   };
+}
+
+export function partyCapturePresentation(value) {
+  if (value === "source_structured_metadata") {
+    return "Observed structured source party";
+  }
+  if (value === "source_filing_metadata") {
+    return "Observed filing entity";
+  }
+  if (value === "generated_extraction_with_observed_quote") {
+    return "Generated extraction from observed wording";
+  }
+  return "Party capture method unavailable";
 }
 
 export function formatEvidenceLocation(value) {
@@ -758,6 +775,13 @@ function boot() {
     comparing: false,
     comparisonSelection: new Map(),
     comparisonEvidence: [],
+    partyQuery: "",
+    partyKind: "",
+    partySource: "",
+    partyOffset: 0,
+    partyLimit: 20,
+    partyHasMore: false,
+    partySearching: false,
   };
 
   const authView = byId("auth-view");
@@ -774,6 +798,15 @@ function boot() {
   const summaryFreshness = byId("summary-freshness");
   const corpusDisclosure = byId("corpus-disclosure");
   const guideStatus = byId("guide-status");
+  const partySearchForm = byId("party-search-form");
+  const partyQueryInput = byId("party-query");
+  const partyKindInput = byId("party-kind");
+  const partySourceInput = byId("party-source");
+  const partySearchButton = byId("party-search-submit");
+  const partySearchStatus = byId("party-search-status");
+  const partyResults = byId("party-results");
+  const partyPrevious = byId("party-previous");
+  const partyNext = byId("party-next");
   const searchForm = byId("search-form");
   const queryInput = byId("query");
   const kindInput = byId("kind");
@@ -822,6 +855,7 @@ function boot() {
   function signOut(message = "The token was cleared from this tab.") {
     state.token = null;
     tokenForm.reset();
+    partySearchForm.reset();
     searchForm.reset();
     summaryCards.replaceChildren();
     kindBreakdown.replaceChildren();
@@ -830,10 +864,21 @@ function boot() {
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
     state.comparing = false;
+    state.partyQuery = "";
+    state.partyKind = "";
+    state.partySource = "";
+    state.partyOffset = 0;
+    state.partyHasMore = false;
+    state.partySearching = false;
+    partyPrevious.disabled = true;
+    partyNext.disabled = true;
+    partySearchStatus.textContent =
+      "Enter an observed buyer, supplier, filing entity, or stated party name.";
     syncGuideSelection("");
     results.replaceChildren(
       element("p", "empty", "Sign in to search published evidence."),
     );
+    partyResults.replaceChildren();
     detailBody.replaceChildren();
     comparisonBody.replaceChildren();
     exportStatus.textContent = "";
@@ -1457,6 +1502,182 @@ function boot() {
     }
   }
 
+  function partyResultCard(itemValue) {
+    const item = record(itemValue);
+    const card = element("article", "result-card");
+    const top = element("div", "result-top");
+    const headingGroup = element("div");
+    append(
+      headingGroup,
+      element(
+        "span",
+        "badge basis-observed",
+        "Observed party-name match",
+      ),
+      element(
+        "h3",
+        "",
+        displayText(item.observed_party_name, "Unnamed party"),
+      ),
+      element(
+        "div",
+        "meta",
+        `${displayText(item.observed_party_role, "role not stated")} · ${
+          partyCapturePresentation(item.party_capture_method)
+        } · entity status ${
+          displayText(item.party_resolution_status, "unresolved")
+        }`,
+      ),
+    );
+    const score = Number(item.match_score);
+    append(
+      top,
+      headingGroup,
+      Number.isFinite(score)
+        ? element("span", "muted", `${displayText(item.match_kind)} match`)
+        : null,
+    );
+
+    const title = element(
+      "h4",
+      "party-result-title",
+      displayText(item.observed_title, "Untitled agreement"),
+    );
+    const metadata = element("div", "meta");
+    append(
+      metadata,
+      element("span", "", displayText(item.source_name, "Unknown source")),
+      element("span", "", displayText(item.document_kind, "unclassified")),
+      item.observed_published_at
+        ? element("span", "", date(item.observed_published_at))
+        : null,
+      item.effective_date
+        ? element(
+          "span",
+          "",
+          `${
+            item.effective_date_basis === "generated" ? "Generated " : ""
+          }effective date ${displayText(item.effective_date)}`,
+        )
+        : null,
+      item.execution_date
+        ? element(
+          "span",
+          "",
+          `${
+            item.execution_date_basis === "generated" ? "Generated " : ""
+          }execution date ${displayText(item.execution_date)}`,
+        )
+        : null,
+      element("span", "", `${count(item.clause_count)} clauses`),
+    );
+
+    const parties = array(item.agreement_parties).slice(0, 10);
+    const partyList = element("div", "party-list");
+    partyList.append(
+      element(
+        "strong",
+        "",
+        `Recorded parties (${count(item.agreement_party_count)})`,
+      ),
+    );
+    for (const partyValue of parties) {
+      const party = record(partyValue);
+      partyList.append(
+        element(
+          "p",
+          "",
+          `${displayText(party.observed_name, "Unnamed party")} · ${
+            displayText(party.observed_role, "role not stated")
+          } · entity ${displayText(party.resolution_status, "unresolved")}`,
+        ),
+      );
+    }
+    if (item.agreement_parties_truncated === true) {
+      partyList.append(
+        element("p", "muted", "Additional recorded party names are omitted."),
+      );
+    }
+
+    const partyEvidence = typeof item.party_evidence_quote === "string" &&
+        item.party_evidence_quote
+      ? append(
+        element("blockquote", "observed-text"),
+        element("strong", "", "Observed party evidence"),
+        element("p", "", boundedText(item.party_evidence_quote, 500)),
+      )
+      : null;
+
+    const actions = element("div", "result-actions");
+    const agreementId = typeof item.agreement_id === "string"
+      ? item.agreement_id
+      : "";
+    if (UUID_PATTERN.test(agreementId)) {
+      const inspect = element(
+        "button",
+        "text-button",
+        "Inspect agreement evidence →",
+      );
+      inspect.type = "button";
+      inspect.addEventListener("click", () => loadAgreement(agreementId));
+      actions.append(inspect);
+    }
+    append(actions, sourceLink(item.source_url));
+    append(card, top, title, metadata, partyEvidence, partyList, actions);
+    return card;
+  }
+
+  function renderPartySearch(payload) {
+    const root = record(payload);
+    const rows = array(root.results).slice(0, state.partyLimit);
+    const pagination = record(root.pagination);
+    state.partyHasMore = pagination.has_more === true;
+    partyPrevious.disabled = state.partyOffset === 0;
+    partyNext.disabled = !state.partyHasMore;
+    partyResults.replaceChildren(
+      ...(rows.length ? rows.map(partyResultCard) : [
+        element(
+          "p",
+          "empty",
+          "No published agreement matched that observed party name.",
+        ),
+      ]),
+    );
+    const start = rows.length ? state.partyOffset + 1 : 0;
+    const end = state.partyOffset + rows.length;
+    const total = Number(pagination.total_matching_agreements);
+    partySearchStatus.textContent = rows.length
+      ? `Showing agreement records ${start}–${end}${
+        Number.isSafeInteger(total) ? ` of ${total}` : ""
+      }. Names are observations, not resolved entity identities or a complete portfolio.`
+      : "No result returned. Party extraction and corpus coverage are incomplete.";
+  }
+
+  async function performPartySearch() {
+    if (!state.token || state.partySearching) return;
+    state.partySearching = true;
+    partySearchButton.disabled = true;
+    partyPrevious.disabled = true;
+    partyNext.disabled = true;
+    partySearchStatus.textContent = "Searching published party observations…";
+    try {
+      const path = buildPartySearchPath({
+        query: state.partyQuery,
+        kind: state.partyKind,
+        source: state.partySource,
+        limit: state.partyLimit,
+        offset: state.partyOffset,
+      });
+      const payload = await requestJson(path, state.token);
+      renderPartySearch(payload);
+    } catch (error) {
+      handleFailure(error, partySearchStatus);
+    } finally {
+      state.partySearching = false;
+      partySearchButton.disabled = false;
+    }
+  }
+
   function resultCard(itemValue) {
     const item = record(itemValue);
     const card = element("article", "result-card");
@@ -1530,7 +1751,7 @@ function boot() {
       );
       actions.append(inspect);
     }
-    actions.append(sourceLink(item.source_url));
+    append(actions, sourceLink(item.source_url));
     append(
       card,
       top,
@@ -2133,6 +2354,24 @@ function boot() {
   });
   comparisonDialog.addEventListener("click", (event) => {
     if (event.target === comparisonDialog) closeDialog(comparisonDialog);
+  });
+
+  partySearchForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.partyQuery = partyQueryInput.value.trim();
+    state.partyKind = partyKindInput.value;
+    state.partySource = partySourceInput.value.trim().toLowerCase();
+    state.partyOffset = 0;
+    performPartySearch();
+  });
+  partyPrevious.addEventListener("click", () => {
+    state.partyOffset = Math.max(0, state.partyOffset - state.partyLimit);
+    performPartySearch();
+  });
+  partyNext.addEventListener("click", () => {
+    if (!state.partyHasMore) return;
+    state.partyOffset = Math.min(1_000, state.partyOffset + state.partyLimit);
+    performPartySearch();
   });
 
   searchForm.addEventListener("submit", (event) => {
