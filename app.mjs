@@ -1863,6 +1863,10 @@ function boot() {
           }`,
         ),
       );
+      card.append(top);
+      if (typeof theme.quality_warning === "string") {
+        card.append(element("p", "status warning", theme.quality_warning));
+      }
       const examples = element("div", "dossier-examples");
       for (const exampleValue of array(theme.examples).slice(0, 3)) {
         const example = record(exampleValue);
@@ -1920,7 +1924,7 @@ function boot() {
         exampleCard.append(actions);
         examples.append(exampleCard);
       }
-      card.append(top, examples);
+      card.append(examples);
       partyDossierThemes.append(card);
     }
     partyDossierStatus.textContent = scope.low_specificity_warning === true
