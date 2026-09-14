@@ -158,6 +158,9 @@ dialog::backdrop { background: rgb(2 7 5 / 78%); backdrop-filter: blur(4px); }
 .connected-comparison-context > h4 { margin-top: 14px; color: var(--gold); }
 .context-clause { margin-top: 10px; padding: 10px; border: 1px solid #293b32; border-radius: 8px; background: #0a1410; }
 .context-clause p { margin-bottom: 0; }
+.position-signal > h4 { margin-top: 8px; }
+.position-support { margin-top: 10px; padding-top: 9px; border-top: 1px solid #2f443a; }
+.position-support .observed-text { margin: 8px 0; }
 .comparison-note { margin: 0 0 14px; color: var(--muted); }
 .comparison-scope { margin: -4px 0 14px; padding: 10px 12px; border-left: 2px solid var(--gold); color: #d0c8b3; background: rgb(52 41 20 / 30%); font-size: 12px; }
 .icon-button { width: 33px; height: 33px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; }

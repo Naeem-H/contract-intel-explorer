@@ -19,6 +19,7 @@ export const COMPARISON_MIN_ITEMS = 2;
 export const COMPARISON_MAX_ITEMS = 4;
 export const COMPARISON_CONTEXT_CLAUSES = 5;
 export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
+export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
 
 export class ApiError extends Error {
@@ -361,6 +362,7 @@ export function comparisonEvidence(payload, expectedClauseId) {
       .slice(0, 20)
       .map(record),
     anchorContext: record(data.anchor_context),
+    commercialPosition: record(data.commercial_position),
     truncated: data.truncated === true,
   };
 }
@@ -398,6 +400,33 @@ export function comparisonConnectedContext(value) {
     previewLimited: totals.definitionCandidates > definitionCandidates.length ||
       totals.resolvedReferenceTargets > resolvedReferenceTargets.length ||
       totals.unresolvedReferences > unresolvedReferences.length,
+  };
+}
+
+export function commercialPositionEvidence(value) {
+  const position = record(value);
+  if (position.api_version !== "liability-position-signals-v1") return null;
+  const signals = array(position.signals).slice(
+    0,
+    COMMERCIAL_POSITION_SIGNAL_MAX,
+  ).map(record);
+  const coverage = record(position.coverage);
+  return {
+    applicable: position.applicable === true,
+    reason: typeof position.reason === "string" ? position.reason : null,
+    detectorVersion: typeof position.detector_version === "string"
+      ? position.detector_version
+      : null,
+    scope: typeof position.scope === "string" ? position.scope : null,
+    eligibility: record(position.eligibility),
+    signals,
+    matchedSignalCount: citationInteger(coverage.matched_signal_count) ??
+      signals.length,
+    supportedRuleCount: citationInteger(coverage.supported_rule_count),
+    limits: record(position.limits),
+    limitations: array(position.limitations).filter((item) =>
+      typeof item === "string"
+    ).slice(0, 10),
   };
 }
 
@@ -463,6 +492,7 @@ function citationClause(value) {
 }
 
 function citationInteger(value) {
+  if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }
@@ -646,6 +676,122 @@ function citationAnchorContext(value) {
   };
 }
 
+function citationCommercialPosition(value) {
+  const position = commercialPositionEvidence(value);
+  if (!position) return null;
+  const allowedAttributeKeys = [
+    "currency_amount_present",
+    "percentage_present",
+    "fees_or_charges_basis_present",
+    "greater_or_lesser_formula_present",
+    "facially_bilateral_language_present",
+    "indirect",
+    "consequential",
+    "special",
+    "incidental",
+    "exemplary",
+    "punitive",
+    "death_or_personal_injury",
+    "fraud",
+    "wilful_or_willful_misconduct",
+  ];
+  return {
+    schema: "esheria.liability-position-signals.v1",
+    applicable: position.applicable,
+    reason: position.reason,
+    detector_version: position.detectorVersion,
+    scope: position.scope,
+    eligibility: {
+      theme: typeof position.eligibility.theme === "string"
+        ? position.eligibility.theme
+        : null,
+      theme_basis: typeof position.eligibility.theme_basis === "string"
+        ? position.eligibility.theme_basis
+        : null,
+      taxonomy_version:
+        typeof position.eligibility.taxonomy_version === "string"
+          ? position.eligibility.taxonomy_version
+          : null,
+      generated_by: typeof position.eligibility.generated_by === "string"
+        ? position.eligibility.generated_by
+        : null,
+    },
+    signals: position.signals.map((value) => {
+      const signal = record(value);
+      const attributes = record(signal.generated_attributes);
+      const support = record(signal.observed_support);
+      const supportText = citationText(support.text, 2_000);
+      const matchedText = citationText(support.matched_text, 600);
+      return {
+        signal_key: typeof signal.signal_key === "string"
+          ? signal.signal_key
+          : null,
+        label: typeof signal.label === "string" ? signal.label : null,
+        signal_basis: typeof signal.signal_basis === "string"
+          ? signal.signal_basis
+          : null,
+        confidence: Number.isFinite(Number(signal.confidence))
+          ? Number(signal.confidence)
+          : null,
+        detector_version: typeof signal.detector_version === "string"
+          ? signal.detector_version
+          : null,
+        rule_id: typeof signal.rule_id === "string" ? signal.rule_id : null,
+        generated_attributes: Object.fromEntries(
+          allowedAttributeKeys.filter((key) =>
+            typeof attributes[key] === "boolean"
+          ).map((key) => [key, attributes[key]]),
+        ),
+        observed_support: {
+          text: supportText.text,
+          text_truncated: supportText.truncated,
+          sha256: typeof support.sha256 === "string" ? support.sha256 : null,
+          text_basis: typeof support.text_basis === "string"
+            ? support.text_basis
+            : null,
+          clause_char_start: citationInteger(support.clause_char_start),
+          clause_char_end: citationInteger(support.clause_char_end),
+          document_char_start: citationInteger(support.document_char_start),
+          document_char_end: citationInteger(support.document_char_end),
+          matched_text: matchedText.text,
+          matched_text_truncated: matchedText.truncated,
+          matched_text_sha256: typeof support.matched_text_sha256 === "string"
+            ? support.matched_text_sha256
+            : null,
+          matched_clause_char_start: citationInteger(
+            support.matched_clause_char_start,
+          ),
+          matched_clause_char_end: citationInteger(
+            support.matched_clause_char_end,
+          ),
+          bounded_excerpt: support.bounded_excerpt === true,
+        },
+        anchor_clause_id: typeof signal.anchor_clause_id === "string" &&
+            UUID_PATTERN.test(signal.anchor_clause_id)
+          ? signal.anchor_clause_id
+          : null,
+        anchor_clause_sha256: typeof signal.anchor_clause_sha256 === "string"
+          ? signal.anchor_clause_sha256
+          : null,
+      };
+    }),
+    coverage: {
+      matched_signal_count: position.matchedSignalCount,
+      supported_rule_count: position.supportedRuleCount,
+    },
+    limits: {
+      maximum_signals: citationInteger(position.limits.maximum_signals),
+      support_is_bounded_excerpt:
+        position.limits.support_is_bounded_excerpt === true,
+      absence_is_not_evidence_of_absence:
+        position.limits.absence_is_not_evidence_of_absence === true,
+      signals_are_legal_conclusions:
+        position.limits.signals_are_legal_conclusions === true,
+    },
+    limitations: position.limitations,
+  };
+}
+
 export function buildCitationManifest({
   query = "",
   kind = "",
@@ -775,11 +921,14 @@ export function buildCitationManifest({
         neighboring_clauses: context.map(citationClause),
       },
       connected_context: citationAnchorContext(evidence.anchorContext),
+      commercial_position: citationCommercialPosition(
+        evidence.commercialPosition,
+      ),
     };
   });
 
   return {
-    schema: "esheria.contract-citations.v2",
+    schema: "esheria.contract-citations.v3",
     generated_at: timestamp.toISOString(),
     retrieval_scope: {
       query: normalizedQuery || null,
@@ -791,6 +940,7 @@ export function buildCitationManifest({
       "This export contains only the selected published evidence and bounded context; it is not a representative market sample.",
       "Observed wording is evidence. Generated classifications, themes, summaries and date types are interpretations, not source facts.",
       "Definition-use matching and target resolution are generated navigation aids; unresolved references are preserved rather than guessed.",
+      "Commercial position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
       "Verify the recorded source, completeness, amendments and governing law before legal or commercial reliance.",
     ],
     citations,
@@ -930,6 +1080,30 @@ function referenceResolutionProvenance(value) {
   if (value === "reviewed") return "Human-reviewed target link";
   if (value === "generated") return "Generated target resolution";
   return "Target resolution";
+}
+
+const POSITION_ATTRIBUTE_LABELS = Object.freeze({
+  currency_amount_present: "Currency amount appears",
+  percentage_present: "Percentage appears",
+  fees_or_charges_basis_present: "Fees or charges basis appears",
+  greater_or_lesser_formula_present: "Greater/lesser-of formula appears",
+  facially_bilateral_language_present: "Facially bilateral wording appears",
+  indirect: "Indirect loss named",
+  consequential: "Consequential loss named",
+  special: "Special loss named",
+  incidental: "Incidental loss named",
+  exemplary: "Exemplary loss named",
+  punitive: "Punitive loss named",
+  death_or_personal_injury: "Death/personal injury named",
+  fraud: "Fraud named",
+  wilful_or_willful_misconduct: "Wilful/willful misconduct named",
+});
+
+function positionAttributeEntries(value) {
+  const attributes = record(value);
+  return Object.entries(POSITION_ATTRIBUTE_LABELS)
+    .filter(([key]) => typeof attributes[key] === "boolean")
+    .map(([key, label]) => [label, attributes[key] ? "Yes" : "No"]);
 }
 
 function count(value) {
@@ -1467,6 +1641,90 @@ function boot() {
     return formatEvidenceLocation(clause);
   }
 
+  function commercialPositionPanel(value, collapsed = false) {
+    const position = commercialPositionEvidence(value);
+    if (!position?.applicable) return null;
+    const container = collapsed
+      ? element("details", "comparison-context commercial-position")
+      : section("Commercial position signals");
+    if (collapsed) {
+      container.append(
+        element(
+          "summary",
+          "",
+          `Position signals · ${count(position.matchedSignalCount)} matched`,
+        ),
+      );
+    }
+    container.append(
+      element(
+        "p",
+        "focus-note",
+        "Generated clause-level pattern matches for negotiation triage. They are not legal conclusions, and absence is not evidence that the agreement lacks a position.",
+      ),
+      element(
+        "p",
+        "muted",
+        `Scope: matched clause only · detector ${
+          displayText(position.detectorVersion)
+        } · eligibility theme ${displayText(position.eligibility.theme)} (${
+          displayText(position.eligibility.theme_basis)
+        })`,
+      ),
+    );
+    if (!position.signals.length) {
+      container.append(
+        element(
+          "p",
+          "muted",
+          "No supported position pattern matched this clause. Inspect the wording directly.",
+        ),
+      );
+      return container;
+    }
+    for (const signalValue of position.signals) {
+      const signal = record(signalValue);
+      const support = record(signal.observed_support);
+      const attributes = positionAttributeEntries(signal.generated_attributes);
+      const card = element("article", "relationship position-signal");
+      append(
+        card,
+        element("span", "badge generated", "Generated position signal"),
+        element("h4", "", displayText(signal.label, signal.signal_key)),
+        element(
+          "p",
+          "muted",
+          `Confidence ${
+            Number.isFinite(Number(signal.confidence))
+              ? `${Math.round(Number(signal.confidence) * 100)}%`
+              : "not stated"
+          } · rule ${displayText(signal.rule_id)}`,
+        ),
+      );
+      if (attributes.length) card.append(dataList(attributes));
+      const evidence = element("div", "position-support");
+      append(
+        evidence,
+        element("span", "badge observed", "Observed support excerpt"),
+        element(
+          "p",
+          "observed-text",
+          boundedText(support.text, 2_000),
+        ),
+        element(
+          "p",
+          "muted",
+          `Clause characters ${displayText(support.clause_char_start, "?")}–${
+            displayText(support.clause_char_end, "?")
+          } · SHA-256 ${displayText(support.sha256, "not available")}`,
+        ),
+      );
+      card.append(evidence);
+      container.append(card);
+    }
+    return container;
+  }
+
   function comparisonColumn(selection, evidence, position) {
     const agreement = evidence.agreement;
     const source = evidence.source;
@@ -1620,6 +1878,12 @@ function boot() {
       );
       column.append(generated);
     }
+
+    const commercialPosition = commercialPositionPanel(
+      evidence.commercialPosition,
+      true,
+    );
+    if (commercialPosition) column.append(commercialPosition);
 
     const connectedContext = comparisonConnectedContext(evidence.anchorContext);
     if (connectedContext) {
@@ -2701,6 +2965,11 @@ function boot() {
       }
       fragment.append(partySection);
     }
+
+    const commercialPosition = commercialPositionPanel(
+      data.commercial_position,
+    );
+    if (commercialPosition) fragment.append(commercialPosition);
 
     const anchorContext = record(data.anchor_context);
     if (
