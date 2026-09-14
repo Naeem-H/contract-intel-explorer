@@ -133,12 +133,14 @@
 
       <section class="search-panel" aria-labelledby="search-title">
         <h2 id="search-title">Search published clause evidence</h2>
-        <form id="search-form" class="search-form">
+        <form id="search-form" class="search-form clause-search-form">
           <label class="wide" for="query">Words or concepts</label>
+          <label for="clause-party">Observed party (optional)</label>
           <label for="kind">Document class</label>
           <label for="source">Source slug</label>
           <span aria-hidden="true"></span>
           <input id="query" class="wide" name="q" type="search" minlength="2" maxlength="200" required placeholder="e.g. limitation of liability">
+          <input id="clause-party" name="party" type="search" minlength="2" maxlength="200" placeholder="e.g. G4S Limited">
           <select id="kind" name="kind">
             <option value="">All classes</option>
             <option value="contract">Contracts</option>
@@ -151,7 +153,7 @@
           <input id="source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="sec_edgar">
           <button id="search-submit" class="button primary" type="submit">Search</button>
         </form>
-        <p class="search-note">Starter searches above and custom searches here use the same protected, read-only evidence API.</p>
+        <p class="search-note">Starter and custom searches use the same protected, read-only evidence API. Optionally restrict results to agreements containing a literal observed party-name match; this is not entity resolution or a completeness guarantee.</p>
       </section>
 
       <section aria-labelledby="snapshot-title">

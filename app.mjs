@@ -55,8 +55,21 @@ function isAllowedApiTarget(url) {
     pathname === "/api/summary" ||
     pathname === "/api/metrics"
   ) return url.search === "";
-  if (pathname === "/api/search" || pathname === "/api/parties") {
-    const allowed = new Set(["q", "limit", "offset", "kind", "source"]);
+  if (
+    pathname === "/api/search" || pathname === "/api/parties" ||
+    pathname === "/api/party-clauses"
+  ) {
+    const allowed = new Set([
+      "q",
+      "party",
+      "limit",
+      "offset",
+      "kind",
+      "source",
+    ]);
+    if (
+      pathname !== "/api/party-clauses" && url.searchParams.has("party")
+    ) return false;
     return [...url.searchParams.keys()].every((key) => allowed.has(key));
   }
   const match = pathname.match(/^\/api\/(agreements|claims)\/([^/]+)$/);
@@ -135,6 +148,17 @@ export function buildSearchPath({
 
 export function buildPartySearchPath(input) {
   return buildSearchPath(input).replace(/^\/api\/search\?/, "/api/parties?");
+}
+
+export function buildPartyClauseSearchPath({ party, ...input }) {
+  const partyPath = buildPartySearchPath({ query: party });
+  const normalizedParty = new URL(partyPath, "https://route.invalid")
+    .searchParams.get("q");
+  if (!normalizedParty) throw new TypeError("Party search term is invalid");
+  const clausePath = buildSearchPath(input);
+  const params = new URL(clausePath, "https://route.invalid").searchParams;
+  params.set("party", normalizedParty);
+  return `/api/party-clauses?${params.toString()}`;
 }
 
 export function buildAgreementPath(
@@ -766,6 +790,7 @@ function boot() {
   const state = {
     token: null,
     query: "",
+    clauseParty: "",
     kind: "",
     source: "",
     offset: 0,
@@ -809,6 +834,7 @@ function boot() {
   const partyNext = byId("party-next");
   const searchForm = byId("search-form");
   const queryInput = byId("query");
+  const clausePartyInput = byId("clause-party");
   const kindInput = byId("kind");
   const sourceInput = byId("source");
   const searchButton = byId("search-submit");
@@ -870,6 +896,7 @@ function boot() {
     state.partyOffset = 0;
     state.partyHasMore = false;
     state.partySearching = false;
+    state.clauseParty = "";
     partyPrevious.disabled = true;
     partyNext.disabled = true;
     partySearchStatus.textContent =
@@ -1622,6 +1649,20 @@ function boot() {
       inspect.addEventListener("click", () => loadAgreement(agreementId));
       actions.append(inspect);
     }
+    if (typeof item.observed_party_name === "string") {
+      const useParty = element(
+        "button",
+        "text-button",
+        "Search clauses for this party →",
+      );
+      useParty.type = "button";
+      useParty.addEventListener("click", () => {
+        clausePartyInput.value = item.observed_party_name;
+        queryInput.focus();
+        searchForm.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      actions.append(useParty);
+    }
     append(actions, sourceLink(item.source_url));
     append(card, top, title, metadata, partyEvidence, partyList, actions);
     return card;
@@ -1703,6 +1744,15 @@ function boot() {
     append(
       meta,
       element("span", "", displayText(item.source_name, "Unknown source")),
+      item.observed_party_name
+        ? element(
+          "span",
+          "",
+          `Party ${displayText(item.observed_party_name)} (${
+            displayText(item.observed_party_role, "role not stated")
+          })`,
+        )
+        : null,
       item.issuer_name ? element("span", "", item.issuer_name) : null,
       item.filing_form
         ? element("span", "", `Form ${displayText(item.filing_form)}`)
@@ -1781,8 +1831,12 @@ function boot() {
     const start = rows.length ? state.offset + 1 : 0;
     const end = state.offset + rows.length;
     searchStatus.textContent = rows.length
-      ? `Showing results ${start}–${end}. Search is evidence retrieval, not a completeness guarantee.`
-      : "No results returned. Coverage may be incomplete.";
+      ? `Showing results ${start}–${end}${
+        state.clauseParty
+          ? ` within agreements matching observed party “${state.clauseParty}”`
+          : ""
+      }. Search is evidence retrieval, not entity resolution or a completeness guarantee.`
+      : "No results returned. Clause, party and corpus coverage may be incomplete.";
     updateComparisonControls();
   }
 
@@ -1794,7 +1848,12 @@ function boot() {
     next.disabled = true;
     searchStatus.textContent = "Searching published clause evidence…";
     try {
-      const path = buildSearchPath(state);
+      const path = state.clauseParty
+        ? buildPartyClauseSearchPath({
+          ...state,
+          party: state.clauseParty,
+        })
+        : buildSearchPath(state);
       const payload = await requestJson(path, state.token);
       renderSearch(payload);
     } catch (error) {
@@ -2377,12 +2436,15 @@ function boot() {
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const query = queryInput.value.trim();
+    const clauseParty = clausePartyInput.value.trim();
     const kind = kindInput.value;
     const source = sourceInput.value.trim().toLowerCase();
     if (
-      query !== state.query || kind !== state.kind || source !== state.source
+      query !== state.query || clauseParty !== state.clauseParty ||
+      kind !== state.kind || source !== state.source
     ) clearComparison();
     state.query = query;
+    state.clauseParty = clauseParty;
     state.kind = kind;
     state.source = source;
     state.offset = 0;
