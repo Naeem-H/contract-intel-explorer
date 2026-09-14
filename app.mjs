@@ -1725,8 +1725,9 @@ function boot() {
         "Build exact-name negotiation dossier →",
       );
       dossier.type = "button";
-      dossier.addEventListener("click", () =>
-        loadPartyDossier(item.observed_party_name)
+      dossier.addEventListener(
+        "click",
+        () => loadPartyDossier(item.observed_party_name),
       );
       actions.append(dossier);
     }
@@ -1897,9 +1898,13 @@ function boot() {
           element(
             "p",
             "muted tiny",
-            `Clause SHA-256 ${displayText(example.observed_text_sha256)} · artifact ${
-              displayText(example.artifact_sha256)
-            }${example.observed_text_excerpt_truncated ? " · excerpt truncated" : ""}`,
+            `Clause SHA-256 ${
+              displayText(example.observed_text_sha256)
+            } · artifact ${displayText(example.artifact_sha256)}${
+              example.observed_text_excerpt_truncated
+                ? " · excerpt truncated"
+                : ""
+            }`,
           ),
         );
         const actions = element("div", "result-actions");
@@ -1915,8 +1920,9 @@ function boot() {
             "Inspect clause in context →",
           );
           inspect.type = "button";
-          inspect.addEventListener("click", () =>
-            loadAgreement(example.agreement_id, example.clause_id)
+          inspect.addEventListener(
+            "click",
+            () => loadAgreement(example.agreement_id, example.clause_id),
           );
           actions.append(inspect);
         }
@@ -1929,7 +1935,9 @@ function boot() {
     }
     partyDossierStatus.textContent = scope.low_specificity_warning === true
       ? "This is a low-specificity observed name. Treat every result as ambiguous and inspect source evidence."
-      : `${count(coverage.document_records)} exact-name document records. Identity resolution was not applied; theme counts are navigation aids, not market prevalence.`;
+      : `${
+        count(coverage.document_records)
+      } exact-name document records. Identity resolution was not applied; theme counts are navigation aids, not market prevalence.`;
   }
 
   async function loadPartyDossier(partyName) {
@@ -2321,6 +2329,193 @@ function boot() {
         partySection.append(card);
       }
       fragment.append(partySection);
+    }
+
+    const anchorContext = record(data.anchor_context);
+    if (
+      anchorClauseId &&
+      anchorContext.api_version === "anchor-clause-context-v1"
+    ) {
+      const contextSection = section("Connected context for matched clause");
+      contextSection.append(
+        element(
+          "p",
+          "focus-note",
+          "Observed definitions and references are shown separately from generated term matching and target resolution. Missing or ambiguous links remain visible.",
+        ),
+      );
+
+      const definitionCandidates = array(
+        anchorContext.definition_candidates,
+      ).slice(0, 20);
+      if (definitionCandidates.length) {
+        contextSection.append(element("h4", "", "Definition candidates"));
+        for (const definitionValue of definitionCandidates) {
+          const definition = record(definitionValue);
+          const card = element("article", "relationship");
+          append(
+            card,
+            element("span", "badge observed", "Observed definition"),
+            element("span", "badge generated", "Generated term-use match"),
+            element(
+              "h4",
+              "",
+              `“${displayText(definition.term, "Unnamed term")}”`,
+            ),
+            element(
+              "p",
+              "observed-text",
+              boundedText(definition.definition, 4_000),
+            ),
+            element(
+              "p",
+              "muted",
+              `Defined in clause ${
+                displayText(definition.defining_clause_sequence, "?")
+              } · SHA-256 ${
+                displayText(definition.definition_sha256).slice(0, 12)
+              }…${
+                definition.ambiguous_definition_occurrences
+                  ? " · multiple definition occurrences"
+                  : ""
+              }`,
+            ),
+          );
+          const definingId =
+            typeof definition.defining_clause_id === "string" &&
+              UUID_PATTERN.test(definition.defining_clause_id)
+              ? definition.defining_clause_id
+              : null;
+          if (definingId) {
+            const inspect = element(
+              "button",
+              "text-button",
+              "View defining clause →",
+            );
+            inspect.type = "button";
+            inspect.addEventListener(
+              "click",
+              () => loadAgreement(agreement.id, definingId),
+            );
+            card.append(inspect);
+          }
+          contextSection.append(card);
+        }
+      }
+
+      const resolvedTargets = array(
+        anchorContext.resolved_reference_targets,
+      ).slice(0, 20);
+      if (resolvedTargets.length) {
+        contextSection.append(element("h4", "", "Resolved local references"));
+        for (const referenceValue of resolvedTargets) {
+          const reference = record(referenceValue);
+          const card = element("article", "relationship");
+          append(
+            card,
+            element(
+              "span",
+              reference.target_resolution_basis === "generated"
+                ? "badge generated"
+                : "badge observed",
+              referenceResolutionProvenance(reference.target_resolution_basis),
+            ),
+            element(
+              "h4",
+              "",
+              `${
+                displayText(reference.observed_reference, "Reference")
+              } → clause ${displayText(reference.target_sequence, "?")}`,
+            ),
+            element(
+              "p",
+              "muted",
+              displayText(
+                reference.target_heading,
+                "Untitled referenced clause",
+              ),
+            ),
+            element(
+              "p",
+              "observed-text",
+              boundedText(reference.target_text, 8_000),
+            ),
+            element(
+              "p",
+              "muted",
+              `${
+                formatEvidenceLocation({
+                  evidence_location: reference.target_evidence_location,
+                  page_start: reference.target_page_start,
+                  page_end: reference.target_page_end,
+                  char_start: reference.target_char_start,
+                  char_end: reference.target_char_end,
+                })
+              } · SHA-256 ${
+                displayText(reference.target_text_sha256).slice(0, 12)
+              }…`,
+            ),
+          );
+          const targetId = typeof reference.target_clause_id === "string" &&
+              UUID_PATTERN.test(reference.target_clause_id)
+            ? reference.target_clause_id
+            : null;
+          if (targetId) {
+            const inspect = element(
+              "button",
+              "text-button",
+              "View referenced clause →",
+            );
+            inspect.type = "button";
+            inspect.addEventListener(
+              "click",
+              () => loadAgreement(agreement.id, targetId),
+            );
+            card.append(inspect);
+          }
+          contextSection.append(card);
+        }
+      }
+
+      const unresolvedReferences = array(
+        anchorContext.unresolved_references,
+      ).slice(0, 20);
+      if (unresolvedReferences.length) {
+        contextSection.append(element("h4", "", "Unresolved references"));
+        for (const referenceValue of unresolvedReferences) {
+          const reference = record(referenceValue);
+          contextSection.append(
+            element(
+              "p",
+              "relationship",
+              `${
+                displayText(
+                  reference.observed_reference,
+                  "Reference unavailable",
+                )
+              } · ${
+                referenceResolutionLabel(reference.target_resolution_status)
+              }`,
+            ),
+          );
+        }
+      }
+
+      const contextCoverage = record(anchorContext.coverage);
+      contextSection.append(
+        element(
+          "p",
+          "muted",
+          `${
+            count(contextCoverage.definition_candidates_total)
+          } definition candidates · ${
+            count(contextCoverage.resolved_reference_targets_total)
+          } resolved references · ${
+            count(contextCoverage.unresolved_references_total)
+          } unresolved references. Term-use matching and target resolution are navigation aids, not legal interpretations.`,
+        ),
+      );
+      fragment.append(contextSection);
     }
 
     const clauses = array(data.clauses).slice(0, 40);
