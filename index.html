@@ -51,6 +51,56 @@
 
       <p id="workspace-status" class="status" role="status" aria-live="polite"></p>
 
+      <section class="guided-demo" aria-labelledby="guided-title">
+        <div class="guided-heading">
+          <div>
+            <p class="eyebrow">Guided demonstration</p>
+            <h2 id="guided-title">Start with a contract decision.</h2>
+          </div>
+          <p>Choose a research prompt, inspect the observed clause wording and public source, then compare 2–4 results in bounded context.</p>
+        </div>
+
+        <ol class="guide-steps" aria-label="Evidence review workflow">
+          <li><strong>Search</strong><span>Run a starter across published clause evidence.</span></li>
+          <li><strong>Verify</strong><span>Read the excerpt, text basis, provenance, and recorded source.</span></li>
+          <li><strong>Compare</strong><span>Select results to review exact wording side by side.</span></li>
+        </ol>
+
+        <div class="starter-grid">
+          <article class="starter-card">
+            <span class="starter-topic">Risk allocation</span>
+            <h3>Liability caps</h3>
+            <p><strong>Decision prompt:</strong> What is capped, how is the cap calculated, and which liabilities are carved out?</p>
+            <button class="button secondary starter-action" type="button" data-guide="Liability caps" data-query="&quot;limitation of liability&quot; OR &quot;aggregate liability&quot; OR &quot;liability cap&quot;" aria-pressed="false">Search liability wording</button>
+          </article>
+          <article class="starter-card">
+            <span class="starter-topic">Information governance</span>
+            <h3>Data protection</h3>
+            <p><strong>Decision prompt:</strong> Who may process personal data, for what purpose, and which security, deletion, or breach duties are stated?</p>
+            <button class="button secondary starter-action" type="button" data-guide="Data protection" data-query="&quot;data protection&quot; OR &quot;personal data&quot; OR &quot;data breach&quot;" aria-pressed="false">Search data wording</button>
+          </article>
+          <article class="starter-card">
+            <span class="starter-topic">Transfer and control</span>
+            <h3>Assignment / change of control</h3>
+            <p><strong>Decision prompt:</strong> Is consent required to assign, and does a change of control trigger consent, notice, or termination?</p>
+            <button class="button secondary starter-action" type="button" data-guide="Assignment and change of control" data-query="assignment OR &quot;change of control&quot;" aria-pressed="false">Search assignment wording</button>
+          </article>
+          <article class="starter-card">
+            <span class="starter-topic">Commercial mechanics</span>
+            <h3>Pricing / indexation</h3>
+            <p><strong>Decision prompt:</strong> Can prices or fees change, which index or formula applies, and when does an adjustment take effect?</p>
+            <button class="button secondary starter-action" type="button" data-guide="Pricing and indexation" data-query="indexation OR &quot;price adjustment&quot; OR &quot;consumer price index&quot;" aria-pressed="false">Search pricing wording</button>
+          </article>
+        </div>
+
+        <div class="guide-legend" aria-label="Evidence labels">
+          <p><span class="badge basis-observed">Observed source text</span> Retrieved wording is evidence to verify against its recorded public source.</p>
+          <p><span class="badge basis-generated">Generated tags · not source wording</span> Classifications and summaries are navigation aids, not contract terms.</p>
+        </div>
+        <p id="guided-boundary" class="guide-boundary"><strong>Research boundary:</strong> This guided demonstration is not legal advice and does not measure clause prevalence. Results cover only acquired, published evidence; a match or no match does not establish market practice or the full effect of an agreement.</p>
+        <p id="guide-status" class="muted guide-status" role="status" aria-live="polite">Choose a starter or enter your own search below. Document and source filters still apply.</p>
+      </section>
+
       <section class="search-panel" aria-labelledby="search-title">
         <h2 id="search-title">Search published clause evidence</h2>
         <form id="search-form" class="search-form">
@@ -71,13 +121,7 @@
           <input id="source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="sec_edgar">
           <button id="search-submit" class="button primary" type="submit">Search</button>
         </form>
-        <div class="quick-search" aria-label="Suggested searches">
-          <span>Try:</span>
-          <button type="button" data-query="&quot;termination for convenience&quot;">termination</button>
-          <button type="button" data-query="&quot;limitation of liability&quot;">liability caps</button>
-          <button type="button" data-query="&quot;change of control&quot;">change of control</button>
-          <button type="button" data-query="&quot;governing law&quot;">governing law</button>
-        </div>
+        <p class="search-note">Starter searches above and custom searches here use the same protected, read-only evidence API.</p>
       </section>
 
       <section aria-labelledby="snapshot-title">

@@ -385,6 +385,17 @@ function displayText(value, fallback = "—") {
   return String(value);
 }
 
+export function agreementDatePresentation(agreement, dateType, label) {
+  const selections = record(agreement.agreement_date_selections);
+  const selection = record(selections[dateType]);
+  return {
+    label: selection.basis === "generated"
+      ? `Generated ${label} candidate`
+      : `Observed ${label}`,
+    value: agreement[`observed_${dateType}_date`],
+  };
+}
+
 function boundedText(value, maximum = 24_000) {
   const text = displayText(value, "");
   return text.length > maximum
@@ -548,6 +559,7 @@ function boot() {
   const operations = byId("operations");
   const summaryFreshness = byId("summary-freshness");
   const corpusDisclosure = byId("corpus-disclosure");
+  const guideStatus = byId("guide-status");
   const searchForm = byId("search-form");
   const queryInput = byId("query");
   const kindInput = byId("kind");
@@ -564,6 +576,25 @@ function boot() {
   const detailBody = byId("detail-body");
   const comparisonDialog = byId("comparison-dialog");
   const comparisonBody = byId("comparison-body");
+  const guideButtons = [
+    ...document.querySelectorAll("[data-guide][data-query]"),
+  ];
+
+  function syncGuideSelection(query) {
+    let selectedGuide = "";
+    for (const button of guideButtons) {
+      const selected = button.getAttribute("data-query") === query;
+      button.setAttribute("aria-pressed", String(selected));
+      if (selected) selectedGuide = button.getAttribute("data-guide") ?? "";
+    }
+    if (selectedGuide) {
+      guideStatus.textContent = `${selectedGuide} starter selected. Filters below still apply; verify every result against its observed wording and recorded source.`;
+      return;
+    }
+    guideStatus.textContent = query
+      ? "Custom search selected. Verify every result against its observed wording and recorded source."
+      : "Choose a starter or enter your own search below. Document and source filters still apply.";
+  }
 
   function showWorkspace() {
     authView.hidden = true;
@@ -581,6 +612,7 @@ function boot() {
     corpusDisclosure.replaceChildren();
     state.comparisonSelection.clear();
     state.comparing = false;
+    syncGuideSelection("");
     results.replaceChildren(
       element("p", "empty", "Sign in to search published evidence."),
     );
@@ -860,6 +892,11 @@ function boot() {
     const source = evidence.source;
     const clause = evidence.anchor;
     const basis = textBasisPresentation(clause.text_basis ?? agreement.text_basis);
+    const executionDate = agreementDatePresentation(
+      agreement,
+      "execution",
+      "execution date",
+    );
     const column = element("article", "comparison-column");
     column.setAttribute("aria-labelledby", `comparison-clause-${position}`);
     append(
@@ -873,9 +910,7 @@ function boot() {
       element(
         "p",
         "muted",
-        `Observed execution date · ${
-          displayText(agreement.observed_execution_date, "not stated")
-        }`,
+        `${executionDate.label} · ${displayText(executionDate.value, "not stated")}`,
       ),
     );
     const classification = element("section", "generated");
@@ -1334,6 +1369,21 @@ function boot() {
     const agreement = record(data.agreement);
     const source = record(data.source);
     const agreementBasis = textBasisPresentation(agreement.text_basis);
+    const executionDate = agreementDatePresentation(
+      agreement,
+      "execution",
+      "execution date",
+    );
+    const effectiveDate = agreementDatePresentation(
+      agreement,
+      "effective",
+      "effective date",
+    );
+    const terminationDate = agreementDatePresentation(
+      agreement,
+      "termination",
+      "termination date",
+    );
     const clauseWindow = record(data.clause_window);
     const anchorClauseId = typeof data.anchor_clause_id === "string" &&
         UUID_PATTERN.test(data.anchor_clause_id)
@@ -1352,8 +1402,9 @@ function boot() {
         displayText(agreement.observed_title, "Untitled agreement"),
       ),
       dataList([
-        ["Execution date", displayText(agreement.observed_execution_date)],
-        ["Effective date", displayText(agreement.observed_effective_date)],
+        [executionDate.label, displayText(executionDate.value)],
+        [effectiveDate.label, displayText(effectiveDate.value)],
+        [terminationDate.label, displayText(terminationDate.value)],
         [
           "Extraction",
           `${displayText(agreement.extraction_method)} · confidence ${
@@ -1393,6 +1444,45 @@ function boot() {
           }; qualified human/legal review remains pending.`,
         ),
       );
+    }
+
+    const agreementDates = array(data.agreement_date_evidence);
+    if (agreementDates.length) {
+      const dateSection = section("Agreement date evidence");
+      for (const dateValue of agreementDates) {
+        const dateEvidence = record(dateValue);
+        const card = element("article", "generated");
+        append(
+          card,
+          element(
+            "strong",
+            "",
+            `Generated ${
+              displayText(dateEvidence.date_type, "date").replaceAll("_", " ")
+            } candidate · ${displayText(dateEvidence.observed_date)}`,
+          ),
+          element(
+            "p",
+            "observed-text",
+            displayText(dateEvidence.observed_quote, "No supporting quote returned."),
+          ),
+          element(
+            "p",
+            "muted",
+            `Observed text at characters ${
+              displayText(dateEvidence.observed_char_start, "?")
+            }–${displayText(dateEvidence.observed_char_end, "?")} · rule ${
+              displayText(dateEvidence.rule_id, "unknown")
+            }${dateEvidence.is_conflicting ? " · conflicting candidates" : ""}${
+              dateEvidence.has_historical_disagreement
+                ? " · differs across extraction history"
+                : ""
+            }`,
+          ),
+        );
+        dateSection.append(card);
+      }
+      fragment.append(dateSection);
     }
 
     const parties = array(data.parties).slice(0, 100);
@@ -1754,6 +1844,7 @@ function boot() {
     state.kind = kind;
     state.source = source;
     state.offset = 0;
+    syncGuideSelection(query);
     performSearch();
   });
   previous.addEventListener("click", () => {
