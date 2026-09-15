@@ -15,6 +15,8 @@ const DOCUMENT_KINDS = new Set([
 ]);
 const MAX_RESPONSE_BYTES = 6 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
+const RETRYABLE_RESPONSE_STATUSES = new Set([502, 503, 504]);
+const RETRY_DELAY_MS = 400;
 export const COMPARISON_MIN_ITEMS = 2;
 export const COMPARISON_MAX_ITEMS = 4;
 export const COMPARISON_CONTEXT_CLAUSES = 5;
@@ -3087,54 +3089,74 @@ async function readBoundedJson(response) {
   }
 }
 
-export async function requestJson(path, token, fetchImpl = globalThis.fetch) {
+export async function requestJson(
+  path,
+  token,
+  fetchImpl = globalThis.fetch,
+  waitImpl = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+) {
   const normalizedToken = normalizeToken(token);
   if (!normalizedToken) throw new ApiError("A valid access token is required.");
   if (typeof fetchImpl !== "function") {
     throw new ApiError("Fetch is unavailable.");
   }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetchImpl(apiUrl(path), {
-      method: "GET",
-      mode: "cors",
-      credentials: "omit",
-      cache: "no-store",
-      redirect: "error",
-      referrerPolicy: "no-referrer",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${normalizedToken}`,
-      },
-      signal: controller.signal,
-    });
-    const payload = await readBoundedJson(response);
-    if (!response.ok) {
-      const error = record(record(payload).error);
-      const message = typeof error.message === "string"
-        ? error.message
-        : `Request failed with status ${response.status}.`;
-      throw new ApiError(
-        message,
-        response.status,
-        typeof error.code === "string" ? error.code : "request_failed",
-        typeof record(payload).request_id === "string"
-          ? record(payload).request_id
-          : null,
-      );
-    }
-    return payload;
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ApiError("The API request timed out.");
-    }
-    throw new ApiError("The protected API could not be reached.");
-  } finally {
-    clearTimeout(timeout);
+  if (typeof waitImpl !== "function") {
+    throw new ApiError("Retry timer is unavailable.");
   }
+
+  const target = apiUrl(path);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetchImpl(target, {
+        method: "GET",
+        mode: "cors",
+        credentials: "omit",
+        cache: "no-store",
+        redirect: "error",
+        referrerPolicy: "no-referrer",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        signal: controller.signal,
+      });
+      const payload = await readBoundedJson(response);
+      if (!response.ok) {
+        const error = record(record(payload).error);
+        const message = typeof error.message === "string"
+          ? error.message
+          : `Request failed with status ${response.status}.`;
+        const apiError = new ApiError(
+          message,
+          response.status,
+          typeof error.code === "string" ? error.code : "request_failed",
+          typeof record(payload).request_id === "string"
+            ? record(payload).request_id
+            : null,
+        );
+        if (
+          attempt === 0 && RETRYABLE_RESPONSE_STATUSES.has(response.status)
+        ) {
+          await waitImpl(RETRY_DELAY_MS);
+          continue;
+        }
+        throw apiError;
+      }
+      return payload;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError("The API request timed out.");
+      }
+      throw new ApiError("The protected API could not be reached.");
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new ApiError("The protected API could not be reached.");
 }
 
 function element(tag, className = "", value) {
