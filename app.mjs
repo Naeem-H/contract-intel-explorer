@@ -337,6 +337,7 @@ export function buildLiabilityPositionPath({
 export function buildTerminationPositionPath({
   signalKeys = [],
   hasDuration = false,
+  hasLocalTerminationLink = false,
   kind = "",
   source = "",
   limit = 20,
@@ -349,6 +350,9 @@ export function buildTerminationPositionPath({
   ) throw new TypeError("Termination signal filter is invalid");
   if (typeof hasDuration !== "boolean") {
     throw new TypeError("Duration filter is invalid");
+  }
+  if (typeof hasLocalTerminationLink !== "boolean") {
+    throw new TypeError("Termination linkage filter is invalid");
   }
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
     throw new TypeError("Position limit is outside the allowed range");
@@ -372,6 +376,7 @@ export function buildTerminationPositionPath({
   });
   for (const signal of signals) params.append("signal", signal);
   if (hasDuration) params.set("duration", "present");
+  if (hasLocalTerminationLink) params.set("linkage", "local");
   if (kind) params.set("kind", kind);
   if (normalizedSource) params.set("source", normalizedSource);
   return `/api/termination-positions?${params.toString()}`;
@@ -2097,6 +2102,7 @@ function boot() {
     positionLoading: false,
     terminationSignal: "",
     terminationDuration: "",
+    terminationLinkage: "",
     terminationKind: "",
     terminationSource: "",
     terminationLoading: false,
@@ -2128,6 +2134,7 @@ function boot() {
   const terminationForm = byId("termination-form");
   const terminationSignalInput = byId("termination-signal");
   const terminationDurationInput = byId("termination-duration");
+  const terminationLinkageInput = byId("termination-linkage");
   const terminationKindInput = byId("termination-kind");
   const terminationSourceInput = byId("termination-source");
   const terminationButton = byId("termination-submit");
@@ -2222,6 +2229,7 @@ function boot() {
     state.positionLoading = false;
     state.terminationSignal = "";
     state.terminationDuration = "";
+    state.terminationLinkage = "";
     state.terminationKind = "";
     state.terminationSource = "";
     state.terminationLoading = false;
@@ -2333,6 +2341,9 @@ function boot() {
     const terminationDurationFacet = record(
       terminationSummary.published_duration_candidate_facet,
     );
+    const terminationLocalLinkageFacet = record(
+      terminationSummary.published_local_termination_linkage_facet,
+    );
 
     summaryCards.replaceChildren(
       metric(
@@ -2428,6 +2439,12 @@ function boot() {
         "Published termination library",
         `${count(terminationLibrary.matched_clauses)} clauses across ${
           count(terminationLibrary.distinct_agreements)
+        } agreements`,
+      ],
+      [
+        "Same-support termination evidence",
+        `${count(terminationLocalLinkageFacet.clauses)} clauses across ${
+          count(terminationLocalLinkageFacet.distinct_agreements)
         } agreements`,
       ],
       [
@@ -2619,6 +2636,21 @@ function boot() {
       button.type = "button";
       button.addEventListener("click", () => {
         terminationDurationInput.value = "present";
+        terminationForm.requestSubmit();
+      });
+      terminationFacets.append(button);
+    }
+    if (Number(terminationLocalLinkageFacet.clauses) > 0) {
+      const button = element(
+        "button",
+        "",
+        `Explicit termination term in same support · ${
+          count(terminationLocalLinkageFacet.clauses)
+        } clauses`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        terminationLinkageInput.value = "local";
         terminationForm.requestSubmit();
       });
       terminationFacets.append(button);
@@ -4174,6 +4206,7 @@ function boot() {
       const path = buildTerminationPositionPath({
         signalKeys: state.terminationSignal ? [state.terminationSignal] : [],
         hasDuration: state.terminationDuration === "present",
+        hasLocalTerminationLink: state.terminationLinkage === "local",
         kind: state.terminationKind,
         source: state.terminationSource,
         limit: state.limit,
@@ -5028,6 +5061,7 @@ function boot() {
     state.resultMode = "termination_positions";
     state.terminationSignal = terminationSignalInput.value;
     state.terminationDuration = terminationDurationInput.value;
+    state.terminationLinkage = terminationLinkageInput.value;
     state.terminationKind = terminationKindInput.value;
     state.terminationSource = terminationSourceInput.value.trim().toLowerCase();
     const signalLabel =
@@ -5036,7 +5070,11 @@ function boot() {
     const durationLabel =
       terminationDurationInput.selectedOptions[0]?.textContent ??
         "Any duration evidence";
-    state.query = `Termination library: ${signalLabel}; ${durationLabel}`;
+    const linkageLabel =
+      terminationLinkageInput.selectedOptions[0]?.textContent ??
+        "Any bounded signal support";
+    state.query =
+      `Termination library: ${signalLabel}; ${durationLabel}; ${linkageLabel}`;
     state.clauseParty = "";
     state.kind = state.terminationKind;
     state.source = state.terminationSource;

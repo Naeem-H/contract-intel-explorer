@@ -166,10 +166,11 @@
       <section class="search-panel" aria-labelledby="termination-library-title">
         <p class="eyebrow">Exit and trigger library</p>
         <h2 id="termination-library-title">Browse detected termination wording</h2>
-        <p class="search-note">Filter positive generated wording signals and inspect exact support and lexical duration candidates. Signals identify words in a termination-labelled clause; they do not determine who holds a right, whether a trigger is satisfied, or legal effect.</p>
+        <p class="search-note">Filter positive generated wording signals and inspect exact support and lexical duration candidates. The same-support option requires an explicit termination term in that bounded excerpt; it is a navigation aid, not a finding about rights, triggers, causation, or legal effect.</p>
         <form id="termination-form" class="search-form termination-search-form">
           <label for="termination-signal">Termination wording</label>
           <label for="termination-duration">Observed duration evidence</label>
+          <label for="termination-linkage">Evidence proximity</label>
           <label for="termination-kind">Document class</label>
           <label for="termination-source">Source slug</label>
           <span aria-hidden="true"></span>
@@ -191,6 +192,10 @@
           <select id="termination-duration" name="duration">
             <option value="">Any duration evidence</option>
             <option value="present">Exact duration candidate present</option>
+          </select>
+          <select id="termination-linkage" name="linkage">
+            <option value="">Any bounded signal support</option>
+            <option value="local">Explicit termination term in same support</option>
           </select>
           <select id="termination-kind" name="kind">
             <option value="">Contracts and amendments</option>
