@@ -1,447 +1,587 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="referrer" content="no-referrer">
-  <meta name="robots" content="noindex, nofollow, noarchive">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://aiuwscxsbsgaeunyhiak.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
-  <title>Esheria Contract Intelligence</title>
-  <link rel="stylesheet" href="./styles.css">
-</head>
-<body>
-  <header class="site-header">
-    <div class="shell nav">
-      <a class="brand" href="./" aria-label="Esheria Contract Intelligence home">
-        <span class="brand-mark" aria-hidden="true">E</span>
-        <span>Esheria <small>Contract Intelligence</small></span>
-      </a>
-      <button id="clear-token" class="button secondary" type="button" hidden>Clear token</button>
-    </div>
-  </header>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex, nofollow, noarchive">
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://aiuwscxsbsgaeunyhiak.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+    <title>Esheria Contract Intelligence</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell nav">
+        <a class="brand" href="./"
+          aria-label="Esheria Contract Intelligence home">
+          <span class="brand-mark" aria-hidden="true">E</span>
+          <span>Esheria <small>Contract Intelligence</small></span>
+        </a>
+        <button id="clear-token" class="button secondary" type="button"
+          hidden>Clear token</button>
+      </div>
+    </header>
 
-  <main class="shell">
-    <section id="auth-view" class="auth-panel" aria-labelledby="auth-title">
-      <p class="eyebrow">Protected research workspace</p>
-      <h1 id="auth-title">Trace contract intelligence back to its evidence.</h1>
-      <p class="lede">Enter the explorer bearer token supplied through Esheria’s secure credential channel.</p>
-      <form id="token-form" class="token-form" method="post" autocomplete="off">
-        <label for="access-token">Explorer access token</label>
-        <div class="token-row">
-          <input id="access-token" type="password" required minlength="24" maxlength="512" autocomplete="off" spellcheck="false">
-          <button id="connect" class="button primary" type="submit">Open workspace</button>
-        </div>
-      </form>
-      <p class="storage-note">The token is kept only in this page’s memory, sent only as an authorization header to the Esheria API, and cleared when you sign out, reload, navigate away, or close the tab.</p>
-      <p id="auth-status" class="status" role="status" aria-live="polite"></p>
-    </section>
+    <main class="shell">
+      <section id="auth-view" class="auth-panel" aria-labelledby="auth-title">
+        <p class="eyebrow">Protected research workspace</p>
+        <h1
+          id="auth-title">Trace contract intelligence back to its evidence.</h1>
+        <p
+          class="lede">Enter the explorer bearer token supplied through Esheria’s secure credential channel.</p>
+        <form id="token-form" class="token-form" method="post"
+          autocomplete="off">
+          <label for="access-token">Explorer access token</label>
+          <div class="token-row">
+            <input id="access-token" type="password" required minlength="24"
+              maxlength="512" autocomplete="off" spellcheck="false">
+            <button id="connect" class="button primary"
+              type="submit">Open workspace</button>
+          </div>
+        </form>
+        <p
+          class="storage-note">The token is kept only in this page’s memory, sent only as an authorization header to the Esheria API, and cleared when you sign out, reload, navigate away, or close the tab.</p>
+        <p id="auth-status" class="status" role="status" aria-live="polite"></p>
+      </section>
 
-    <section id="workspace" hidden>
-      <section class="hero" aria-labelledby="workspace-title">
-        <div>
-          <p class="eyebrow">Evidence before inference</p>
-          <h1 id="workspace-title">Contract language you can trace.</h1>
-          <p class="lede">Search observed clauses, inspect source context, and keep generated interpretations visibly separate from source wording.</p>
-        </div>
-        <aside class="principle">
+      <section id="workspace" hidden>
+        <section class="hero" aria-labelledby="workspace-title">
+          <div>
+            <p class="eyebrow">Evidence before inference</p>
+            <h1 id="workspace-title">Contract language you can trace.</h1>
+            <p
+              class="lede">Search observed clauses, inspect source context, and keep generated interpretations visibly separate from source wording.</p>
+          </div>
+          <aside class="principle">
           <strong>Evidence standard</strong>
           Published results are source-linked and rights-gated. Generated labels and interpretations are not source facts or legal advice.
         </aside>
-      </section>
+        </section>
 
-      <p id="workspace-status" class="status" role="status" aria-live="polite"></p>
+        <p id="workspace-status" class="status" role="status"
+          aria-live="polite"></p>
 
-      <section class="guided-demo" aria-labelledby="guided-title">
-        <div class="guided-heading">
-          <div>
-            <p class="eyebrow">Guided demonstration</p>
-            <h2 id="guided-title">Start with a contract decision.</h2>
+        <section class="guided-demo" aria-labelledby="guided-title">
+          <div class="guided-heading">
+            <div>
+              <p class="eyebrow">Guided demonstration</p>
+              <h2 id="guided-title">Start with a contract decision.</h2>
+            </div>
+            <p>Choose a research prompt, inspect the observed clause wording and public source, then compare 2–4 results in bounded context.</p>
           </div>
-          <p>Choose a research prompt, inspect the observed clause wording and public source, then compare 2–4 results in bounded context.</p>
-        </div>
 
-        <ol class="guide-steps" aria-label="Evidence review workflow">
-          <li><strong>Search</strong><span>Run a starter across published clause evidence.</span></li>
-          <li><strong>Verify</strong><span>Read the excerpt, text basis, provenance, and recorded source.</span></li>
-          <li><strong>Compare</strong><span>Select results to review exact wording side by side.</span></li>
-        </ol>
+          <ol class="guide-steps" aria-label="Evidence review workflow">
+            <li><strong>Search</strong><span>Run a starter across published clause evidence.</span></li>
+            <li><strong>Verify</strong><span>Read the excerpt, text basis, provenance, and recorded source.</span></li>
+            <li><strong>Compare</strong><span>Select results to review exact wording side by side.</span></li>
+          </ol>
 
-        <div class="starter-grid">
-          <article class="starter-card">
-            <span class="starter-topic">Risk allocation</span>
-            <h3>Liability caps</h3>
-            <p><strong>Decision prompt:</strong> What is capped, how is the cap calculated, and which liabilities are carved out?</p>
-            <button class="button secondary starter-action" type="button" data-guide="Liability caps" data-query="&quot;limitation of liability&quot; OR &quot;aggregate liability&quot; OR &quot;liability cap&quot;" aria-pressed="false">Search liability wording</button>
-          </article>
-          <article class="starter-card">
-            <span class="starter-topic">Information governance</span>
-            <h3>Data protection</h3>
-            <p><strong>Decision prompt:</strong> Who may process personal data, for what purpose, and which security, deletion, or breach duties are stated?</p>
-            <button class="button secondary starter-action" type="button" data-guide="Data protection" data-query="&quot;data protection&quot; OR &quot;personal data&quot; OR &quot;data breach&quot;" aria-pressed="false">Search data wording</button>
-          </article>
-          <article class="starter-card">
-            <span class="starter-topic">Transfer and control</span>
-            <h3>Assignment / change of control</h3>
-            <p><strong>Decision prompt:</strong> Is consent required to assign, and does a change of control trigger consent, notice, or termination?</p>
-            <button class="button secondary starter-action" type="button" data-guide="Assignment and change of control" data-query="assignment OR &quot;change of control&quot;" aria-pressed="false">Search assignment wording</button>
-          </article>
-          <article class="starter-card">
-            <span class="starter-topic">Commercial mechanics</span>
-            <h3>Pricing / indexation</h3>
-            <p><strong>Decision prompt:</strong> Can prices or fees change, which index or formula applies, and when does an adjustment take effect?</p>
-            <button class="button secondary starter-action" type="button" data-guide="Pricing and indexation" data-query="indexation OR &quot;price adjustment&quot; OR &quot;consumer price index&quot;" aria-pressed="false">Search pricing wording</button>
-          </article>
-          <article class="starter-card">
-            <span class="starter-topic">Exit risk</span>
-            <h3>Termination rights</h3>
-            <p><strong>Decision prompt:</strong> Which triggers, notice or cure periods, fees, and transition duties appear in the acquired agreements?</p>
-            <button class="button secondary starter-action" type="button" data-guide="Termination rights" data-query="termination OR terminate" aria-pressed="false">Search termination wording</button>
-          </article>
-        </div>
-
-        <div class="guide-legend" aria-label="Evidence labels">
-          <p><span class="badge basis-observed">Observed source text</span> Retrieved wording is evidence to verify against its recorded public source.</p>
-          <p><span class="badge basis-generated">Generated tags · not source wording</span> Classifications and summaries are navigation aids, not contract terms.</p>
-        </div>
-        <p id="guided-boundary" class="guide-boundary"><strong>Research boundary:</strong> This guided demonstration is not legal advice and does not measure clause prevalence. Results cover only acquired, published evidence; a match or no match does not establish market practice or the full effect of an agreement.</p>
-        <p id="guide-status" class="muted guide-status" role="status" aria-live="polite">Choose a starter or enter your own search below. Document and source filters still apply.</p>
-      </section>
-
-      <section class="search-panel" aria-labelledby="position-library-title">
-        <p class="eyebrow">Negotiation position library</p>
-        <h2 id="position-library-title">Browse detected liability positions</h2>
-        <p class="search-note">Filter generated clause-level signals, positive wording features and exact observed cap-value candidates without guessing search terms. A missing feature is not the opposite position; counts reflect this acquired corpus, not market prevalence or legal conclusions.</p>
-        <form id="position-form" class="search-form position-search-form">
-          <label for="position-signal">Position signal</label>
-          <label for="position-feature">Negotiation feature</label>
-          <label for="position-value">Observed value evidence</label>
-          <label for="position-kind">Document class</label>
-          <label for="position-source">Source slug</label>
-          <span aria-hidden="true"></span>
-          <select id="position-signal" name="signal">
-            <option value="">Any detected position</option>
-            <option value="explicit_liability_limit_formula">Explicit liability limit</option>
-            <option value="excluded_loss_language">Excluded loss language</option>
-            <option value="cap_carveout_language">Cap / exclusion carve-out</option>
-            <option value="express_unlimited_liability">Express unlimited liability</option>
-          </select>
-          <select id="position-feature" name="feature">
-            <option value="">Any generated feature</option>
-            <option value="explicit_cap_facially_bilateral">Facially bilateral cap wording</option>
-            <option value="loss_exclusion_facially_bilateral">Facially bilateral loss exclusion</option>
-            <option value="carveout_death_or_personal_injury">Death / personal injury carve-out</option>
-            <option value="carveout_fraud">Fraud carve-out</option>
-            <option value="carveout_wilful_or_willful_misconduct">Wilful / willful misconduct carve-out</option>
-            <option value="loss_exclusion_indirect">Indirect loss named</option>
-            <option value="loss_exclusion_consequential">Consequential loss named</option>
-            <option value="loss_exclusion_special">Special loss named</option>
-            <option value="loss_exclusion_incidental">Incidental loss named</option>
-            <option value="loss_exclusion_exemplary">Exemplary loss named</option>
-            <option value="loss_exclusion_punitive">Punitive loss named</option>
-          </select>
-          <select id="position-value" name="value">
-            <option value="">Any value evidence</option>
-            <option value="currency_amounts">Currency amount</option>
-            <option value="percentages">Percentage</option>
-            <option value="cap_basis_terms">Cap basis</option>
-            <option value="comparison_formulas">Greater / lesser formula</option>
-            <option value="period_terms">Period term</option>
-          </select>
-          <select id="position-kind" name="kind">
-            <option value="">All classes</option>
-            <option value="contract">Contracts</option>
-            <option value="amendment">Amendments</option>
-            <option value="notice">Notices</option>
-            <option value="template">Templates</option>
-            <option value="metadata">Metadata</option>
-            <option value="other">Other</option>
-          </select>
-          <input id="position-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="e.g. uk_find_a_tender">
-          <button id="position-submit" class="button primary" type="submit">Browse positions</button>
-        </form>
-        <div id="position-facets" class="quick" aria-label="Available liability-position evidence"><span>Available evidence:</span></div>
-        <p id="position-status" class="muted" role="status" aria-live="polite">Browse supported signals across published, nonduplicate evidence.</p>
-      </section>
-
-      <section class="search-panel" aria-labelledby="termination-library-title">
-        <p class="eyebrow">Exit and trigger library</p>
-        <h2 id="termination-library-title">Browse detected termination wording</h2>
-        <p class="search-note">Filter positive generated wording signals and inspect exact support and lexical duration candidates. The same-support option requires an explicit termination term in that bounded excerpt; it is a navigation aid, not a finding about rights, triggers, causation, or legal effect.</p>
-        <form id="termination-form" class="search-form termination-search-form">
-          <label for="termination-signal">Termination wording</label>
-          <label for="termination-duration">Observed duration evidence</label>
-          <label for="termination-linkage">Evidence proximity</label>
-          <label for="termination-kind">Document class</label>
-          <label for="termination-source">Source slug</label>
-          <span aria-hidden="true"></span>
-          <select id="termination-signal" name="signal">
-            <option value="">Any detected wording</option>
-            <option value="convenience_termination_language">Convenience termination</option>
-            <option value="material_breach_language">Material breach</option>
-            <option value="cure_or_remedy_language">Cure / remedy</option>
-            <option value="insolvency_language">Insolvency</option>
-            <option value="change_of_control_language">Change of control</option>
-            <option value="nonpayment_language">Non-payment</option>
-            <option value="immediate_termination_language">Immediate termination</option>
-            <option value="termination_fee_language">Termination fee</option>
-            <option value="exit_assistance_language">Exit / transition assistance</option>
-            <option value="post_termination_obligation_language">Post-termination obligations</option>
-            <option value="force_majeure_language">Force majeure</option>
-            <option value="data_return_or_deletion_language">Data return / deletion</option>
-          </select>
-          <select id="termination-duration" name="duration">
-            <option value="">Any duration evidence</option>
-            <option value="present">Exact duration candidate present</option>
-          </select>
-          <select id="termination-linkage" name="linkage">
-            <option value="">Any bounded signal support</option>
-            <option value="local">Explicit termination term in same support</option>
-          </select>
-          <select id="termination-kind" name="kind">
-            <option value="">Contracts and amendments</option>
-            <option value="contract">Contracts</option>
-            <option value="amendment">Amendments</option>
-          </select>
-          <input id="termination-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="e.g. uk_find_a_tender">
-          <button id="termination-submit" class="button primary" type="submit">Browse termination</button>
-        </form>
-        <div id="termination-facets" class="quick" aria-label="Available termination-position evidence"><span>Available evidence:</span></div>
-        <p id="termination-status" class="muted" role="status" aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
-      </section>
-
-      <section class="search-panel" aria-labelledby="assignment-library-title">
-        <p class="eyebrow">Transfer and ownership-change library</p>
-        <h2 id="assignment-library-title">Browse assignment and change-of-control wording</h2>
-        <p class="search-note">Filter positive generated wording signals anchored to one exact detector-selected source span. Finance-transfer context is labelled separately. Signals do not determine which party holds a right, whether consent is effective, or whether an exception applies.</p>
-        <form id="assignment-form" class="search-form assignment-search-form">
-          <label for="assignment-signal">Assignment wording</label>
-          <label for="assignment-context">Commercial context</label>
-          <label for="assignment-kind">Document class</label>
-          <label for="assignment-source">Source slug</label>
-          <span aria-hidden="true"></span>
-          <select id="assignment-signal" name="signal">
-            <option value="">Any detected wording</option>
-            <option value="assignment_prohibition_language">Assignment / transfer prohibition</option>
-            <option value="prior_consent_language">Consent / approval requirement</option>
-            <option value="qualified_consent_standard_language">Consent reasonableness standard</option>
-            <option value="express_assignment_permission_language">Express transfer permission</option>
-            <option value="affiliate_transfer_language">Affiliate / group transfer</option>
-            <option value="successor_transaction_language">Merger / successor transfer</option>
-            <option value="change_of_control_consequence_language">Change-of-control consequence</option>
-            <option value="change_of_control_definition_language">Change-of-control definition</option>
-            <option value="unauthorized_transfer_invalidity_language">Unauthorized transfer invalidity</option>
-            <option value="assignor_continuing_obligation_language">Assignor remains responsible</option>
-            <option value="finance_transfer_context">Finance-transfer context</option>
-            <option value="contract_transfer_language">Contractual rights / obligations transfer</option>
-          </select>
-          <select id="assignment-context" name="context">
-            <option value="">All contexts</option>
-            <option value="general">General context (exclude finance)</option>
-            <option value="finance">Finance-transfer context only</option>
-          </select>
-          <select id="assignment-kind" name="kind">
-            <option value="">Contracts and amendments</option>
-            <option value="contract">Contracts</option>
-            <option value="amendment">Amendments</option>
-          </select>
-          <input id="assignment-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="e.g. sec_edgar">
-          <button id="assignment-submit" class="button primary" type="submit">Browse assignment</button>
-        </form>
-        <div id="assignment-facets" class="quick" aria-label="Available assignment-position evidence"><span>Available evidence:</span></div>
-        <p id="assignment-status" class="muted" role="status" aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
-      </section>
-
-      <section class="search-panel" aria-labelledby="governing-law-library-title">
-        <p class="eyebrow">Choice-of-law and forum library</p>
-        <h2 id="governing-law-library-title">Browse governing-law and jurisdiction wording</h2>
-        <p class="search-note">Filter positive generated wording signals anchored to exact detector support. Jurisdictions are not normalized, and the signals do not determine enforceability, resolve conflicts rules, or reconcile arbitration and amendments.</p>
-        <form id="governing-law-form" class="search-form governing-law-search-form">
-          <label for="governing-law-signal">Law or forum wording</label>
-          <label for="governing-law-kind">Document class</label>
-          <label for="governing-law-source">Source slug</label>
-          <span aria-hidden="true"></span>
-          <select id="governing-law-signal" name="signal">
-            <option value="">Any detected wording</option>
-            <option value="governing_law_language">Express governing law</option>
-            <option value="exclusive_jurisdiction_language">Exclusive jurisdiction</option>
-            <option value="nonexclusive_jurisdiction_language">Non-exclusive jurisdiction</option>
-            <option value="submission_to_jurisdiction_language">Submission / consent to jurisdiction</option>
-            <option value="court_or_forum_language">Court, tribunal or venue wording</option>
-            <option value="venue_objection_waiver_language">Venue / forum objection waiver</option>
-            <option value="conflict_of_laws_qualification_language">Conflict-of-laws qualification</option>
-            <option value="service_of_process_language">Service of process / process agent</option>
-          </select>
-          <select id="governing-law-kind" name="kind">
-            <option value="">Contracts and amendments</option>
-            <option value="contract">Contracts</option>
-            <option value="amendment">Amendments</option>
-          </select>
-          <input id="governing-law-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="e.g. sec_edgar">
-          <button id="governing-law-submit" class="button primary" type="submit">Browse law and forum</button>
-        </form>
-        <div id="governing-law-facets" class="quick" aria-label="Available governing-law-position evidence"><span>Available evidence:</span></div>
-        <p id="governing-law-status" class="muted" role="status" aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
-      </section>
-
-      <section class="search-panel" aria-labelledby="party-search-title">
-        <p class="eyebrow">Vendor and counterparty trail</p>
-        <h2 id="party-search-title">Find published agreements by party</h2>
-        <p class="search-note">Search exact observed party-name text. Results are document records, not resolved legal entities, award counts, spend, market share, or a complete portfolio.</p>
-        <form id="party-search-form" class="search-form">
-          <label class="wide" for="party-query">Party name</label>
-          <label for="party-kind">Document class</label>
-          <label for="party-source">Source slug</label>
-          <span aria-hidden="true"></span>
-          <input id="party-query" class="wide" name="q" type="search" minlength="2" maxlength="200" required placeholder="e.g. G4S Limited">
-          <select id="party-kind" name="kind">
-            <option value="">All classes</option>
-            <option value="contract">Contracts</option>
-            <option value="amendment">Amendments</option>
-            <option value="notice">Notices</option>
-            <option value="template">Templates</option>
-            <option value="metadata">Metadata</option>
-            <option value="other">Other</option>
-          </select>
-          <input id="party-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="uk_find_a_tender">
-          <button id="party-search-submit" class="button primary" type="submit">Find agreements</button>
-        </form>
-        <p id="party-search-status" class="muted" role="status" aria-live="polite">Enter an observed buyer, supplier, filing entity, or stated party name.</p>
-        <div id="party-results" class="results"></div>
-        <div class="pager">
-          <button id="party-previous" class="button secondary" type="button" disabled>Previous</button>
-          <button id="party-next" class="button secondary" type="button" disabled>Next</button>
-        </div>
-      </section>
-
-      <section id="party-dossier-section" aria-labelledby="party-dossier-title" hidden>
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Negotiation preparation</p>
-            <h2 id="party-dossier-title">Observed-party dossier</h2>
+          <div class="starter-grid">
+            <article class="starter-card">
+              <span class="starter-topic">Risk allocation</span>
+              <h3>Liability caps</h3>
+              <p><strong>Decision prompt:</strong> What is capped, how is the cap calculated, and which liabilities are carved out?</p>
+              <button class="button secondary starter-action" type="button"
+                data-guide="Liability caps"
+                data-query="&quot;limitation of liability&quot; OR &quot;aggregate liability&quot; OR &quot;liability cap&quot;"
+                aria-pressed="false">Search liability wording</button>
+            </article>
+            <article class="starter-card">
+              <span class="starter-topic">Information governance</span>
+              <h3>Data protection</h3>
+              <p><strong>Decision prompt:</strong> Who may process personal data, for what purpose, and which security, deletion, or breach duties are stated?</p>
+              <button class="button secondary starter-action" type="button"
+                data-guide="Data protection"
+                data-query="&quot;data protection&quot; OR &quot;personal data&quot; OR &quot;data breach&quot;"
+                aria-pressed="false">Search data wording</button>
+            </article>
+            <article class="starter-card">
+              <span class="starter-topic">Transfer and control</span>
+              <h3>Assignment / change of control</h3>
+              <p><strong>Decision prompt:</strong> Is consent required to assign, and does a change of control trigger consent, notice, or termination?</p>
+              <button class="button secondary starter-action" type="button"
+                data-guide="Assignment and change of control"
+                data-query="assignment OR &quot;change of control&quot;"
+                aria-pressed="false">Search assignment wording</button>
+            </article>
+            <article class="starter-card">
+              <span class="starter-topic">Commercial mechanics</span>
+              <h3>Pricing / indexation</h3>
+              <p><strong>Decision prompt:</strong> Can prices or fees change, which index or formula applies, and when does an adjustment take effect?</p>
+              <button class="button secondary starter-action" type="button"
+                data-guide="Pricing and indexation"
+                data-query="indexation OR &quot;price adjustment&quot; OR &quot;consumer price index&quot;"
+                aria-pressed="false">Search pricing wording</button>
+            </article>
+            <article class="starter-card">
+              <span class="starter-topic">Exit risk</span>
+              <h3>Termination rights</h3>
+              <p><strong>Decision prompt:</strong> Which triggers, notice or cure periods, fees, and transition duties appear in the acquired agreements?</p>
+              <button class="button secondary starter-action" type="button"
+                data-guide="Termination rights"
+                data-query="termination OR terminate"
+                aria-pressed="false">Search termination wording</button>
+            </article>
           </div>
-          <button id="close-party-dossier" class="button secondary" type="button">Close dossier</button>
-        </div>
-        <p class="search-note">This exact-name evidence cohort is not a resolved entity portfolio. Theme labels are generated navigation aids; counts are not market prevalence or legal conclusions.</p>
-        <p id="party-dossier-status" class="muted" role="status" aria-live="polite"></p>
-        <div id="party-dossier-summary" class="metric-grid"></div>
-        <div id="party-dossier-themes" class="results spaced"></div>
-      </section>
 
-      <section class="search-panel" aria-labelledby="search-title">
-        <h2 id="search-title">Search published clause evidence</h2>
-        <form id="search-form" class="search-form clause-search-form">
-          <label class="wide" for="query">Words or concepts</label>
-          <label for="clause-party">Observed party (optional)</label>
-          <label for="kind">Document class</label>
-          <label for="source">Source slug</label>
-          <span aria-hidden="true"></span>
-          <input id="query" class="wide" name="q" type="search" minlength="2" maxlength="200" required placeholder="e.g. limitation of liability">
-          <input id="clause-party" name="party" type="search" minlength="2" maxlength="200" placeholder="e.g. G4S Limited">
-          <select id="kind" name="kind">
-            <option value="">All classes</option>
-            <option value="contract">Contracts</option>
-            <option value="amendment">Amendments</option>
-            <option value="notice">Notices</option>
-            <option value="template">Templates</option>
-            <option value="metadata">Metadata</option>
-            <option value="other">Other</option>
-          </select>
-          <input id="source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="sec_edgar">
-          <button id="search-submit" class="button primary" type="submit">Search</button>
-        </form>
-        <p class="search-note">Starter and custom searches use the same protected, read-only evidence API. Optionally restrict results to agreements containing a literal observed party-name match; this is not entity resolution or a completeness guarantee.</p>
-      </section>
-
-      <section aria-labelledby="snapshot-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Current corpus</p>
-            <h2 id="snapshot-title">Published evidence snapshot</h2>
+          <div class="guide-legend" aria-label="Evidence labels">
+            <p><span class="badge basis-observed">Observed source text</span> Retrieved wording is evidence to verify against its recorded public source.</p>
+            <p><span class="badge basis-generated">Generated tags · not source wording</span> Classifications and summaries are navigation aids, not contract terms.</p>
           </div>
-          <button id="refresh-summary" class="button secondary" type="button">Refresh</button>
-        </div>
-        <div id="summary-cards" class="metric-grid" aria-live="polite"></div>
-        <div class="snapshot-grid">
-          <article class="panel">
-            <h3>Published document classes</h3>
-            <div id="kind-breakdown"></div>
-          </article>
-          <article class="panel">
-            <h3>Acquisition and processing</h3>
-            <div id="operations"></div>
-          </article>
-        </div>
-        <p id="summary-freshness" class="muted"></p>
-      </section>
+          <p id="guided-boundary"
+            class="guide-boundary"><strong>Research boundary:</strong> This guided demonstration is not legal advice and does not measure clause prevalence. Results cover only acquired, published evidence; a match or no match does not establish market practice or the full effect of an agreement.</p>
+          <p id="guide-status" class="muted guide-status" role="status"
+            aria-live="polite">Choose a starter or enter your own search below. Document and source filters still apply.</p>
+        </section>
 
-      <section id="results-section" aria-labelledby="results-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Clause results</p>
-            <h2 id="results-title">Search the corpus</h2>
-            <p id="search-status" class="muted" aria-live="polite">Enter a query to inspect observed wording.</p>
-          </div>
+        <section class="search-panel" aria-labelledby="position-library-title">
+          <p class="eyebrow">Negotiation position library</p>
+          <h2
+            id="position-library-title">Browse detected liability positions</h2>
+          <p
+            class="search-note">Filter generated clause-level signals, positive wording features and exact observed cap-value candidates without guessing search terms. A missing feature is not the opposite position; counts reflect this acquired corpus, not market prevalence or legal conclusions.</p>
+          <form id="position-form" class="search-form position-search-form">
+            <label for="position-signal">Position signal</label>
+            <label for="position-feature">Negotiation feature</label>
+            <label for="position-value">Observed value evidence</label>
+            <label for="position-kind">Document class</label>
+            <label for="position-source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <select id="position-signal" name="signal">
+              <option value="">Any detected position</option>
+              <option
+                value="explicit_liability_limit_formula">Explicit liability limit</option>
+              <option
+                value="excluded_loss_language">Excluded loss language</option>
+              <option
+                value="cap_carveout_language">Cap / exclusion carve-out</option>
+              <option
+                value="express_unlimited_liability">Express unlimited liability</option>
+            </select>
+            <select id="position-feature" name="feature">
+              <option value="">Any generated feature</option>
+              <option
+                value="explicit_cap_facially_bilateral">Facially bilateral cap wording</option>
+              <option
+                value="loss_exclusion_facially_bilateral">Facially bilateral loss exclusion</option>
+              <option
+                value="carveout_death_or_personal_injury">Death / personal injury carve-out</option>
+              <option value="carveout_fraud">Fraud carve-out</option>
+              <option
+                value="carveout_wilful_or_willful_misconduct">Wilful / willful misconduct carve-out</option>
+              <option
+                value="loss_exclusion_indirect">Indirect loss named</option>
+              <option
+                value="loss_exclusion_consequential">Consequential loss named</option>
+              <option value="loss_exclusion_special">Special loss named</option>
+              <option
+                value="loss_exclusion_incidental">Incidental loss named</option>
+              <option
+                value="loss_exclusion_exemplary">Exemplary loss named</option>
+              <option
+                value="loss_exclusion_punitive">Punitive loss named</option>
+            </select>
+            <select id="position-value" name="value">
+              <option value="">Any value evidence</option>
+              <option value="currency_amounts">Currency amount</option>
+              <option value="percentages">Percentage</option>
+              <option value="cap_basis_terms">Cap basis</option>
+              <option
+                value="comparison_formulas">Greater / lesser formula</option>
+              <option value="period_terms">Period term</option>
+            </select>
+            <select id="position-kind" name="kind">
+              <option value="">All classes</option>
+              <option value="contract">Contracts</option>
+              <option value="amendment">Amendments</option>
+              <option value="notice">Notices</option>
+              <option value="template">Templates</option>
+              <option value="metadata">Metadata</option>
+              <option value="other">Other</option>
+            </select>
+            <input id="position-source" name="source" type="text" maxlength="63"
+              pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              placeholder="e.g. uk_find_a_tender">
+            <button id="position-submit" class="button primary"
+              type="submit">Browse positions</button>
+          </form>
+          <div id="position-facets" class="quick"
+            aria-label="Available liability-position evidence"><span>Available evidence:</span></div>
+          <p id="position-status" class="muted" role="status"
+            aria-live="polite">Browse supported signals across published, nonduplicate evidence.</p>
+        </section>
+
+        <section class="search-panel"
+          aria-labelledby="termination-library-title">
+          <p class="eyebrow">Exit and trigger library</p>
+          <h2
+            id="termination-library-title">Browse detected termination wording</h2>
+          <p
+            class="search-note">Filter positive generated wording signals and inspect exact support and lexical duration candidates. The same-support option requires an explicit termination term in that bounded excerpt; it is a navigation aid, not a finding about rights, triggers, causation, or legal effect.</p>
+          <form id="termination-form"
+            class="search-form termination-search-form">
+            <label for="termination-signal">Termination wording</label>
+            <label for="termination-duration">Observed duration evidence</label>
+            <label for="termination-linkage">Evidence proximity</label>
+            <label for="termination-kind">Document class</label>
+            <label for="termination-source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <select id="termination-signal" name="signal">
+              <option value="">Any detected wording</option>
+              <option
+                value="convenience_termination_language">Convenience termination</option>
+              <option value="material_breach_language">Material breach</option>
+              <option value="cure_or_remedy_language">Cure / remedy</option>
+              <option value="insolvency_language">Insolvency</option>
+              <option
+                value="change_of_control_language">Change of control</option>
+              <option value="nonpayment_language">Non-payment</option>
+              <option
+                value="immediate_termination_language">Immediate termination</option>
+              <option value="termination_fee_language">Termination fee</option>
+              <option
+                value="exit_assistance_language">Exit / transition assistance</option>
+              <option
+                value="post_termination_obligation_language">Post-termination obligations</option>
+              <option value="force_majeure_language">Force majeure</option>
+              <option
+                value="data_return_or_deletion_language">Data return / deletion</option>
+            </select>
+            <select id="termination-duration" name="duration">
+              <option value="">Any duration evidence</option>
+              <option value="present">Exact duration candidate present</option>
+            </select>
+            <select id="termination-linkage" name="linkage">
+              <option value="">Any bounded signal support</option>
+              <option
+                value="local">Explicit termination term in same support</option>
+            </select>
+            <select id="termination-kind" name="kind">
+              <option value="">Contracts and amendments</option>
+              <option value="contract">Contracts</option>
+              <option value="amendment">Amendments</option>
+            </select>
+            <input id="termination-source" name="source" type="text"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              placeholder="e.g. uk_find_a_tender">
+            <button id="termination-submit" class="button primary"
+              type="submit">Browse termination</button>
+          </form>
+          <div id="termination-facets" class="quick"
+            aria-label="Available termination-position evidence"><span>Available evidence:</span></div>
+          <p id="termination-status" class="muted" role="status"
+            aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
+        </section>
+
+        <section class="search-panel"
+          aria-labelledby="assignment-library-title">
+          <p class="eyebrow">Transfer and ownership-change library</p>
+          <h2
+            id="assignment-library-title">Browse assignment and change-of-control wording</h2>
+          <p
+            class="search-note">Filter positive generated wording signals anchored to one exact detector-selected source span. Finance-transfer context is labelled separately. Signals do not determine which party holds a right, whether consent is effective, or whether an exception applies.</p>
+          <form id="assignment-form" class="search-form assignment-search-form">
+            <label for="assignment-signal">Assignment wording</label>
+            <label for="assignment-context">Commercial context</label>
+            <label for="assignment-kind">Document class</label>
+            <label for="assignment-source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <select id="assignment-signal" name="signal">
+              <option value="">Any detected wording</option>
+              <option
+                value="assignment_prohibition_language">Assignment / transfer prohibition</option>
+              <option
+                value="prior_consent_language">Consent / approval requirement</option>
+              <option
+                value="qualified_consent_standard_language">Consent reasonableness standard</option>
+              <option
+                value="express_assignment_permission_language">Express transfer permission</option>
+              <option
+                value="affiliate_transfer_language">Affiliate / group transfer</option>
+              <option
+                value="successor_transaction_language">Merger / successor transfer</option>
+              <option
+                value="change_of_control_consequence_language">Change-of-control consequence</option>
+              <option
+                value="change_of_control_definition_language">Change-of-control definition</option>
+              <option
+                value="unauthorized_transfer_invalidity_language">Unauthorized transfer invalidity</option>
+              <option
+                value="assignor_continuing_obligation_language">Assignor remains responsible</option>
+              <option
+                value="finance_transfer_context">Finance-transfer context</option>
+              <option
+                value="contract_transfer_language">Contractual rights / obligations transfer</option>
+            </select>
+            <select id="assignment-context" name="context">
+              <option value="">All contexts</option>
+              <option value="general">General context (exclude finance)</option>
+              <option value="finance">Finance-transfer context only</option>
+            </select>
+            <select id="assignment-kind" name="kind">
+              <option value="">Contracts and amendments</option>
+              <option value="contract">Contracts</option>
+              <option value="amendment">Amendments</option>
+            </select>
+            <input id="assignment-source" name="source" type="text"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              placeholder="e.g. sec_edgar">
+            <button id="assignment-submit" class="button primary"
+              type="submit">Browse assignment</button>
+          </form>
+          <div id="assignment-facets" class="quick"
+            aria-label="Available assignment-position evidence"><span>Available evidence:</span></div>
+          <p id="assignment-status" class="muted" role="status"
+            aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
+        </section>
+
+        <section class="search-panel"
+          aria-labelledby="governing-law-library-title">
+          <p class="eyebrow">Choice-of-law and forum library</p>
+          <h2
+            id="governing-law-library-title">Browse governing-law and jurisdiction wording</h2>
+          <p
+            class="search-note">Filter positive generated wording signals anchored to exact detector support. Jurisdictions are not normalized, and the signals do not determine enforceability, resolve conflicts rules, or reconcile arbitration and amendments.</p>
+          <form id="governing-law-form"
+            class="search-form governing-law-search-form">
+            <label for="governing-law-signal">Law or forum wording</label>
+            <label for="governing-law-kind">Document class</label>
+            <label for="governing-law-source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <select id="governing-law-signal" name="signal">
+              <option value="">Any detected wording</option>
+              <option
+                value="governing_law_language">Express governing law</option>
+              <option
+                value="exclusive_jurisdiction_language">Exclusive jurisdiction</option>
+              <option
+                value="nonexclusive_jurisdiction_language">Non-exclusive jurisdiction</option>
+              <option
+                value="submission_to_jurisdiction_language">Submission / consent to jurisdiction</option>
+              <option
+                value="court_or_forum_language">Court, tribunal or venue wording</option>
+              <option
+                value="venue_objection_waiver_language">Venue / forum objection waiver</option>
+              <option
+                value="conflict_of_laws_qualification_language">Conflict-of-laws qualification</option>
+              <option
+                value="service_of_process_language">Service of process / process agent</option>
+            </select>
+            <select id="governing-law-kind" name="kind">
+              <option value="">Contracts and amendments</option>
+              <option value="contract">Contracts</option>
+              <option value="amendment">Amendments</option>
+            </select>
+            <input id="governing-law-source" name="source" type="text"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              placeholder="e.g. sec_edgar">
+            <button id="governing-law-submit" class="button primary"
+              type="submit">Browse law and forum</button>
+          </form>
+          <div id="governing-law-facets" class="quick"
+            aria-label="Available governing-law-position evidence"><span>Available evidence:</span></div>
+          <p id="governing-law-status" class="muted" role="status"
+            aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
+        </section>
+
+        <section class="search-panel" aria-labelledby="party-search-title">
+          <p class="eyebrow">Vendor and counterparty trail</p>
+          <h2 id="party-search-title">Find published agreements by party</h2>
+          <p
+            class="search-note">Search exact observed party-name text. Results are document records, not resolved legal entities, award counts, spend, market share, or a complete portfolio.</p>
+          <form id="party-search-form" class="search-form">
+            <label class="wide" for="party-query">Party name</label>
+            <label for="party-kind">Document class</label>
+            <label for="party-source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <input id="party-query" class="wide" name="q" type="search"
+              minlength="2" maxlength="200" required
+              placeholder="e.g. G4S Limited">
+            <select id="party-kind" name="kind">
+              <option value="">All classes</option>
+              <option value="contract">Contracts</option>
+              <option value="amendment">Amendments</option>
+              <option value="notice">Notices</option>
+              <option value="template">Templates</option>
+              <option value="metadata">Metadata</option>
+              <option value="other">Other</option>
+            </select>
+            <input id="party-source" name="source" type="text" maxlength="63"
+              pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="uk_find_a_tender">
+            <button id="party-search-submit" class="button primary"
+              type="submit">Find agreements</button>
+          </form>
+          <p id="party-search-status" class="muted" role="status"
+            aria-live="polite">Enter an observed buyer, supplier, filing entity, or stated party name.</p>
+          <div id="party-results" class="results"></div>
           <div class="pager">
-            <button id="previous" class="button secondary" type="button" disabled>Previous</button>
-            <button id="next" class="button secondary" type="button" disabled>Next</button>
+            <button id="party-previous" class="button secondary" type="button"
+              disabled>Previous</button>
+            <button id="party-next" class="button secondary" type="button"
+              disabled>Next</button>
           </div>
-        </div>
-        <div id="comparison-toolbar" class="comparison-toolbar" aria-labelledby="comparison-toolbar-title">
-          <div>
-            <strong id="comparison-toolbar-title">Compare precedents</strong>
-            <span id="comparison-status" class="muted" role="status" aria-live="polite">Select 2–4 results to compare recorded wording and bounded context.</span>
+        </section>
+
+        <section id="party-dossier-section"
+          aria-labelledby="party-dossier-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Negotiation preparation</p>
+              <h2 id="party-dossier-title">Observed-party dossier</h2>
+            </div>
+            <button id="close-party-dossier" class="button secondary"
+              type="button">Close dossier</button>
           </div>
-          <div class="comparison-actions">
-            <button id="clear-comparison" class="button secondary" type="button" disabled>Clear selection</button>
-            <button id="open-comparison" class="button primary" type="button" disabled>Compare selected</button>
+          <p
+            class="search-note">This exact-name evidence cohort is not a resolved entity portfolio. Theme labels are generated navigation aids; counts are not market prevalence or legal conclusions.</p>
+          <p id="party-dossier-status" class="muted" role="status"
+            aria-live="polite"></p>
+          <div id="party-dossier-summary" class="metric-grid"></div>
+          <div id="party-dossier-themes" class="results spaced"></div>
+        </section>
+
+        <section class="search-panel" aria-labelledby="search-title">
+          <h2 id="search-title">Search published clause evidence</h2>
+          <form id="search-form" class="search-form clause-search-form">
+            <label class="wide" for="query">Words or concepts</label>
+            <label for="clause-party">Observed party (optional)</label>
+            <label for="kind">Document class</label>
+            <label for="source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <input id="query" class="wide" name="q" type="search" minlength="2"
+              maxlength="200" required
+              placeholder="e.g. limitation of liability">
+            <input id="clause-party" name="party" type="search" minlength="2"
+              maxlength="200" placeholder="e.g. G4S Limited">
+            <select id="kind" name="kind">
+              <option value="">All classes</option>
+              <option value="contract">Contracts</option>
+              <option value="amendment">Amendments</option>
+              <option value="notice">Notices</option>
+              <option value="template">Templates</option>
+              <option value="metadata">Metadata</option>
+              <option value="other">Other</option>
+            </select>
+            <input id="source" name="source" type="text" maxlength="63"
+              pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="sec_edgar">
+            <button id="search-submit" class="button primary"
+              type="submit">Search</button>
+          </form>
+          <p
+            class="search-note">Starter and custom searches use the same protected, read-only evidence API. Optionally restrict results to agreements containing a literal observed party-name match; this is not entity resolution or a completeness guarantee.</p>
+        </section>
+
+        <section aria-labelledby="snapshot-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Current corpus</p>
+              <h2 id="snapshot-title">Published evidence snapshot</h2>
+            </div>
+            <button id="refresh-summary" class="button secondary"
+              type="button">Refresh</button>
           </div>
-        </div>
-        <div id="results" class="results">
-          <p class="empty">Results show clause excerpts, document context, and direct source links.</p>
-        </div>
+          <div id="summary-cards" class="metric-grid" aria-live="polite"></div>
+          <div class="snapshot-grid">
+            <article class="panel">
+              <h3>Published document classes</h3>
+              <div id="kind-breakdown"></div>
+            </article>
+            <article class="panel">
+              <h3>Acquisition and processing</h3>
+              <div id="operations"></div>
+            </article>
+          </div>
+          <p id="summary-freshness" class="muted"></p>
+        </section>
+
+        <section id="results-section" aria-labelledby="results-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Clause results</p>
+              <h2 id="results-title">Search the corpus</h2>
+              <p id="search-status" class="muted"
+                aria-live="polite">Enter a query to inspect observed wording.</p>
+            </div>
+            <div class="pager">
+              <button id="previous" class="button secondary" type="button"
+                disabled>Previous</button>
+              <button id="next" class="button secondary" type="button"
+                disabled>Next</button>
+            </div>
+          </div>
+          <div id="comparison-toolbar" class="comparison-toolbar"
+            aria-labelledby="comparison-toolbar-title">
+            <div>
+              <strong id="comparison-toolbar-title">Compare precedents</strong>
+              <span id="comparison-status" class="muted" role="status"
+                aria-live="polite">Select 2–4 results to compare recorded wording and bounded context.</span>
+            </div>
+            <div class="comparison-actions">
+              <button id="clear-comparison" class="button secondary"
+                type="button" disabled>Clear selection</button>
+              <button id="open-comparison" class="button primary" type="button"
+                disabled>Compare selected</button>
+            </div>
+          </div>
+          <div id="results" class="results">
+            <p
+              class="empty">Results show clause excerpts, document context, and direct source links.</p>
+          </div>
+        </section>
       </section>
-    </section>
 
-    <section class="limitations" aria-labelledby="limitations-title">
-      <p class="eyebrow">Read with care</p>
-      <h2 id="limitations-title">Coverage and limitations</h2>
-      <div class="limit-grid">
-        <article><strong>Coverage bias</strong><p>Public disclosures are selective, jurisdictionally uneven, often redacted, and not representative of all negotiated contracts.</p></article>
-        <article><strong>Evidence boundaries</strong><p>Search results may omit schedules, referenced documents, amendments, or context that has not yet been acquired and linked.</p></article>
-        <article><strong>Observed vs generated</strong><p>Observed wording is evidence. Generated themes, summaries, party resolutions, and claims remain interpretations with stated support and review status.</p></article>
-        <article><strong>Legal reliance</strong><p>This research interface is not legal advice. Verify source documents, completeness, governing law, dates, and later changes before relying on a result.</p></article>
+      <section class="limitations" aria-labelledby="limitations-title">
+        <p class="eyebrow">Read with care</p>
+        <h2 id="limitations-title">Coverage and limitations</h2>
+        <div class="limit-grid">
+          <article><strong>Coverage bias</strong><p>Public disclosures are selective, jurisdictionally uneven, often redacted, and not representative of all negotiated contracts.</p></article>
+          <article><strong>Evidence boundaries</strong><p>Search results may omit schedules, referenced documents, amendments, or context that has not yet been acquired and linked.</p></article>
+          <article><strong>Observed vs generated</strong><p>Observed wording is evidence. Generated themes, summaries, party resolutions, and claims remain interpretations with stated support and review status.</p></article>
+          <article><strong>Legal reliance</strong><p>This research interface is not legal advice. Verify source documents, completeness, governing law, dates, and later changes before relying on a result.</p></article>
+        </div>
+        <div id="corpus-disclosure" class="corpus-disclosure"></div>
+      </section>
+    </main>
+
+    <dialog id="detail-dialog" aria-labelledby="detail-title">
+      <div class="dialog-header">
+        <strong id="detail-title">Agreement evidence</strong>
+        <button id="close-dialog" class="icon-button" type="button"
+          aria-label="Close agreement details">×</button>
       </div>
-      <div id="corpus-disclosure" class="corpus-disclosure"></div>
-    </section>
-  </main>
+      <div id="detail-body" class="dialog-body"></div>
+    </dialog>
 
-  <dialog id="detail-dialog" aria-labelledby="detail-title">
-    <div class="dialog-header">
-      <strong id="detail-title">Agreement evidence</strong>
-      <button id="close-dialog" class="icon-button" type="button" aria-label="Close agreement details">×</button>
-    </div>
-    <div id="detail-body" class="dialog-body"></div>
-  </dialog>
-
-  <dialog id="comparison-dialog" class="comparison-dialog" aria-labelledby="comparison-title" aria-describedby="comparison-subtitle">
-    <div class="dialog-header">
-      <div>
-        <strong id="comparison-title">Precedent comparison</strong>
-        <span id="comparison-subtitle" class="dialog-subtitle">Exact observed clauses with a five-clause source window</span>
-        <span id="comparison-export-status" class="dialog-subtitle" role="status" aria-live="polite"></span>
+    <dialog id="comparison-dialog" class="comparison-dialog"
+      aria-labelledby="comparison-title" aria-describedby="comparison-subtitle">
+      <div class="dialog-header">
+        <div>
+          <strong id="comparison-title">Precedent comparison</strong>
+          <span id="comparison-subtitle"
+            class="dialog-subtitle">Exact observed clauses with a five-clause source window</span>
+          <span id="comparison-export-status" class="dialog-subtitle"
+            role="status" aria-live="polite"></span>
+        </div>
+        <div class="dialog-actions">
+          <button id="export-position-matrix" class="button secondary"
+            type="button" disabled>Download position CSV</button>
+          <button id="export-termination-matrix" class="button secondary"
+            type="button" disabled>Download termination CSV</button>
+          <button id="export-assignment-matrix" class="button secondary"
+            type="button" disabled>Download assignment CSV</button>
+          <button id="export-governing-law-matrix" class="button secondary"
+            type="button" disabled>Download governing-law CSV</button>
+          <button id="export-comparison" class="button secondary" type="button"
+            disabled>Download citation JSON</button>
+          <button id="close-comparison" class="icon-button" type="button"
+            aria-label="Close precedent comparison">×</button>
+        </div>
       </div>
-      <div class="dialog-actions">
-        <button id="export-position-matrix" class="button secondary" type="button" disabled>Download position CSV</button>
-        <button id="export-termination-matrix" class="button secondary" type="button" disabled>Download termination CSV</button>
-        <button id="export-assignment-matrix" class="button secondary" type="button" disabled>Download assignment CSV</button>
-        <button id="export-comparison" class="button secondary" type="button" disabled>Download citation JSON</button>
-        <button id="close-comparison" class="icon-button" type="button" aria-label="Close precedent comparison">×</button>
-      </div>
-    </div>
-    <div id="comparison-body" class="dialog-body"></div>
-  </dialog>
+      <div id="comparison-body" class="dialog-body"></div>
+    </dialog>
 
-  <noscript>This explorer requires JavaScript to call the protected read-only API.</noscript>
-  <script type="module" src="./app.mjs"></script>
-</body>
+    <noscript>This explorer requires JavaScript to call the protected read-only API.</noscript>
+    <script type="module" src="./app.mjs"></script>
+  </body>
 </html>

@@ -28,6 +28,8 @@ export const TERMINATION_POSITION_MATRIX_SCHEMA =
   "esheria.termination-position-matrix.v1";
 export const ASSIGNMENT_POSITION_MATRIX_SCHEMA =
   "esheria.assignment-position-matrix.v1";
+export const GOVERNING_LAW_POSITION_MATRIX_SCHEMA =
+  "esheria.governing-law-position-matrix.v1";
 
 const LIABILITY_VALUE_CANDIDATE_CATEGORIES = Object.freeze([
   ["currency_amounts", "Currency amounts"],
@@ -2776,6 +2778,280 @@ export function buildAssignmentPositionMatrixCsv({
   }\r\n`;
 }
 
+const GOVERNING_LAW_POSITION_MATRIX_COLUMNS = Object.freeze([
+  "matrix_schema",
+  "generated_at",
+  "retrieval_query",
+  "document_kind_filter",
+  "source_filter",
+  "selected_count",
+  "citation_number",
+  "signal_row_number",
+  "retrieval_rank",
+  "observed_published_at",
+  "source_slug",
+  "source_name",
+  "source_publisher",
+  "source_external_id",
+  "source_url",
+  "source_terms_url",
+  "source_policy_assessment_status",
+  "source_human_review_required",
+  "agreement_id",
+  "agreement_title",
+  "agreement_document_kind",
+  "agreement_document_kind_basis",
+  "artifact_sha256",
+  "extraction_method",
+  "extraction_version",
+  "agreement_text_basis",
+  "clause_id",
+  "clause_sequence",
+  "clause_heading",
+  "clause_text_basis",
+  "clause_text_sha256",
+  "clause_location",
+  "clause_char_start",
+  "clause_char_end",
+  "observed_clause_text",
+  "observed_clause_text_truncated",
+  "generated_clause_type",
+  "position_schema",
+  "position_applicable",
+  "position_reason",
+  "detector_version",
+  "detector_scope",
+  "matched_signal_count",
+  "supported_rule_count",
+  "eligibility_theme",
+  "eligibility_theme_basis",
+  "eligibility_taxonomy_version",
+  "eligibility_generated_by",
+  "eligibility_support_method",
+  "detector_match",
+  "signal_key",
+  "signal_label",
+  "signal_basis",
+  "signal_confidence",
+  "signal_rule_id",
+  "exclusive_jurisdiction_language_present",
+  "nonexclusive_jurisdiction_language_present",
+  "conflict_of_laws_language_present",
+  "venue_objection_waiver_language_present",
+  "service_of_process_language_present",
+  "arbitration_language_present",
+  "observed_support",
+  "support_text_truncated",
+  "support_text_basis",
+  "support_sha256",
+  "support_clause_char_start",
+  "support_clause_char_end",
+  "support_document_char_start",
+  "support_document_char_end",
+  "matched_text",
+  "matched_text_truncated",
+  "matched_text_sha256",
+  "matched_clause_char_start",
+  "matched_clause_char_end",
+  "support_method",
+  "support_is_detector_bounded",
+  "support_maximum_characters",
+  "anchor_clause_id",
+  "anchor_clause_sha256",
+  "absence_is_not_evidence_of_absence",
+  "signals_are_legal_conclusions",
+  "forum_selection_is_determined",
+  "jurisdiction_is_normalized",
+  "conflicts_rules_are_resolved",
+  "exceptions_outside_support_may_apply",
+  "position_limitations",
+  "export_limitations",
+]);
+
+export function buildGoverningLawPositionMatrixCsv({
+  query = "",
+  kind = "",
+  source = "",
+  entries = [],
+  generatedAt = new Date().toISOString(),
+} = {}) {
+  const manifest = buildCitationManifest({
+    query,
+    kind,
+    source,
+    entries,
+    generatedAt,
+  });
+  const scope = manifest.retrieval_scope;
+  const exportLimitations = [
+    ...manifest.limitations,
+    "Each row represents one generated governing-law/forum signal; clauses with no supported signal produce one non-match row.",
+    "Jurisdictions are not normalized, conflicts rules are not resolved, and express forum wording is not an enforceability conclusion.",
+  ];
+  const rows = manifest.citations.flatMap((citation) => {
+    const agreement = record(citation.agreement);
+    const clause = record(citation.matched_clause);
+    const clauseLocation = record(clause.location);
+    const interpretation = record(clause.generated_interpretation);
+    const sourceRecord = record(citation.source);
+    const retrieval = record(citation.retrieval);
+    const position = record(citation.governing_law_position);
+    const coverage = record(position.coverage);
+    const eligibility = record(position.eligibility);
+    const limits = record(position.limits);
+    const positionApplicable = typeof position.applicable === "boolean"
+      ? position.applicable
+      : null;
+    const signals = array(position.signals).slice(
+      0,
+      GOVERNING_LAW_POSITION_SIGNAL_MAX,
+    );
+    const signalRows = signals.length ? signals : [null];
+
+    return signalRows.map((signalValue, signalIndex) => {
+      const signal = record(signalValue);
+      const attributes = record(signal.generated_attributes);
+      const support = record(signal.observed_support);
+      const hasSignal = typeof signal.signal_key === "string";
+      return {
+        matrix_schema: GOVERNING_LAW_POSITION_MATRIX_SCHEMA,
+        generated_at: manifest.generated_at,
+        retrieval_query: scope.query,
+        document_kind_filter: scope.document_kind,
+        source_filter: scope.source,
+        selected_count: scope.selected_count,
+        citation_number: citation.citation_number,
+        signal_row_number: hasSignal ? signalIndex + 1 : null,
+        retrieval_rank: retrieval.rank,
+        observed_published_at: retrieval.observed_published_at,
+        source_slug: sourceRecord.slug,
+        source_name: sourceRecord.name,
+        source_publisher: sourceRecord.publisher,
+        source_external_id: sourceRecord.external_id,
+        source_url: sourceRecord.canonical_url,
+        source_terms_url: sourceRecord.terms_url,
+        source_policy_assessment_status: sourceRecord.policy_assessment_status,
+        source_human_review_required: matrixBoolean(
+          sourceRecord.human_review_required,
+        ),
+        agreement_id: agreement.id,
+        agreement_title: agreement.title,
+        agreement_document_kind: agreement.document_kind,
+        agreement_document_kind_basis: agreement.document_kind_basis,
+        artifact_sha256: agreement.artifact_sha256,
+        extraction_method: agreement.extraction_method,
+        extraction_version: agreement.extraction_version,
+        agreement_text_basis: agreement.text_basis,
+        clause_id: clause.id,
+        clause_sequence: clause.sequence,
+        clause_heading: clause.heading,
+        clause_text_basis: clause.text_basis,
+        clause_text_sha256: clause.observed_text_sha256,
+        clause_location: clauseLocation.display,
+        clause_char_start: clauseLocation.char_start,
+        clause_char_end: clauseLocation.char_end,
+        observed_clause_text: clause.observed_text,
+        observed_clause_text_truncated: matrixBoolean(
+          clause.observed_text_truncated,
+        ),
+        generated_clause_type: interpretation.clause_type,
+        position_schema: position.schema,
+        position_applicable: matrixBoolean(positionApplicable),
+        position_reason: position.reason,
+        detector_version: position.detector_version,
+        detector_scope: position.scope,
+        matched_signal_count: coverage.matched_signal_count,
+        supported_rule_count: coverage.supported_rule_count,
+        eligibility_theme: eligibility.theme,
+        eligibility_theme_basis: eligibility.theme_basis,
+        eligibility_taxonomy_version: eligibility.taxonomy_version,
+        eligibility_generated_by: eligibility.generated_by,
+        eligibility_support_method: eligibility.support_method,
+        detector_match: hasSignal
+          ? "TRUE"
+          : positionApplicable === true
+          ? "FALSE"
+          : "",
+        signal_key: signal.signal_key,
+        signal_label: signal.label,
+        signal_basis: signal.signal_basis,
+        signal_confidence: signal.confidence,
+        signal_rule_id: signal.rule_id,
+        exclusive_jurisdiction_language_present: matrixBoolean(
+          attributes.exclusive_jurisdiction_language_present,
+        ),
+        nonexclusive_jurisdiction_language_present: matrixBoolean(
+          attributes.nonexclusive_jurisdiction_language_present,
+        ),
+        conflict_of_laws_language_present: matrixBoolean(
+          attributes.conflict_of_laws_language_present,
+        ),
+        venue_objection_waiver_language_present: matrixBoolean(
+          attributes.venue_objection_waiver_language_present,
+        ),
+        service_of_process_language_present: matrixBoolean(
+          attributes.service_of_process_language_present,
+        ),
+        arbitration_language_present: matrixBoolean(
+          attributes.arbitration_language_present,
+        ),
+        observed_support: support.text,
+        support_text_truncated: matrixBoolean(support.text_truncated),
+        support_text_basis: support.text_basis,
+        support_sha256: support.sha256,
+        support_clause_char_start: support.clause_char_start,
+        support_clause_char_end: support.clause_char_end,
+        support_document_char_start: support.document_char_start,
+        support_document_char_end: support.document_char_end,
+        matched_text: support.matched_text,
+        matched_text_truncated: matrixBoolean(support.matched_text_truncated),
+        matched_text_sha256: support.matched_text_sha256,
+        matched_clause_char_start: support.matched_clause_char_start,
+        matched_clause_char_end: support.matched_clause_char_end,
+        support_method: support.support_method,
+        support_is_detector_bounded: matrixBoolean(
+          limits.support_is_detector_bounded,
+        ),
+        support_maximum_characters: limits.support_maximum_characters,
+        anchor_clause_id: signal.anchor_clause_id,
+        anchor_clause_sha256: signal.anchor_clause_sha256,
+        absence_is_not_evidence_of_absence: matrixBoolean(
+          limits.absence_is_not_evidence_of_absence,
+        ),
+        signals_are_legal_conclusions: matrixBoolean(
+          limits.signals_are_legal_conclusions,
+        ),
+        forum_selection_is_determined: matrixBoolean(
+          limits.forum_selection_is_determined,
+        ),
+        jurisdiction_is_normalized: matrixBoolean(
+          limits.jurisdiction_is_normalized,
+        ),
+        conflicts_rules_are_resolved: matrixBoolean(
+          limits.conflicts_rules_are_resolved,
+        ),
+        exceptions_outside_support_may_apply: matrixBoolean(
+          limits.exceptions_outside_support_may_apply,
+        ),
+        position_limitations: array(position.limitations).join(" | "),
+        export_limitations: exportLimitations.join(" | "),
+      };
+    });
+  });
+
+  return `\uFEFF${
+    [
+      GOVERNING_LAW_POSITION_MATRIX_COLUMNS.map(csvCell).join(","),
+      ...rows.map((row) =>
+        GOVERNING_LAW_POSITION_MATRIX_COLUMNS.map((column) =>
+          csvCell(row[column])
+        )
+          .join(",")
+      ),
+    ].join("\r\n")
+  }\r\n`;
+}
+
 async function readBoundedJson(response) {
   const declared = response.headers.get("content-length");
   if (declared && Number(declared) > MAX_RESPONSE_BYTES) {
@@ -3197,6 +3473,9 @@ function boot() {
   const exportPositionMatrixButton = byId("export-position-matrix");
   const exportTerminationMatrixButton = byId("export-termination-matrix");
   const exportAssignmentMatrixButton = byId("export-assignment-matrix");
+  const exportGoverningLawMatrixButton = byId(
+    "export-governing-law-matrix",
+  );
   const exportComparisonButton = byId("export-comparison");
   const exportStatus = byId("comparison-export-status");
   const detailDialog = byId("detail-dialog");
@@ -3923,6 +4202,8 @@ function boot() {
     exportTerminationMatrixButton.disabled = state.comparing ||
       state.comparisonEvidence.length === 0;
     exportAssignmentMatrixButton.disabled = state.comparing ||
+      state.comparisonEvidence.length === 0;
+    exportGoverningLawMatrixButton.disabled = state.comparing ||
       state.comparisonEvidence.length === 0;
     comparisonStatus.className = kind === "error" ? "status error" : "muted";
     comparisonStatus.textContent = message ??
@@ -4851,7 +5132,7 @@ function boot() {
     exportStatus.textContent = loadedEntries.length
       ? `${loadedEntries.length} evidence citation${
         loadedEntries.length === 1 ? "" : "s"
-      } ready for JSON and position-matrix CSV export.`
+      } ready for JSON and evidence-matrix CSV exports.`
       : "No evidence was loaded, so no export file is available.";
     state.comparing = false;
     updateComparisonControls();
@@ -4982,6 +5263,39 @@ function boot() {
       exportStatus.textContent = error instanceof Error
         ? error.message
         : "Assignment CSV could not be created.";
+    }
+  }
+
+  function exportGoverningLawMatrix() {
+    if (!state.comparisonEvidence.length) return;
+    try {
+      const generatedAt = new Date().toISOString();
+      const governingMode = state.resultMode === "governing_law_positions";
+      const csv = buildGoverningLawPositionMatrixCsv({
+        query: governingMode ? state.governingLawSignal : state.query,
+        kind: governingMode ? state.governingLawKind : state.kind,
+        source: governingMode ? state.governingLawSource : state.source,
+        entries: state.comparisonEvidence,
+        generatedAt,
+      });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = element("a");
+      link.href = objectUrl;
+      link.download = `esheria-governing-law-position-matrix-${
+        generatedAt.slice(0, 10)
+      }.csv`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      exportStatus.textContent =
+        "Governing-law CSV downloaded. Each row is one generated wording signal; jurisdictions are not normalized and enforceability is not determined.";
+    } catch (error) {
+      exportStatus.textContent = error instanceof Error
+        ? error.message
+        : "Governing-law CSV could not be created.";
     }
   }
 
@@ -6637,6 +6951,10 @@ function boot() {
   exportAssignmentMatrixButton.addEventListener(
     "click",
     exportAssignmentMatrix,
+  );
+  exportGoverningLawMatrixButton.addEventListener(
+    "click",
+    exportGoverningLawMatrix,
   );
   exportComparisonButton.addEventListener("click", exportComparison);
   detailDialog.addEventListener("click", (event) => {
