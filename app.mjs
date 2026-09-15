@@ -176,7 +176,8 @@ function isAllowedApiTarget(url) {
   if (
     pathname === "/api/dashboard" ||
     pathname === "/api/summary" ||
-    pathname === "/api/metrics"
+    pathname === "/api/metrics" ||
+    pathname === "/api/governing-law-summary"
   ) return url.search === "";
   if (
     pathname === "/api/search" || pathname === "/api/positions" ||
@@ -3403,15 +3404,6 @@ function boot() {
     const assignmentContextFacets = array(
       assignmentSummary.published_context_facets,
     );
-    const governingLawSummary = record(root.governing_law_summary);
-    const governingLawCurrent = record(governingLawSummary.current);
-    const governingLawLibrary = record(
-      governingLawSummary.published_position_library,
-    );
-    const governingLawSignalFacets = array(
-      governingLawSummary.published_signal_facets,
-    );
-
     summaryCards.replaceChildren(
       metric(
         "Published agreements",
@@ -3531,18 +3523,6 @@ function boot() {
         `${count(assignmentSurface.clauses_with_exact_detector_support)} / ${
           count(assignmentSurface.clauses)
         } theme clauses`,
-      ],
-      [
-        "Published governing-law library",
-        `${count(governingLawLibrary.matched_clauses)} clauses across ${
-          count(governingLawLibrary.distinct_agreements)
-        } agreements`,
-      ],
-      [
-        "Governing-law cache repair backlog",
-        Number(governingLawCurrent.missing_clauses) === 0
-          ? "Complete"
-          : `${count(governingLawCurrent.missing_clauses)} missing`,
       ],
       [
         "Average extraction confidence",
@@ -3818,10 +3798,35 @@ function boot() {
         sourceCoverage ? ` · ${sourceCoverage}` : ""
       }; generated wording coverage, not party entitlement or a legal conclusion.`;
     }
+    const disclosure = record(summary.disclosure);
+    const disclosureLines = [
+      disclosure.coverage,
+      disclosure.observed_vs_generated,
+      disclosure.legal_reliance,
+      partySummary.measurement,
+      positionSummary.measurement,
+      positionSummary.absence_warning,
+      terminationSummary.measurement,
+      terminationSummary.absence_warning,
+      assignmentSummary.measurement,
+      assignmentSummary.absence_warning,
+      assignmentSummary.context_warning,
+    ].filter((value) => typeof value === "string");
+    corpusDisclosure.replaceChildren(
+      ...disclosureLines.map((line) => element("p", "", line)),
+    );
+  }
+
+  function renderGoverningLawSummary(value) {
+    const summary = record(value);
+    const current = record(summary.current);
+    const library = record(summary.published_position_library);
+    const signalFacets = array(summary.published_signal_facets);
+
     governingLawFacets.replaceChildren(
       element("span", "", "Available evidence:"),
     );
-    for (const facetValue of governingLawSignalFacets) {
+    for (const facetValue of signalFacets) {
       const facet = record(facetValue);
       const signalKey = displayText(facet.signal_key);
       const label = GOVERNING_LAW_POSITION_SIGNALS[signalKey];
@@ -3840,42 +3845,57 @@ function boot() {
       });
       governingLawFacets.append(button);
     }
-    if (Number(governingLawLibrary.matched_clauses) > 0) {
-      const sourceCoverage = array(governingLawLibrary.by_source)
-        .slice(0, 10)
-        .map((sourceValue) => {
-          const source = record(sourceValue);
-          return `${displayText(source.source_slug)} ${count(source.clauses)}`;
-        })
-        .join(" · ");
-      governingLawStatus.textContent = `${
-        count(governingLawLibrary.matched_clauses)
-      } detected clauses across ${
-        count(governingLawLibrary.distinct_agreements)
-      } useful agreements${
-        sourceCoverage ? ` · ${sourceCoverage}` : ""
-      }; generated wording coverage, not a normalized jurisdiction or legal conclusion.`;
-    }
-    const disclosure = record(summary.disclosure);
-    const disclosureLines = [
-      disclosure.coverage,
-      disclosure.observed_vs_generated,
-      disclosure.legal_reliance,
-      partySummary.measurement,
-      positionSummary.measurement,
-      positionSummary.absence_warning,
-      terminationSummary.measurement,
-      terminationSummary.absence_warning,
-      assignmentSummary.measurement,
-      assignmentSummary.absence_warning,
-      assignmentSummary.context_warning,
-      governingLawSummary.measurement,
-      governingLawSummary.absence_warning,
-      governingLawSummary.interpretation_warning,
-    ].filter((value) => typeof value === "string");
-    corpusDisclosure.replaceChildren(
-      ...disclosureLines.map((line) => element("p", "", line)),
+
+    const sourceCoverage = array(library.by_source)
+      .slice(0, 10)
+      .map((sourceValue) => {
+        const source = record(sourceValue);
+        return `${displayText(source.source_slug)} ${count(source.clauses)}`;
+      })
+      .join(" · ");
+    const repairStatus = Number(current.missing_clauses) === 0
+      ? "cache complete"
+      : `${count(current.missing_clauses)} cache rows missing`;
+    statusMessage(
+      governingLawStatus,
+      `${count(library.matched_clauses)} detected clauses across ${
+        count(library.distinct_agreements)
+      } useful agreements${sourceCoverage ? ` · ${sourceCoverage}` : ""}; ${
+        count(current.cached_clauses)
+      } / ${
+        count(current.eligible_clauses)
+      } current clauses cached (${repairStatus}); generated wording coverage, not a normalized jurisdiction or legal conclusion.`,
+      "success",
     );
+
+    for (
+      const line of [
+        summary.measurement,
+        summary.absence_warning,
+        summary.interpretation_warning,
+      ]
+    ) {
+      if (typeof line === "string") {
+        corpusDisclosure.append(element("p", "", line));
+      }
+    }
+  }
+
+  async function loadGoverningLawSummary() {
+    if (!state.token) return;
+    governingLawFacets.replaceChildren(
+      element("span", "", "Loading available evidence…"),
+    );
+    statusMessage(governingLawStatus, "Loading governing-law coverage…");
+    try {
+      const payload = await requestJson(
+        "/api/governing-law-summary",
+        state.token,
+      );
+      renderGoverningLawSummary(record(payload).data);
+    } catch (error) {
+      handleFailure(error, governingLawStatus);
+    }
   }
 
   async function loadDashboard(prefetched = null) {
@@ -3885,6 +3905,7 @@ function boot() {
         await requestJson("/api/dashboard", state.token);
       renderDashboard(payload);
       statusMessage(workspaceStatus, "Published snapshot loaded.", "success");
+      await loadGoverningLawSummary();
     } catch (error) {
       handleFailure(error, workspaceStatus);
     }
@@ -6588,6 +6609,7 @@ function boot() {
         "Published snapshot loaded. The token remains only in page memory and will be cleared on reload.",
         "success",
       );
+      await loadGoverningLawSummary();
     } catch (error) {
       handleFailure(error, authStatus);
     } finally {
