@@ -104,9 +104,10 @@
       <section class="search-panel" aria-labelledby="position-library-title">
         <p class="eyebrow">Negotiation position library</p>
         <h2 id="position-library-title">Browse detected liability positions</h2>
-        <p class="search-note">Filter generated clause-level signals and exact observed cap-value candidates without guessing search terms. Counts and results reflect this acquired corpus, not market prevalence or legal conclusions.</p>
+        <p class="search-note">Filter generated clause-level signals, positive wording features and exact observed cap-value candidates without guessing search terms. A missing feature is not the opposite position; counts reflect this acquired corpus, not market prevalence or legal conclusions.</p>
         <form id="position-form" class="search-form position-search-form">
           <label for="position-signal">Position signal</label>
+          <label for="position-feature">Negotiation feature</label>
           <label for="position-value">Observed value evidence</label>
           <label for="position-kind">Document class</label>
           <label for="position-source">Source slug</label>
@@ -117,6 +118,20 @@
             <option value="excluded_loss_language">Excluded loss language</option>
             <option value="cap_carveout_language">Cap / exclusion carve-out</option>
             <option value="express_unlimited_liability">Express unlimited liability</option>
+          </select>
+          <select id="position-feature" name="feature">
+            <option value="">Any generated feature</option>
+            <option value="explicit_cap_facially_bilateral">Facially bilateral cap wording</option>
+            <option value="loss_exclusion_facially_bilateral">Facially bilateral loss exclusion</option>
+            <option value="carveout_death_or_personal_injury">Death / personal injury carve-out</option>
+            <option value="carveout_fraud">Fraud carve-out</option>
+            <option value="carveout_wilful_or_willful_misconduct">Wilful / willful misconduct carve-out</option>
+            <option value="loss_exclusion_indirect">Indirect loss named</option>
+            <option value="loss_exclusion_consequential">Consequential loss named</option>
+            <option value="loss_exclusion_special">Special loss named</option>
+            <option value="loss_exclusion_incidental">Incidental loss named</option>
+            <option value="loss_exclusion_exemplary">Exemplary loss named</option>
+            <option value="loss_exclusion_punitive">Punitive loss named</option>
           </select>
           <select id="position-value" name="value">
             <option value="">Any value evidence</option>

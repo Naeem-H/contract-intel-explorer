@@ -43,6 +43,52 @@ const LIABILITY_POSITION_SIGNAL_LABELS = Object.freeze({
   cap_carveout_language: "Carve-outs",
   express_unlimited_liability: "Express unlimited",
 });
+const LIABILITY_POSITION_FEATURES = Object.freeze({
+  explicit_cap_facially_bilateral: Object.freeze({
+    label: "Facially bilateral cap wording",
+    signalKey: "explicit_liability_limit_formula",
+  }),
+  loss_exclusion_facially_bilateral: Object.freeze({
+    label: "Facially bilateral loss exclusion",
+    signalKey: "excluded_loss_language",
+  }),
+  carveout_death_or_personal_injury: Object.freeze({
+    label: "Death / personal injury carve-out",
+    signalKey: "cap_carveout_language",
+  }),
+  carveout_fraud: Object.freeze({
+    label: "Fraud carve-out",
+    signalKey: "cap_carveout_language",
+  }),
+  carveout_wilful_or_willful_misconduct: Object.freeze({
+    label: "Wilful / willful misconduct carve-out",
+    signalKey: "cap_carveout_language",
+  }),
+  loss_exclusion_indirect: Object.freeze({
+    label: "Indirect loss named",
+    signalKey: "excluded_loss_language",
+  }),
+  loss_exclusion_consequential: Object.freeze({
+    label: "Consequential loss named",
+    signalKey: "excluded_loss_language",
+  }),
+  loss_exclusion_special: Object.freeze({
+    label: "Special loss named",
+    signalKey: "excluded_loss_language",
+  }),
+  loss_exclusion_incidental: Object.freeze({
+    label: "Incidental loss named",
+    signalKey: "excluded_loss_language",
+  }),
+  loss_exclusion_exemplary: Object.freeze({
+    label: "Exemplary loss named",
+    signalKey: "excluded_loss_language",
+  }),
+  loss_exclusion_punitive: Object.freeze({
+    label: "Punitive loss named",
+    signalKey: "excluded_loss_language",
+  }),
+});
 const LIABILITY_VALUE_CANDIDATE_SCHEMAS = new Set([
   "esheria.liability-cap-value-candidates.v1",
   "esheria.liability-cap-value-candidates.v2",
@@ -93,6 +139,7 @@ function isAllowedApiTarget(url) {
       "party",
       "signal",
       "value",
+      "feature",
       "limit",
       "offset",
       "kind",
@@ -196,6 +243,7 @@ export function buildPartySearchPath(input) {
 export function buildLiabilityPositionPath({
   signalKeys = [],
   valueCategories = [],
+  featureKeys = [],
   kind = "",
   source = "",
   limit = 20,
@@ -203,6 +251,7 @@ export function buildLiabilityPositionPath({
 } = {}) {
   const signals = [...new Set(array(signalKeys))];
   const values = [...new Set(array(valueCategories))];
+  const features = [...new Set(array(featureKeys))];
   if (
     signals.length > LIABILITY_POSITION_SIGNAL_KEYS.length ||
     signals.some((key) => !LIABILITY_POSITION_SIGNAL_KEYS.includes(key))
@@ -221,6 +270,10 @@ export function buildLiabilityPositionPath({
       "Cap-value filters require the explicit liability limit signal",
     );
   }
+  if (
+    features.length > Object.keys(LIABILITY_POSITION_FEATURES).length ||
+    features.some((key) => !Object.hasOwn(LIABILITY_POSITION_FEATURES, key))
+  ) throw new TypeError("Liability feature filter is invalid");
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
     throw new TypeError("Position limit is outside the allowed range");
   }
@@ -243,6 +296,7 @@ export function buildLiabilityPositionPath({
   });
   for (const signal of signals) params.append("signal", signal);
   for (const value of values) params.append("value", value);
+  for (const feature of features) params.append("feature", feature);
   if (kind) params.set("kind", kind);
   if (normalizedSource) params.set("source", normalizedSource);
   return `/api/positions?${params.toString()}`;
@@ -1736,6 +1790,7 @@ function boot() {
     partySearching: false,
     partyDossierLoading: false,
     positionSignal: "",
+    positionFeature: "",
     positionValue: "",
     positionKind: "",
     positionSource: "",
@@ -1758,6 +1813,7 @@ function boot() {
   const guideStatus = byId("guide-status");
   const positionForm = byId("position-form");
   const positionSignalInput = byId("position-signal");
+  const positionFeatureInput = byId("position-feature");
   const positionValueInput = byId("position-value");
   const positionKindInput = byId("position-kind");
   const positionSourceInput = byId("position-source");
@@ -1846,6 +1902,7 @@ function boot() {
     state.partySearching = false;
     state.partyDossierLoading = false;
     state.positionSignal = "";
+    state.positionFeature = "";
     state.positionValue = "";
     state.positionKind = "";
     state.positionSource = "";
@@ -1934,6 +1991,9 @@ function boot() {
     );
     const positionSignalFacets = array(
       positionSummary.published_signal_facets,
+    );
+    const positionFeatureFacets = array(
+      positionSummary.published_feature_facets,
     );
     const positionValueFacets = array(
       positionSummary.published_value_candidate_facets,
@@ -2108,7 +2168,31 @@ function boot() {
       button.type = "button";
       button.addEventListener("click", () => {
         positionSignalInput.value = signalKey;
+        positionFeatureInput.value = "";
         positionValueInput.value = "";
+        positionForm.requestSubmit();
+      });
+      positionFacets.append(button);
+    }
+    for (const facetValue of positionFeatureFacets) {
+      const facet = record(facetValue);
+      const featureKey = displayText(facet.feature_key);
+      const configured = LIABILITY_POSITION_FEATURES[featureKey];
+      if (!configured || facet.feature_basis !== "generated") continue;
+      const button = element(
+        "button",
+        "",
+        `${configured.label} · ${count(facet.clauses)} clauses / ${
+          count(facet.distinct_agreements)
+        } agreements`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        positionSignalInput.value = configured.signalKey;
+        positionFeatureInput.value = featureKey;
+        if (configured.signalKey !== "explicit_liability_limit_formula") {
+          positionValueInput.value = "";
+        }
         positionForm.requestSubmit();
       });
       positionFacets.append(button);
@@ -3482,6 +3566,7 @@ function boot() {
       const path = buildLiabilityPositionPath({
         signalKeys: state.positionSignal ? [state.positionSignal] : [],
         valueCategories: state.positionValue ? [state.positionValue] : [],
+        featureKeys: state.positionFeature ? [state.positionFeature] : [],
         kind: state.positionKind,
         source: state.positionSource,
         limit: state.limit,
@@ -4267,6 +4352,21 @@ function boot() {
   positionValueInput.addEventListener("change", () => {
     if (positionValueInput.value) {
       positionSignalInput.value = "explicit_liability_limit_formula";
+      if (
+        positionFeatureInput.value &&
+        LIABILITY_POSITION_FEATURES[positionFeatureInput.value]?.signalKey !==
+          "explicit_liability_limit_formula"
+      ) {
+        positionFeatureInput.value = "";
+      }
+    }
+  });
+  positionFeatureInput.addEventListener("change", () => {
+    const configured = LIABILITY_POSITION_FEATURES[positionFeatureInput.value];
+    if (!configured) return;
+    positionSignalInput.value = configured.signalKey;
+    if (configured.signalKey !== "explicit_liability_limit_formula") {
+      positionValueInput.value = "";
     }
   });
   positionSignalInput.addEventListener("change", () => {
@@ -4276,12 +4376,20 @@ function boot() {
     ) {
       positionValueInput.value = "";
     }
+    const configured = LIABILITY_POSITION_FEATURES[positionFeatureInput.value];
+    if (
+      configured && positionSignalInput.value &&
+      configured.signalKey !== positionSignalInput.value
+    ) {
+      positionFeatureInput.value = "";
+    }
   });
   positionForm.addEventListener("submit", (event) => {
     event.preventDefault();
     clearComparison();
     state.resultMode = "positions";
     state.positionSignal = positionSignalInput.value;
+    state.positionFeature = positionFeatureInput.value;
     state.positionValue = positionValueInput.value;
     state.positionKind = positionKindInput.value;
     state.positionSource = positionSourceInput.value.trim().toLowerCase();
@@ -4289,7 +4397,10 @@ function boot() {
       "Any detected position";
     const valueLabel = positionValueInput.selectedOptions[0]?.textContent ??
       "Any value evidence";
-    state.query = `Position library: ${signalLabel}; ${valueLabel}`;
+    const featureLabel = positionFeatureInput.selectedOptions[0]?.textContent ??
+      "Any generated feature";
+    state.query =
+      `Position library: ${signalLabel}; ${featureLabel}; ${valueLabel}`;
     state.clauseParty = "";
     state.kind = state.positionKind;
     state.source = state.positionSource;
