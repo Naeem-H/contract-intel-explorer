@@ -1205,6 +1205,10 @@ function isValidFamilyTimestamp(value) {
     hour <= 23 && minute <= 59 && second <= 59;
 }
 
+function familyCharacterLength(value) {
+  return typeof value === "string" ? Array.from(value).length : 0;
+}
+
 function familyInteger(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
@@ -1376,11 +1380,12 @@ export function familyContextEvidence(value, expectedAgreementId) {
       !(
         observedTitle === null ||
         (typeof observedTitle === "string" && observedTitle.trim() &&
-          observedTitle.length <= 500)
+          familyCharacterLength(observedTitle) <= 500)
       ) ||
       typeof relatedAgreement.observed_title_truncated !== "boolean" ||
       (relatedAgreement.observed_title_truncated &&
-        (typeof observedTitle !== "string" || observedTitle.length !== 500)) ||
+        (typeof observedTitle !== "string" ||
+          familyCharacterLength(observedTitle) !== 500)) ||
       !FAMILY_DOCUMENT_KINDS.has(relatedAgreement.document_kind) ||
       !FAMILY_DOCUMENT_KIND_BASES.has(relatedAgreement.document_kind_basis) ||
       !(
@@ -1496,11 +1501,12 @@ function familyProposalDocument(value) {
       observedTitle === null ||
       (typeof observedTitle === "string" &&
         observedTitle.trim().length > 0 &&
-        observedTitle.length <= 500)
+        familyCharacterLength(observedTitle) <= 500)
     ) ||
     typeof document.observed_title_truncated !== "boolean" ||
     (document.observed_title_truncated &&
-      (typeof observedTitle !== "string" || observedTitle.length !== 500)) ||
+      (typeof observedTitle !== "string" ||
+        familyCharacterLength(observedTitle) !== 500)) ||
     !(
       document.observed_published_at === null ||
       isValidFamilyTimestamp(document.observed_published_at)
@@ -7125,7 +7131,7 @@ function boot() {
       element(
         "span",
         "badge basis-generated",
-        "Generated proposal · not a recorded relationship",
+        "Generated proposal · relationship ledger not checked",
       ),
       element("span", "muted", `Source ${displayText(item.source)}`),
     );
@@ -8797,7 +8803,7 @@ function boot() {
           element(
             "span",
             "badge basis-generated",
-            "Generated proposal · not a recorded relationship",
+            "Generated proposal · separate from relationship ledger",
           ),
           element(
             "h4",
