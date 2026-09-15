@@ -22,6 +22,8 @@ export const COMPARISON_MAX_ITEMS = 4;
 export const COMPARISON_CONTEXT_CLAUSES = 5;
 export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
 export const FAMILY_CONTEXT_ITEM_MAX = 10;
+export const FAMILY_PROPOSAL_PAGE_MAX = 20;
+export const FAMILY_PROPOSAL_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
 export const TERMINATION_POSITION_SIGNAL_MAX = 12;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
@@ -199,6 +201,28 @@ export function normalizeToken(value) {
 
 function isAllowedApiTarget(url) {
   const pathname = url.pathname;
+  if (pathname === "/api/family-proposals") {
+    const allowed = new Set(["limit", "offset"]);
+    if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
+      return false;
+    }
+    if (
+      url.searchParams.getAll("limit").length > 1 ||
+      url.searchParams.getAll("offset").length > 1
+    ) {
+      return false;
+    }
+    const limit = url.searchParams.get("limit");
+    const offset = url.searchParams.get("offset");
+    return (
+      limit !== null &&
+      /^[1-9]\d*$/.test(limit) &&
+      Number(limit) <= FAMILY_PROPOSAL_PAGE_MAX &&
+      offset !== null &&
+      /^(0|[1-9]\d*)$/.test(offset) &&
+      Number(offset) <= FAMILY_PROPOSAL_OFFSET_MAX
+    );
+  }
   if (
     pathname === "/api/dashboard" ||
     pathname === "/api/summary" ||
@@ -644,6 +668,27 @@ export function buildIndemnityPositionPath({
   if (kind) params.set("kind", kind);
   if (normalizedSource) params.set("source", normalizedSource);
   return `/api/indemnity-positions?${params.toString()}`;
+}
+
+export function buildFamilyProposalPath({ limit = 20, offset = 0 } = {}) {
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > FAMILY_PROPOSAL_PAGE_MAX
+  ) {
+    throw new TypeError("Family proposal limit is outside the allowed range");
+  }
+  if (
+    !Number.isInteger(offset) ||
+    offset < 0 ||
+    offset > FAMILY_PROPOSAL_OFFSET_MAX
+  ) {
+    throw new TypeError("Family proposal offset is outside the allowed range");
+  }
+  return `/api/family-proposals?${new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  }).toString()}`;
 }
 
 export function buildPartyClauseSearchPath({ party, ...input }) {
@@ -1390,6 +1435,250 @@ export function familyContextEvidence(value, expectedAgreementId) {
     items,
     totals: { eligibleDistinctPairs, returnedCount, omittedCount },
     truncated: coverage.truncated,
+  };
+}
+
+function familyProposalReviewAggregate(value) {
+  const review = record(value);
+  const verdictCounts = record(review.verdict_counts);
+  const counts = {
+    same_family: familyInteger(verdictCounts.same_family),
+    not_same_family: familyInteger(verdictCounts.not_same_family),
+    uncertain: familyInteger(verdictCounts.uncertain),
+    not_assessable: familyInteger(verdictCounts.not_assessable),
+  };
+  if (Object.values(counts).some((count) => count === null)) return null;
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const decisionCount = familyInteger(review.current_decision_count);
+  const positive = Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .map(([verdict]) => verdict);
+  const expectedStatus = total === 0
+    ? "unreviewed"
+    : positive.length > 1
+    ? "mixed"
+    : positive[0];
+  const conflicting = counts.same_family > 0 && counts.not_same_family > 0;
+  if (
+    decisionCount !== total ||
+    review.status !== expectedStatus ||
+    review.conflicting !== conflicting ||
+    review.question !== "same_agreement_family" ||
+    review.aggregation_scope !==
+      "current_pair_candidates_latest_decision_per_reviewer" ||
+    review.reviewer_identity_exposed !== false ||
+    review.rationale_exposed !== false ||
+    review.direction_reviewed !== false ||
+    review.relationship_materialized_by_review !== false ||
+    Object.hasOwn(review, "latest_decision_at") ||
+    Object.hasOwn(review, "principal_id") ||
+    Object.hasOwn(review, "reviewer_identity") ||
+    Object.hasOwn(review, "rationale") ||
+    Object.hasOwn(review, "confidence")
+  ) {
+    return null;
+  }
+  return { status: review.status, decisionCount, conflicting };
+}
+
+function familyProposalDocument(value) {
+  const document = record(value);
+  const agreementId = document.agreement_id;
+  const observedTitle = document.observed_title;
+  const canonicalUrl = safeExternalUrl(document.canonical_url);
+  if (
+    typeof agreementId !== "string" ||
+    !UUID_PATTERN.test(agreementId) ||
+    document.text_basis !== "observed" ||
+    !FAMILY_DOCUMENT_KINDS.has(document.document_kind) ||
+    !FAMILY_DOCUMENT_KIND_BASES.has(document.document_kind_basis) ||
+    !(
+      observedTitle === null ||
+      (typeof observedTitle === "string" &&
+        observedTitle.trim().length > 0 &&
+        observedTitle.length <= 500)
+    ) ||
+    typeof document.observed_title_truncated !== "boolean" ||
+    (document.observed_title_truncated &&
+      (typeof observedTitle !== "string" || observedTitle.length !== 500)) ||
+    !(
+      document.observed_published_at === null ||
+      isValidFamilyTimestamp(document.observed_published_at)
+    ) ||
+    typeof document.canonical_url_omitted !== "boolean" ||
+    !(
+      document.canonical_url === null ||
+      (typeof document.canonical_url === "string" && canonicalUrl !== null)
+    ) ||
+    (document.canonical_url_omitted && document.canonical_url !== null) ||
+    Object.hasOwn(document, "primary_artifact_sha256") ||
+    Object.hasOwn(document, "source_external_id") ||
+    Object.hasOwn(document, "extraction_id") ||
+    Object.hasOwn(document, "storage_object_path")
+  ) {
+    return null;
+  }
+  return {
+    agreementId,
+    observedTitle,
+    observedTitleTruncated: document.observed_title_truncated,
+    documentKind: document.document_kind,
+    documentKindBasis: document.document_kind_basis,
+    observedPublishedAt: typeof document.observed_published_at === "string"
+      ? document.observed_published_at
+      : null,
+    canonicalUrl,
+    canonicalUrlOmitted: document.canonical_url_omitted,
+    textBasis: document.text_basis,
+  };
+}
+
+export function familyProposalSearchEvidence(
+  value,
+  expectedLimit = 20,
+  expectedOffset = 0,
+) {
+  if (
+    !Number.isInteger(expectedLimit) ||
+    expectedLimit < 1 ||
+    expectedLimit > FAMILY_PROPOSAL_PAGE_MAX ||
+    !Number.isInteger(expectedOffset) ||
+    expectedOffset < 0 ||
+    expectedOffset > FAMILY_PROPOSAL_OFFSET_MAX
+  ) {
+    return null;
+  }
+
+  const root = record(value);
+  const page = record(root.page);
+  const limits = record(root.limits);
+  const returnedCount = familyInteger(page.returned_count);
+  const eligibleDistinctPairs = familyInteger(page.eligible_distinct_pairs);
+  if (
+    root.api_version !== "agreement-family-proposal-search-v1" ||
+    root.proposal_only !== true ||
+    root.relationship_ledger_included !== false ||
+    root.review_question !== "same_agreement_family" ||
+    familyInteger(page.limit) !== expectedLimit ||
+    familyInteger(page.offset) !== expectedOffset ||
+    returnedCount === null ||
+    eligibleDistinctPairs === null ||
+    returnedCount > expectedLimit ||
+    returnedCount > eligibleDistinctPairs ||
+    typeof page.has_more !== "boolean" ||
+    page.has_more !==
+      (expectedOffset + returnedCount < eligibleDistinctPairs) ||
+    (expectedOffset < eligibleDistinctPairs &&
+      returnedCount !== Math.min(
+        expectedLimit,
+        eligibleDistinctPairs - expectedOffset,
+      )) ||
+    (expectedOffset >= eligibleDistinctPairs && returnedCount !== 0) ||
+    familyInteger(limits.maximum_page_size) !== FAMILY_PROPOSAL_PAGE_MAX ||
+    familyInteger(limits.maximum_offset) !== FAMILY_PROPOSAL_OFFSET_MAX ||
+    limits.candidate_generation_exhaustive !== false ||
+    limits.candidate_currentness_required !== true ||
+    limits.newest_candidate_per_pair_selected_before_currentness_check !==
+      true ||
+    limits.stale_latest_candidate_fails_closed_without_historical_fallback !==
+      true ||
+    limits.both_documents_published_and_redistributable !== true ||
+    limits.observed_current_extractions_required !== true ||
+    limits.exact_content_duplicates_excluded !== true ||
+    limits.generated_direction_exposed !== false ||
+    limits.raw_metrics_exposed !== false ||
+    limits.reason_codes_exposed !== false ||
+    limits.reviewer_identity_exposed !== false ||
+    limits.review_rationale_exposed !== false ||
+    limits.review_counts_may_be_pseudonymous_in_small_cohorts !== true ||
+    limits.family_review_confirms_direction !== false ||
+    limits.legal_effect_determined !== false ||
+    limits.agreement_relationship_created !== false ||
+    !Array.isArray(root.items) ||
+    root.items.length !== returnedCount
+  ) {
+    return null;
+  }
+
+  const forbiddenItemKeys = [
+    "candidate_run_id",
+    "run_key",
+    "hypothesis",
+    "direction_from_requested_agreement",
+    "metric",
+    "reason_codes",
+    "evidence_metadata",
+    "generator_name",
+    "generator_version",
+    "generator_config",
+    "subject",
+    "object",
+  ];
+  const seenCandidateIds = new Set();
+  const seenPairKeys = new Set();
+  let previousPairKey = null;
+  const items = [];
+  for (const itemValue of root.items) {
+    const item = record(itemValue);
+    if (
+      typeof item.candidate_id !== "string" ||
+      !UUID_PATTERN.test(item.candidate_id) ||
+      seenCandidateIds.has(item.candidate_id) ||
+      typeof item.source !== "string" ||
+      !SOURCE_PATTERN.test(item.source) ||
+      item.candidate_current !== true ||
+      item.proposal_only !== true ||
+      item.relationship_written_automatically !== false ||
+      item.document_ordering !==
+        "agreement_id_lexicographic_not_legal_direction" ||
+      !isValidFamilyTimestamp(item.generated_at) ||
+      !isValidFamilyTimestamp(item.corpus_snapshotted_at) ||
+      !Array.isArray(item.documents) ||
+      item.documents.length !== 2 ||
+      forbiddenItemKeys.some((key) => Object.hasOwn(item, key))
+    ) {
+      return null;
+    }
+    const documents = item.documents.map(familyProposalDocument);
+    if (documents.some((document) => document === null)) return null;
+    const first = documents[0];
+    const second = documents[1];
+    if (first.agreementId >= second.agreementId) return null;
+    const pairKey = `${item.source}:${first.agreementId}:${second.agreementId}`;
+    if (
+      seenPairKeys.has(pairKey) ||
+      (previousPairKey !== null && pairKey <= previousPairKey)
+    ) {
+      return null;
+    }
+    const review = familyProposalReviewAggregate(item.human_review);
+    if (review === null) return null;
+    seenCandidateIds.add(item.candidate_id);
+    seenPairKeys.add(pairKey);
+    previousPairKey = pairKey;
+    items.push({
+      candidateId: item.candidate_id,
+      source: item.source,
+      generatedAt: item.generated_at,
+      corpusSnapshottedAt: item.corpus_snapshotted_at,
+      documents,
+      reviewStatus: review.status,
+      currentDecisionCount: review.decisionCount,
+      conflicting: review.conflicting,
+    });
+  }
+
+  return {
+    items,
+    page: {
+      limit: expectedLimit,
+      offset: expectedOffset,
+      returnedCount,
+      eligibleDistinctPairs,
+      hasMore: page.has_more,
+    },
+    candidateGenerationExhaustive: false,
+    reviewCountsMayBePseudonymous: true,
   };
 }
 
@@ -4336,6 +4625,10 @@ function boot() {
     indemnityKind: "",
     indemnitySource: "",
     indemnityLoading: false,
+    familyProposalOffset: 0,
+    familyProposalLimit: FAMILY_PROPOSAL_PAGE_MAX,
+    familyProposalHasMore: false,
+    familyProposalLoading: false,
   };
 
   const authView = byId("auth-view");
@@ -4392,6 +4685,11 @@ function boot() {
   const indemnityButton = byId("indemnity-submit");
   const indemnityFacets = byId("indemnity-facets");
   const indemnityStatus = byId("indemnity-status");
+  const familyProposalLoadButton = byId("family-proposals-load");
+  const familyProposalStatus = byId("family-proposals-status");
+  const familyProposalResults = byId("family-proposals-results");
+  const familyProposalPrevious = byId("family-proposals-previous");
+  const familyProposalNext = byId("family-proposals-next");
   const partySearchForm = byId("party-search-form");
   const partyQueryInput = byId("party-query");
   const partyKindInput = byId("party-kind");
@@ -4502,6 +4800,9 @@ function boot() {
     state.indemnityKind = "";
     state.indemnitySource = "";
     state.indemnityLoading = false;
+    state.familyProposalOffset = 0;
+    state.familyProposalHasMore = false;
+    state.familyProposalLoading = false;
     state.resultMode = "search";
     state.clauseParty = "";
     positionForm.reset();
@@ -4530,6 +4831,12 @@ function boot() {
     indemnityFacets.replaceChildren(element("span", "", "Available evidence:"));
     indemnityStatus.textContent =
       "Browse positive wording matches across published, nonduplicate contracts and amendments.";
+    familyProposalLoadButton.disabled = false;
+    familyProposalPrevious.disabled = true;
+    familyProposalNext.disabled = true;
+    familyProposalStatus.textContent =
+      "Load the current publication-gated proposal set. Candidate generation is bounded and is not exhaustive.";
+    familyProposalResults.replaceChildren();
     partyPrevious.disabled = true;
     partyNext.disabled = true;
     partySearchStatus.textContent =
@@ -6747,6 +7054,190 @@ function boot() {
     return card;
   }
 
+  function familyProposalDocumentCard(document, ordinal, source) {
+    const card = element("section", "family-document");
+    const classificationClass = document.documentKindBasis === "generated"
+      ? "basis-generated"
+      : document.documentKindBasis === "reviewed"
+      ? "basis-reviewed"
+      : "";
+    append(
+      card,
+      element("span", "badge", `Document ${ordinal}`),
+      element(
+        "h3",
+        "",
+        document.observedTitle === null
+          ? "Observed title unavailable"
+          : document.observedTitle,
+      ),
+      document.observedTitleTruncated
+        ? element(
+          "p",
+          "muted",
+          "Displayed observed title was source-truncated to 500 characters.",
+        )
+        : null,
+      element(
+        "span",
+        `badge${classificationClass ? ` ${classificationClass}` : ""}`,
+        documentKindBasisLabel(document.documentKindBasis),
+      ),
+      element(
+        "p",
+        "muted",
+        `Source ${displayText(source)} · document kind ${
+          displayText(document.documentKind)
+        }${
+          document.observedPublishedAt
+            ? ` · published ${date(document.observedPublishedAt)}`
+            : ""
+        } · observed source text`,
+      ),
+      sourceLink(document.canonicalUrl, "Open recorded source ↗"),
+      document.canonicalUrlOmitted
+        ? element(
+          "p",
+          "muted",
+          "Recorded source URL was omitted by server safety checks.",
+        )
+        : null,
+    );
+    const inspect = element(
+      "button",
+      "text-button",
+      `Inspect document ${ordinal} →`,
+    );
+    inspect.type = "button";
+    inspect.addEventListener(
+      "click",
+      () => loadAgreement(document.agreementId),
+    );
+    card.append(inspect);
+    return card;
+  }
+
+  function familyProposalCard(item) {
+    const card = element("article", "result-card family-proposal-card");
+    const top = element("div", "result-top");
+    append(
+      top,
+      element(
+        "span",
+        "badge basis-generated",
+        "Generated proposal · not a recorded relationship",
+      ),
+      element("span", "muted", `Source ${displayText(item.source)}`),
+    );
+    const reviewClass = item.reviewStatus === "unreviewed" ||
+        item.reviewStatus === "mixed" || item.conflicting
+      ? "basis-unknown"
+      : "basis-reviewed";
+    const documents = element("div", "family-documents");
+    item.documents.forEach((document, index) =>
+      documents.append(
+        familyProposalDocumentCard(document, index + 1, item.source),
+      )
+    );
+    append(
+      card,
+      top,
+      element(
+        "p",
+        "focus-note",
+        "The two cards are ordered by identifier only. Their order and publication dates do not establish which document changes the other.",
+      ),
+      documents,
+      element(
+        "span",
+        `badge ${reviewClass}`,
+        familyReviewStatusLabel(item.reviewStatus, item.conflicting),
+      ),
+      element(
+        "p",
+        "muted",
+        `${count(item.currentDecisionCount)} current review response(s). Aggregate responses can be pseudonymous in a small review cohort and do not determine direction or legal effect.`,
+      ),
+      element(
+        "p",
+        "muted",
+        `Candidate generated ${date(item.generatedAt)} from a corpus snapshot recorded ${
+          date(item.corpusSnapshottedAt)
+        }.`,
+      ),
+    );
+    return card;
+  }
+
+  function renderFamilyProposals(value) {
+    const response = familyProposalSearchEvidence(
+      record(value).data,
+      state.familyProposalLimit,
+      state.familyProposalOffset,
+    );
+    if (response === null) {
+      throw new ApiError(
+        "The family proposal response did not match its disclosure contract.",
+      );
+    }
+    state.familyProposalHasMore = response.page.hasMore;
+    familyProposalPrevious.disabled = state.familyProposalOffset === 0;
+    familyProposalNext.disabled = !state.familyProposalHasMore ||
+      state.familyProposalOffset + state.familyProposalLimit >
+        FAMILY_PROPOSAL_OFFSET_MAX;
+    familyProposalResults.replaceChildren(
+      ...(response.items.length
+        ? response.items.map(familyProposalCard)
+        : [
+          element(
+            "p",
+            "empty",
+            "No current publication-eligible family proposal was returned for this page.",
+          ),
+        ]),
+    );
+    const start = response.items.length ? state.familyProposalOffset + 1 : 0;
+    const end = state.familyProposalOffset + response.items.length;
+    familyProposalStatus.textContent = response.items.length
+      ? `Showing proposal pairs ${start}–${end} of ${
+        count(response.page.eligibleDistinctPairs)
+      }. Generation is bounded and not exhaustive; proposals are not relationship or legal-effect findings.`
+      : response.page.eligibleDistinctPairs > 0
+      ? `No pair appears at this offset; ${
+        count(response.page.eligibleDistinctPairs)
+      } publication-eligible pair(s) currently exist.`
+      : "No current publication-eligible family proposal is available. Generation is bounded, so this is not evidence that no related documents exist.";
+  }
+
+  async function performFamilyProposalBrowse() {
+    if (!state.token || state.familyProposalLoading) return;
+    state.familyProposalLoading = true;
+    state.familyProposalHasMore = false;
+    familyProposalLoadButton.disabled = true;
+    familyProposalPrevious.disabled = true;
+    familyProposalNext.disabled = true;
+    statusMessage(
+      familyProposalStatus,
+      "Loading current publication-gated proposal pairs…",
+    );
+    try {
+      const path = buildFamilyProposalPath({
+        limit: state.familyProposalLimit,
+        offset: state.familyProposalOffset,
+      });
+      renderFamilyProposals(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, familyProposalStatus);
+    } finally {
+      state.familyProposalLoading = false;
+      familyProposalLoadButton.disabled = false;
+      familyProposalPrevious.disabled = state.familyProposalOffset === 0;
+      familyProposalNext.disabled = !state.familyProposalHasMore ||
+        state.familyProposalOffset + state.familyProposalLimit >
+          FAMILY_PROPOSAL_OFFSET_MAX;
+    }
+  }
+
   function renderPartySearch(payload) {
     const root = record(payload);
     const rows = array(root.results).slice(0, state.partyLimit);
@@ -8571,6 +9062,29 @@ function boot() {
   });
   comparisonDialog.addEventListener("click", (event) => {
     if (event.target === comparisonDialog) closeDialog(comparisonDialog);
+  });
+
+  familyProposalLoadButton.addEventListener("click", () => {
+    state.familyProposalOffset = 0;
+    performFamilyProposalBrowse();
+  });
+  familyProposalPrevious.addEventListener("click", () => {
+    state.familyProposalOffset = Math.max(
+      0,
+      state.familyProposalOffset - state.familyProposalLimit,
+    );
+    performFamilyProposalBrowse();
+  });
+  familyProposalNext.addEventListener("click", () => {
+    if (
+      !state.familyProposalHasMore ||
+      state.familyProposalOffset + state.familyProposalLimit >
+        FAMILY_PROPOSAL_OFFSET_MAX
+    ) {
+      return;
+    }
+    state.familyProposalOffset += state.familyProposalLimit;
+    performFamilyProposalBrowse();
   });
 
   partySearchForm.addEventListener("submit", (event) => {

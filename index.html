@@ -144,6 +144,23 @@
             aria-live="polite">Choose a starter or enter your own search below. Document and source filters still apply.</p>
         </section>
 
+        <section class="search-panel" aria-labelledby="family-proposals-title">
+          <p class="eyebrow">Document lifecycle</p>
+          <h2 id="family-proposals-title">Browse generated related-document proposals</h2>
+          <p class="search-note">Review pairs of published contracts and amendments that a bounded generator marked for possible same-family investigation. These are proposals, not recorded relationships; document order, publication dates, and review responses do not establish amendment direction, supersession, incorporation, or legal effect.</p>
+          <button id="family-proposals-load" class="button primary"
+            type="button">Browse proposals</button>
+          <p id="family-proposals-status" class="muted" role="status"
+            aria-live="polite">Load the current publication-gated proposal set. Candidate generation is bounded and is not exhaustive.</p>
+          <div id="family-proposals-results" class="results family-proposals-results"></div>
+          <div class="pager">
+            <button id="family-proposals-previous" class="button secondary"
+              type="button" disabled>Previous</button>
+            <button id="family-proposals-next" class="button secondary"
+              type="button" disabled>Next</button>
+          </div>
+        </section>
+
         <section class="search-panel" aria-labelledby="position-library-title">
           <p class="eyebrow">Negotiation position library</p>
           <h2
