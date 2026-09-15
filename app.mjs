@@ -21,6 +21,7 @@ export const COMPARISON_MIN_ITEMS = 2;
 export const COMPARISON_MAX_ITEMS = 4;
 export const COMPARISON_CONTEXT_CLAUSES = 5;
 export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
+export const FAMILY_CONTEXT_ITEM_MAX = 10;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
 export const TERMINATION_POSITION_SIGNAL_MAX = 12;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
@@ -1124,6 +1125,272 @@ export function safeExternalUrl(value) {
   } catch {
     return null;
   }
+}
+
+const FAMILY_REVIEW_STATUSES = new Set([
+  "unreviewed",
+  "same_family",
+  "not_same_family",
+  "uncertain",
+  "not_assessable",
+  "mixed",
+]);
+const FAMILY_DOCUMENT_KINDS = new Set(["contract", "amendment"]);
+const FAMILY_DOCUMENT_KIND_BASES = new Set([
+  "observed",
+  "reviewed",
+  "generated",
+]);
+const FAMILY_HYPOTHESES = new Set([
+  "same_instrument_family",
+  "updates_document",
+]);
+const FAMILY_TIMESTAMP_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function isValidFamilyTimestamp(value) {
+  if (typeof value !== "string") return false;
+  const match = FAMILY_TIMESTAMP_PATTERN.exec(value);
+  if (!match || Number.isNaN(Date.parse(value))) return false;
+  const [year, month, day, hour, minute, second] = match
+    .slice(1, 7)
+    .map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth &&
+    hour <= 23 && minute <= 59 && second <= 59;
+}
+
+function familyInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function familyReviewAggregate(value) {
+  const review = record(value);
+  const verdictCounts = record(review.verdict_counts);
+  const counts = {
+    same_family: familyInteger(verdictCounts.same_family),
+    not_same_family: familyInteger(verdictCounts.not_same_family),
+    uncertain: familyInteger(verdictCounts.uncertain),
+    not_assessable: familyInteger(verdictCounts.not_assessable),
+  };
+  if (Object.values(counts).some((count) => count === null)) return null;
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const currentDecisionCount = familyInteger(review.current_decision_count);
+  const positiveVerdicts = Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .map(([verdict]) => verdict);
+  const expectedStatus = total === 0
+    ? "unreviewed"
+    : positiveVerdicts.length > 1
+    ? "mixed"
+    : positiveVerdicts[0];
+  const expectedConflicting = counts.same_family > 0 &&
+    counts.not_same_family > 0;
+  const latestDecisionIsConsistent = total === 0
+    ? review.latest_decision_at === null
+    : isValidFamilyTimestamp(review.latest_decision_at);
+  if (
+    !Number.isSafeInteger(total) ||
+    currentDecisionCount !== total ||
+    review.status !== expectedStatus ||
+    review.conflicting !== expectedConflicting ||
+    !latestDecisionIsConsistent
+  ) {
+    return null;
+  }
+  return {
+    status: review.status,
+    currentDecisionCount,
+    conflicting: review.conflicting,
+  };
+}
+
+export function familyContextEvidence(value, expectedAgreementId) {
+  if (
+    typeof expectedAgreementId !== "string" ||
+    !UUID_PATTERN.test(expectedAgreementId)
+  ) {
+    return null;
+  }
+
+  const context = record(value);
+  const limits = record(context.limits);
+  if (
+    context.api_version !== "agreement-family-context-v1" ||
+    context.agreement_id !== expectedAgreementId ||
+    context.proposal_only !== true ||
+    context.relationship_written_automatically !== false ||
+    context.review_question !== "same_agreement_family" ||
+    familyInteger(limits.maximum_items) !== FAMILY_CONTEXT_ITEM_MAX ||
+    limits.candidate_currentness_required !== true ||
+    limits.newest_candidate_per_pair_selected_before_currentness_check !==
+      true ||
+    limits.stale_latest_candidate_fails_closed_without_historical_fallback !==
+      true ||
+    limits.both_documents_published_and_redistributable !== true ||
+    limits.observed_current_extractions_required !== true ||
+    limits.exact_content_duplicates_excluded !== true ||
+    limits.reviewer_identity_exposed !== false ||
+    limits.review_rationale_exposed !== false ||
+    limits.family_review_confirms_direction !== false ||
+    limits.legal_effect_determined !== false ||
+    limits.agreement_relationship_created !== false
+  ) {
+    return null;
+  }
+
+  const coverage = record(context.coverage);
+  const eligibleDistinctPairs = familyInteger(
+    coverage.eligible_distinct_pairs,
+  );
+  const returnedCount = familyInteger(coverage.returned_count);
+  const omittedCount = familyInteger(coverage.omitted_count);
+  if (
+    eligibleDistinctPairs === null ||
+    returnedCount === null ||
+    omittedCount === null ||
+    returnedCount > FAMILY_CONTEXT_ITEM_MAX ||
+    eligibleDistinctPairs < returnedCount ||
+    omittedCount !== eligibleDistinctPairs - returnedCount ||
+    typeof coverage.truncated !== "boolean" ||
+    coverage.truncated !== (omittedCount > 0)
+  ) {
+    return null;
+  }
+
+  if (
+    !Array.isArray(context.items) ||
+    context.items.length !== returnedCount ||
+    context.items.length > FAMILY_CONTEXT_ITEM_MAX
+  ) {
+    return null;
+  }
+
+  const seenCandidateIds = new Set();
+  const seenCandidateKeys = new Set();
+  const seenRelatedAgreements = new Set();
+  const items = [];
+  for (const itemValue of context.items) {
+    const item = record(itemValue);
+    const proposal = record(item.proposal);
+    const relatedAgreement = record(item.related_agreement);
+    const humanReview = record(item.human_review);
+    if (
+      typeof item.candidate_id !== "string" ||
+      !UUID_PATTERN.test(item.candidate_id) ||
+      typeof item.candidate_run_id !== "string" ||
+      !UUID_PATTERN.test(item.candidate_run_id) ||
+      item.candidate_current !== true ||
+      typeof item.source !== "string" ||
+      !SOURCE_PATTERN.test(item.source) ||
+      !FAMILY_HYPOTHESES.has(proposal.hypothesis) ||
+      proposal.hypothesis_basis !== "generated" ||
+      proposal.proposal_only !== true ||
+      proposal.relationship_written_automatically !== false
+    ) {
+      return null;
+    }
+
+    const subjectAgreementId = proposal.subject_agreement_id;
+    const objectAgreementId = proposal.object_agreement_id;
+    if (
+      typeof subjectAgreementId !== "string" ||
+      !UUID_PATTERN.test(subjectAgreementId) ||
+      typeof objectAgreementId !== "string" ||
+      !UUID_PATTERN.test(objectAgreementId) ||
+      subjectAgreementId === objectAgreementId
+    ) {
+      return null;
+    }
+    const expectedDirection = subjectAgreementId === expectedAgreementId
+      ? "outgoing"
+      : objectAgreementId === expectedAgreementId
+      ? "incoming"
+      : null;
+    const relatedAgreementId = subjectAgreementId === expectedAgreementId
+      ? objectAgreementId
+      : objectAgreementId === expectedAgreementId
+      ? subjectAgreementId
+      : null;
+    const candidateKey = [
+      item.source,
+      [subjectAgreementId, objectAgreementId].sort().join(":"),
+      proposal.hypothesis,
+    ].join(":");
+    const reviewAggregate = familyReviewAggregate(humanReview);
+    const observedTitle = relatedAgreement.observed_title;
+    const canonicalUrl = safeExternalUrl(relatedAgreement.canonical_url);
+    if (
+      proposal.direction_from_requested_agreement !== expectedDirection ||
+      relatedAgreementId === null ||
+      relatedAgreement.agreement_id !== relatedAgreementId ||
+      seenCandidateIds.has(item.candidate_id) ||
+      seenCandidateKeys.has(candidateKey) ||
+      seenRelatedAgreements.has(relatedAgreementId) ||
+      relatedAgreement.text_basis !== "observed" ||
+      !(
+        observedTitle === null ||
+        (typeof observedTitle === "string" && observedTitle.trim() &&
+          observedTitle.length <= 500)
+      ) ||
+      typeof relatedAgreement.observed_title_truncated !== "boolean" ||
+      (relatedAgreement.observed_title_truncated &&
+        (typeof observedTitle !== "string" || observedTitle.length !== 500)) ||
+      !FAMILY_DOCUMENT_KINDS.has(relatedAgreement.document_kind) ||
+      !FAMILY_DOCUMENT_KIND_BASES.has(relatedAgreement.document_kind_basis) ||
+      !(
+        relatedAgreement.observed_published_at === null ||
+        isValidFamilyTimestamp(relatedAgreement.observed_published_at)
+      ) ||
+      typeof relatedAgreement.canonical_url_omitted !== "boolean" ||
+      !(
+        relatedAgreement.canonical_url === null ||
+        (typeof relatedAgreement.canonical_url === "string" &&
+          canonicalUrl !== null)
+      ) ||
+      (relatedAgreement.canonical_url_omitted &&
+        relatedAgreement.canonical_url !== null) ||
+      humanReview.question !== "same_agreement_family" ||
+      humanReview.aggregation_scope !==
+        "current_pair_candidates_latest_decision_per_reviewer" ||
+      !FAMILY_REVIEW_STATUSES.has(humanReview.status) ||
+      reviewAggregate === null ||
+      humanReview.reviewer_identity_exposed !== false ||
+      humanReview.rationale_exposed !== false ||
+      humanReview.direction_reviewed !== false ||
+      humanReview.relationship_materialized_by_review !== false
+    ) {
+      return null;
+    }
+
+    seenCandidateIds.add(item.candidate_id);
+    seenCandidateKeys.add(candidateKey);
+    seenRelatedAgreements.add(relatedAgreementId);
+    items.push({
+      relatedAgreementId,
+      observedTitle,
+      observedTitleTruncated: relatedAgreement.observed_title_truncated,
+      documentKind: relatedAgreement.document_kind,
+      documentKindBasis: relatedAgreement.document_kind_basis,
+      observedPublishedAt:
+        typeof relatedAgreement.observed_published_at === "string"
+          ? relatedAgreement.observed_published_at
+          : null,
+      canonicalUrl,
+      canonicalUrlOmitted: relatedAgreement.canonical_url_omitted,
+      source: item.source,
+      textBasis: relatedAgreement.text_basis,
+      reviewStatus: reviewAggregate.status,
+      currentDecisionCount: reviewAggregate.currentDecisionCount,
+      conflicting: reviewAggregate.conflicting,
+    });
+  }
+
+  return {
+    items,
+    totals: { eligibleDistinctPairs, returnedCount, omittedCount },
+    truncated: coverage.truncated,
+  };
 }
 
 function citationText(value, maximum = CITATION_TEXT_MAX_CHARS) {
@@ -3797,6 +4064,29 @@ function boundedText(value, maximum = 24_000) {
   return text.length > maximum
     ? `${text.slice(0, maximum)}\n… [display truncated]`
     : text;
+}
+
+function familyReviewStatusLabel(status, conflicting = false) {
+  if (conflicting || status === "mixed") {
+    return "Family-review responses: mixed";
+  }
+  const labels = {
+    unreviewed: "Family review: not reviewed",
+    same_family: "Family-review response: same family",
+    not_same_family: "Family-review response: not same family",
+    uncertain: "Family-review response: uncertain",
+    not_assessable: "Family-review response: not assessable",
+  };
+  return labels[status] || "Family review: unavailable";
+}
+
+function documentKindBasisLabel(value) {
+  if (value === "observed") return "Observed document classification";
+  if (value === "reviewed") return "Human-reviewed document classification";
+  if (value === "generated") {
+    return "Generated document classification · not source wording";
+  }
+  return `Document classification basis: ${displayText(value, "unavailable")}`;
 }
 
 function referenceResolutionLabel(value) {
@@ -7987,9 +8277,125 @@ function boot() {
     }
     fragment.append(clauseSection);
 
+    const familyContext = familyContextEvidence(
+      data.family_context,
+      agreement.id,
+    );
+    if (familyContext?.items.length) {
+      const candidateSection = section("Generated related-document proposals");
+      candidateSection.append(
+        element(
+          "p",
+          "focus-note",
+          "Generated proposals are separate from recorded agreement relationships. Publication order and family-review responses do not establish amendment direction, supersession, incorporation, or legal effect. Verify both source records.",
+        ),
+      );
+      for (const candidate of familyContext.items) {
+        const card = element("article", "relationship");
+        const reviewClass = candidate.reviewStatus === "unreviewed" ||
+            candidate.reviewStatus === "mixed" || candidate.conflicting
+          ? "basis-unknown"
+          : "basis-reviewed";
+        const classificationClass = candidate.documentKindBasis === "generated"
+          ? "basis-generated"
+          : candidate.documentKindBasis === "reviewed"
+          ? "basis-reviewed"
+          : "";
+        append(
+          card,
+          element(
+            "span",
+            "badge basis-generated",
+            "Generated proposal · not a recorded relationship",
+          ),
+          element(
+            "h4",
+            "",
+            candidate.observedTitle === null
+              ? "Observed title unavailable"
+              : candidate.observedTitle,
+          ),
+          candidate.observedTitleTruncated
+            ? element(
+              "p",
+              "muted",
+              "Displayed observed title was source-truncated to 500 characters.",
+            )
+            : null,
+          element(
+            "span",
+            `badge${classificationClass ? ` ${classificationClass}` : ""}`,
+            documentKindBasisLabel(candidate.documentKindBasis),
+          ),
+          element(
+            "p",
+            "muted",
+            `Source ${displayText(candidate.source)} · document kind ${
+              displayText(candidate.documentKind)
+            }${
+              candidate.observedPublishedAt
+                ? ` · published ${date(candidate.observedPublishedAt)}`
+                : ""
+            } · Observed source text`,
+          ),
+          element(
+            "span",
+            `badge ${reviewClass}`,
+            familyReviewStatusLabel(
+              candidate.reviewStatus,
+              candidate.conflicting,
+            ),
+          ),
+          element(
+            "p",
+            "muted",
+            `${
+              count(candidate.currentDecisionCount)
+            } current review response(s)`,
+          ),
+          sourceLink(candidate.canonicalUrl, "Open candidate source ↗"),
+          candidate.canonicalUrlOmitted
+            ? element(
+              "p",
+              "muted",
+              "Recorded source URL was omitted by server safety checks.",
+            )
+            : null,
+        );
+        const inspect = element(
+          "button",
+          "text-button",
+          "Inspect candidate document →",
+        );
+        inspect.type = "button";
+        inspect.addEventListener(
+          "click",
+          () => loadAgreement(candidate.relatedAgreementId),
+        );
+        card.append(inspect);
+        candidateSection.append(card);
+      }
+      candidateSection.append(
+        element(
+          "p",
+          "muted",
+          familyContext.truncated
+            ? `Showing ${count(familyContext.items.length)} of ${
+              count(familyContext.totals.eligibleDistinctPairs)
+            } generated candidate pairs; ${
+              count(familyContext.totals.omittedCount)
+            } omitted by the bounded response (maximum ${FAMILY_CONTEXT_ITEM_MAX}).`
+            : `Showing ${
+              count(familyContext.items.length)
+            } generated candidate pair(s); this response is bounded to ${FAMILY_CONTEXT_ITEM_MAX}.`,
+        ),
+      );
+      fragment.append(candidateSection);
+    }
+
     const relationships = array(data.relationships).slice(0, 100);
     if (relationships.length) {
-      const relationshipSection = section("Related documents");
+      const relationshipSection = section("Recorded agreement relationships");
       for (const relationshipValue of relationships) {
         const relationship = record(relationshipValue);
         relationshipSection.append(
