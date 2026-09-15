@@ -179,6 +179,21 @@
           </form>
           <p id="decision-brief-directory-status" class="muted" role="status"
             aria-live="polite">Find published contracts and amendments with evidence across three or more tracked topics.</p>
+          <div id="decision-brief-comparison-toolbar"
+            class="comparison-toolbar brief-comparison-toolbar"
+            aria-labelledby="decision-brief-comparison-toolbar-title">
+            <div>
+              <strong id="decision-brief-comparison-toolbar-title">Compare agreement briefs</strong>
+              <span id="decision-brief-comparison-status" class="muted"
+                role="status" aria-live="polite">Select 2–3 agreements to compare the same five positive-detector topics.</span>
+            </div>
+            <div class="comparison-actions">
+              <button id="clear-decision-brief-comparison"
+                class="button secondary" type="button" disabled>Clear selection</button>
+              <button id="open-decision-brief-comparison"
+                class="button primary" type="button" disabled>Compare selected briefs</button>
+            </div>
+          </div>
           <div id="decision-brief-directory-results"
             class="results brief-directory-results"></div>
           <div class="pager">
@@ -707,6 +722,27 @@
         </div>
       </div>
       <div id="decision-brief-body" class="dialog-body"></div>
+    </dialog>
+
+    <dialog id="decision-brief-comparison-dialog" class="comparison-dialog"
+      aria-labelledby="decision-brief-comparison-title"
+      aria-describedby="decision-brief-comparison-subtitle decision-brief-comparison-dialog-status">
+      <div class="dialog-header">
+        <div>
+          <strong id="decision-brief-comparison-title">Agreement brief comparison</strong>
+          <span id="decision-brief-comparison-subtitle"
+            class="dialog-subtitle">Side-by-side positive wording evidence across five fixed topics</span>
+          <span id="decision-brief-comparison-dialog-status"
+            class="dialog-subtitle" role="status" aria-live="polite"></span>
+        </div>
+        <div class="dialog-actions">
+          <button id="download-decision-brief-comparison"
+            class="button secondary" type="button" disabled>Download comparison JSON</button>
+          <button id="close-decision-brief-comparison" class="icon-button"
+            type="button" aria-label="Close agreement brief comparison">×</button>
+        </div>
+      </div>
+      <div id="decision-brief-comparison-body" class="dialog-body"></div>
     </dialog>
 
     <dialog id="comparison-dialog" class="comparison-dialog"

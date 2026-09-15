@@ -674,11 +674,13 @@ mark {
   color: #dce5df;
   cursor: pointer;
 }
-.compare-choice:has(.compare-input:focus-visible) {
+.compare-choice:has(.compare-input:focus-visible),
+.compare-choice:has(.brief-compare-input:focus-visible) {
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgb(124 224 173 / 12%);
 }
-.compare-input {
+.compare-input,
+.brief-compare-input {
   flex: 0 0 16px;
   width: 16px;
   min-width: 16px;
@@ -688,7 +690,8 @@ mark {
   border: 0;
   accent-color: var(--green);
 }
-.compare-input:focus {
+.compare-input:focus,
+.brief-compare-input:focus {
   box-shadow: none;
 }
 .comparison-toolbar {
@@ -834,6 +837,62 @@ dialog::backdrop {
 .comparison-grid:focus-visible {
   outline: 2px solid var(--green);
   outline-offset: 2px;
+}
+.brief-comparison-scroll {
+  overflow-x: auto;
+  margin-top: 16px;
+  padding-bottom: 8px;
+}
+.brief-comparison-table {
+  width: 100%;
+  min-width: 760px;
+  border-spacing: 0;
+  border-collapse: separate;
+}
+.brief-comparison-table th,
+.brief-comparison-table td {
+  min-width: 240px;
+  padding: 13px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  text-align: left;
+}
+.brief-comparison-table th:first-child,
+.brief-comparison-table td:first-child {
+  min-width: 155px;
+  border-left: 1px solid var(--line);
+}
+.brief-comparison-table thead th {
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  background: #13221b;
+}
+.brief-comparison-table thead th:first-child {
+  border-top-left-radius: 10px;
+}
+.brief-comparison-table thead th:last-child {
+  border-top-right-radius: 10px;
+}
+.brief-comparison-table tbody tr:last-child th:first-child {
+  border-bottom-left-radius: 10px;
+}
+.brief-comparison-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 10px;
+}
+.brief-comparison-table tbody th {
+  color: var(--gold);
+  background: #101c17;
+}
+.brief-comparison-table p {
+  margin: 7px 0;
+}
+.brief-comparison-evidence {
+  padding: 9px;
+  border-left: 2px solid var(--green);
+  background: #0a1410;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .comparison-column {
   min-width: 0;

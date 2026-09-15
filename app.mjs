@@ -28,6 +28,10 @@ export const AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT = 3;
 export const AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX = 5;
 export const AGREEMENT_DECISION_BRIEF_SCHEMA =
   "esheria.agreement-decision-brief.v2";
+export const AGREEMENT_DECISION_BRIEF_COMPARISON_MIN = 2;
+export const AGREEMENT_DECISION_BRIEF_COMPARISON_MAX = 3;
+export const AGREEMENT_DECISION_BRIEF_COMPARISON_SCHEMA =
+  "esheria.agreement-decision-brief-comparison.v1";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
 export const DECISION_BRIEF_DIRECTORY_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
@@ -1718,6 +1722,63 @@ export function buildAgreementDecisionBriefExport(
       bearer_token_included: false,
       spreadsheet_import_warning:
         "JSON does not execute formula-like source text. If converting evidence to a spreadsheet, neutralize formula-leading cells before opening the file.",
+    },
+  };
+}
+
+export function buildAgreementDecisionBriefComparison(
+  values,
+  generatedAt = new Date().toISOString(),
+) {
+  if (
+    !Array.isArray(values) ||
+    values.length < AGREEMENT_DECISION_BRIEF_COMPARISON_MIN ||
+    values.length > AGREEMENT_DECISION_BRIEF_COMPARISON_MAX ||
+    !isValidFamilyTimestamp(generatedAt)
+  ) {
+    throw new TypeError("Agreement decision brief comparison is invalid");
+  }
+  const agreementIds = new Set();
+  const briefs = values.map((value) => {
+    const input = record(value);
+    const agreementId = record(input.agreement).agreement_id;
+    const brief = agreementDecisionBriefEvidence(
+      input,
+      agreementId,
+      AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+    );
+    if (brief === null || agreementIds.has(agreementId)) {
+      throw new TypeError("Agreement decision brief comparison is invalid");
+    }
+    agreementIds.add(agreementId);
+    return brief;
+  });
+  return {
+    schema: AGREEMENT_DECISION_BRIEF_COMPARISON_SCHEMA,
+    generated_at: generatedAt,
+    scope: {
+      agreement_count: briefs.length,
+      topic_order: AGREEMENT_DECISION_BRIEF_TOPICS.map((topic) =>
+        topic.topicKey
+      ),
+      comparison_basis:
+        "independently_validated_positive_deterministic_wording_matches",
+      count_interpretation:
+        "raw_positive_detector_matches_not_normalized_for_document_length_or_detector_opportunity",
+    },
+    decision_briefs: briefs,
+    limitations: [
+      "The selected agreements are user-chosen examples, not a representative market sample.",
+      "Clause and signal counts are raw positive detector matches and are not normalized scores.",
+      "Zero matches do not establish that a provision, exception, right or consequence is absent.",
+      "Compare complete agreements, definitions, schedules, amendments and related documents before relying on these excerpts.",
+    ],
+    export_safety: {
+      format: "application/json",
+      observed_text_preserved_verbatim: true,
+      spreadsheet_formula_execution: false,
+      private_storage_paths_included: false,
+      bearer_token_included: false,
     },
   };
 }
@@ -5862,6 +5923,9 @@ function boot() {
     decisionBriefDirectoryLimit: 12,
     decisionBriefDirectoryHasMore: false,
     decisionBriefDirectoryLoading: false,
+    decisionBriefComparisonSelection: new Map(),
+    decisionBriefComparison: null,
+    decisionBriefComparing: false,
     decisionBrief: null,
     decisionBriefAgreementId: null,
     decisionBriefLoading: false,
@@ -5945,6 +6009,15 @@ function boot() {
     "decision-brief-directory-previous",
   );
   const decisionBriefDirectoryNext = byId("decision-brief-directory-next");
+  const decisionBriefComparisonStatus = byId(
+    "decision-brief-comparison-status",
+  );
+  const clearDecisionBriefComparisonButton = byId(
+    "clear-decision-brief-comparison",
+  );
+  const openDecisionBriefComparisonButton = byId(
+    "open-decision-brief-comparison",
+  );
   const partySearchForm = byId("party-search-form");
   const partyQueryInput = byId("party-query");
   const partyKindInput = byId("party-kind");
@@ -5986,6 +6059,16 @@ function boot() {
   const decisionBriefBody = byId("decision-brief-body");
   const decisionBriefStatus = byId("decision-brief-status");
   const downloadDecisionBriefButton = byId("download-decision-brief");
+  const decisionBriefComparisonDialog = byId(
+    "decision-brief-comparison-dialog",
+  );
+  const decisionBriefComparisonBody = byId("decision-brief-comparison-body");
+  const decisionBriefComparisonDialogStatus = byId(
+    "decision-brief-comparison-dialog-status",
+  );
+  const downloadDecisionBriefComparisonButton = byId(
+    "download-decision-brief-comparison",
+  );
   const comparisonDialog = byId("comparison-dialog");
   const comparisonBody = byId("comparison-body");
   const guideButtons = [
@@ -6068,6 +6151,9 @@ function boot() {
     state.decisionBriefDirectoryOffset = 0;
     state.decisionBriefDirectoryHasMore = false;
     state.decisionBriefDirectoryLoading = false;
+    state.decisionBriefComparisonSelection.clear();
+    state.decisionBriefComparison = null;
+    state.decisionBriefComparing = false;
     state.decisionBrief = null;
     state.decisionBriefAgreementId = null;
     state.decisionBriefLoading = false;
@@ -6079,6 +6165,9 @@ function boot() {
     decisionBriefDirectoryStatus.textContent =
       "Find published contracts and amendments with evidence across three or more tracked topics.";
     decisionBriefDirectoryResults.replaceChildren();
+    decisionBriefComparisonBody.replaceChildren();
+    decisionBriefComparisonDialogStatus.textContent = "";
+    downloadDecisionBriefComparisonButton.disabled = true;
     positionForm.reset();
     positionFacets.replaceChildren(element("span", "", "Available evidence:"));
     positionStatus.textContent =
@@ -6131,8 +6220,10 @@ function boot() {
     exportStatus.textContent = "";
     closeDialog(detailDialog);
     closeDialog(decisionBriefDialog);
+    closeDialog(decisionBriefComparisonDialog);
     closeDialog(comparisonDialog);
     updateComparisonControls();
+    updateDecisionBriefComparisonControls();
     workspace.hidden = true;
     clearButton.hidden = true;
     authView.hidden = false;
@@ -8332,6 +8423,105 @@ function boot() {
     return card;
   }
 
+  function updateDecisionBriefComparisonControls(message = null, kind = "") {
+    const selected = state.decisionBriefComparisonSelection.size;
+    clearDecisionBriefComparisonButton.disabled = selected === 0 ||
+      state.decisionBriefComparing;
+    openDecisionBriefComparisonButton.disabled =
+      selected < AGREEMENT_DECISION_BRIEF_COMPARISON_MIN ||
+      selected > AGREEMENT_DECISION_BRIEF_COMPARISON_MAX ||
+      state.decisionBriefComparing;
+    downloadDecisionBriefComparisonButton.disabled =
+      state.decisionBriefComparing || state.decisionBriefComparison === null;
+    decisionBriefComparisonStatus.className = kind === "error"
+      ? "status error"
+      : "muted";
+    decisionBriefComparisonStatus.textContent = message ??
+      (selected === 0
+        ? "Select 2–3 agreements to compare the same five positive-detector topics."
+        : selected === 1
+        ? "1 agreement selected. Select at least one more."
+        : selected === AGREEMENT_DECISION_BRIEF_COMPARISON_MAX
+        ? "3 agreements selected (maximum). Ready to compare."
+        : "2 agreements selected. Ready to compare.");
+
+    for (
+      const input of decisionBriefDirectoryResults.querySelectorAll(
+        ".brief-compare-input",
+      )
+    ) {
+      const agreementId = input.getAttribute("data-agreement-id") ?? "";
+      const selectedHere = state.decisionBriefComparisonSelection.has(
+        agreementId,
+      );
+      input.checked = selectedHere;
+      input.disabled = state.decisionBriefComparing ||
+        (selected >= AGREEMENT_DECISION_BRIEF_COMPARISON_MAX && !selectedHere);
+      input.title = input.disabled && !selectedHere
+        ? "The brief comparison already has three agreements"
+        : "";
+    }
+  }
+
+  function clearDecisionBriefComparison() {
+    state.decisionBriefComparisonSelection.clear();
+    state.decisionBriefComparison = null;
+    decisionBriefComparisonBody.replaceChildren();
+    decisionBriefComparisonDialogStatus.textContent = "";
+    downloadDecisionBriefComparisonButton.disabled = true;
+    if (decisionBriefComparisonDialog.hasAttribute("open")) {
+      closeDialog(decisionBriefComparisonDialog);
+    }
+    updateDecisionBriefComparisonControls();
+  }
+
+  function toggleDecisionBriefComparison(item, input) {
+    const agreementId = item.agreementId;
+    if (!UUID_PATTERN.test(agreementId)) return;
+    if (input.checked) {
+      if (
+        state.decisionBriefComparisonSelection.size >=
+          AGREEMENT_DECISION_BRIEF_COMPARISON_MAX
+      ) {
+        input.checked = false;
+        updateDecisionBriefComparisonControls(
+          "A brief comparison can contain at most three agreements. Remove one before adding another.",
+          "error",
+        );
+        return;
+      }
+      state.decisionBriefComparisonSelection.set(agreementId, item);
+    } else {
+      state.decisionBriefComparisonSelection.delete(agreementId);
+    }
+    state.decisionBriefComparison = null;
+    decisionBriefComparisonDialogStatus.textContent =
+      "Selection changed; compare again before exporting.";
+    updateDecisionBriefComparisonControls();
+  }
+
+  function decisionBriefComparisonChoice(item) {
+    const label = element("label", "compare-choice");
+    const input = element("input", "brief-compare-input");
+    input.type = "checkbox";
+    input.checked = state.decisionBriefComparisonSelection.has(
+      item.agreementId,
+    );
+    input.setAttribute("data-agreement-id", item.agreementId);
+    input.setAttribute(
+      "aria-label",
+      `Select ${displayText(item.title, "untitled agreement")} from ${
+        displayText(item.source.name, "unknown source")
+      } for agreement brief comparison`,
+    );
+    input.addEventListener(
+      "change",
+      () => toggleDecisionBriefComparison(item, input),
+    );
+    append(label, input, element("span", "", "Select for brief comparison"));
+    return label;
+  }
+
   function decisionBriefDirectoryCard(item) {
     const card = element("article", "result-card brief-directory-card");
     const headingGroup = element("div");
@@ -8414,7 +8604,7 @@ function boot() {
     inspect.addEventListener("click", () => {
       loadAgreement(item.agreementId, null);
     });
-    append(actions, openBrief, inspect);
+    append(actions, decisionBriefComparisonChoice(item), openBrief, inspect);
     const source = sourceLink(item.source.sourceUrl, "Open recorded source ↗");
     if (source) actions.append(source);
 
@@ -8480,6 +8670,7 @@ function boot() {
         count(response.page.eligibleAgreements)
       } agreement(s) meet the selected detector threshold.`
       : "No agreement meets the selected positive-detector threshold. This is not evidence that the provisions are absent.";
+    updateDecisionBriefComparisonControls();
   }
 
   async function performDecisionBriefDirectoryBrowse() {
@@ -10049,6 +10240,261 @@ function boot() {
     downloadDecisionBriefButton.disabled = false;
   }
 
+  async function fetchAgreementDecisionBrief(agreementId, token) {
+    const payload = await requestJson(
+      buildAgreementDecisionBriefPath(
+        agreementId,
+        AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+      ),
+      token,
+    );
+    const brief = agreementDecisionBriefEvidence(
+      record(payload).data,
+      agreementId,
+      AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+    );
+    if (brief === null) {
+      throw new ApiError(
+        "The decision brief did not match its evidence disclosure contract.",
+      );
+    }
+    return brief;
+  }
+
+  function decisionBriefComparisonTopicCell(brief, topic) {
+    const cell = element("td");
+    append(
+      cell,
+      element(
+        "p",
+        "muted",
+        `${count(topic.total_matches)} matching clause(s) · ${
+          count(topic.total_signal_matches)
+        } positive signal(s)`,
+      ),
+    );
+    const example = topic.examples[0];
+    if (!example) {
+      cell.append(
+        element(
+          "p",
+          "focus-note",
+          "No positive deterministic match. This is not evidence of absence.",
+        ),
+      );
+      return cell;
+    }
+    append(
+      cell,
+      element(
+        "span",
+        "badge basis-generated",
+        example.generated_signal.label,
+      ),
+      element(
+        "p",
+        "brief-comparison-evidence",
+        example.observed_evidence.excerpt,
+      ),
+      element(
+        "p",
+        "muted tiny",
+        `Clause ${example.clause_ordinal}${
+          example.clause_heading ? ` · ${example.clause_heading}` : ""
+        } · observed support SHA-256 ${example.observed_evidence.sha256}`,
+      ),
+    );
+    const inspect = element("button", "text-button", "Inspect exact clause →");
+    inspect.type = "button";
+    inspect.addEventListener("click", () => {
+      closeDialog(decisionBriefComparisonDialog);
+      loadAgreement(brief.agreement.agreement_id, example.clause_id);
+    });
+    cell.append(inspect);
+    return cell;
+  }
+
+  function renderDecisionBriefComparison(comparison) {
+    const briefs = comparison.decision_briefs;
+    const fragment = document.createDocumentFragment();
+    append(
+      fragment,
+      element(
+        "p",
+        "decision-brief-boundary",
+        "Decision boundary: compare positive deterministic wording evidence, not scores. Raw match counts are not normalized for document length or detector opportunity. A zero does not establish absence, and the selected agreements are not a market sample.",
+      ),
+    );
+
+    const scroll = element("div", "brief-comparison-scroll");
+    const table = element("table", "brief-comparison-table");
+    const head = element("thead");
+    const headRow = element("tr");
+    const topicHeading = element("th", "", "Topic");
+    topicHeading.setAttribute("scope", "col");
+    headRow.append(topicHeading);
+    for (const brief of briefs) {
+      const header = element("th");
+      header.setAttribute("scope", "col");
+      append(
+        header,
+        element(
+          "h3",
+          "",
+          displayText(brief.agreement.title, "Untitled agreement"),
+        ),
+        element(
+          "p",
+          "muted",
+          `${brief.source.name} · ${brief.agreement.document_kind}`,
+        ),
+      );
+      const actions = element("div", "result-actions");
+      const open = element("button", "text-button", "Open full brief →");
+      open.type = "button";
+      open.addEventListener("click", () => {
+        closeDialog(decisionBriefComparisonDialog);
+        loadAgreementDecisionBrief(brief.agreement.agreement_id);
+      });
+      append(actions, open, sourceLink(brief.source.source_url));
+      header.append(actions);
+      headRow.append(header);
+    }
+    head.append(headRow);
+    table.append(head);
+
+    const body = element("tbody");
+    for (
+      let topicIndex = 0;
+      topicIndex < AGREEMENT_DECISION_BRIEF_TOPICS.length;
+      topicIndex += 1
+    ) {
+      const row = element("tr");
+      const expectedTopic = AGREEMENT_DECISION_BRIEF_TOPICS[topicIndex];
+      const heading = element("th", "", expectedTopic.label);
+      heading.setAttribute("scope", "row");
+      row.append(heading);
+      for (const brief of briefs) {
+        row.append(
+          decisionBriefComparisonTopicCell(brief, brief.topics[topicIndex]),
+        );
+      }
+      body.append(row);
+    }
+    table.append(body);
+    scroll.append(table);
+    fragment.append(scroll);
+
+    const limitations = element("section", "decision-brief-limitations");
+    append(limitations, element("h3", "", "Comparison limits"));
+    const list = element("ul");
+    for (const limitation of comparison.limitations) {
+      list.append(element("li", "", limitation));
+    }
+    limitations.append(list);
+    fragment.append(limitations);
+    decisionBriefComparisonBody.replaceChildren(fragment);
+    decisionBriefComparisonDialogStatus.textContent =
+      `${briefs.length} independently validated briefs loaded.`;
+    downloadDecisionBriefComparisonButton.disabled = false;
+  }
+
+  async function compareSelectedDecisionBriefs() {
+    const selected = [...state.decisionBriefComparisonSelection.values()];
+    if (
+      !state.token ||
+      state.decisionBriefComparing ||
+      selected.length < AGREEMENT_DECISION_BRIEF_COMPARISON_MIN ||
+      selected.length > AGREEMENT_DECISION_BRIEF_COMPARISON_MAX
+    ) {
+      return;
+    }
+    const token = state.token;
+    state.decisionBriefComparing = true;
+    state.decisionBriefComparison = null;
+    downloadDecisionBriefComparisonButton.disabled = true;
+    updateDecisionBriefComparisonControls("Loading exact decision briefs…");
+    decisionBriefComparisonDialogStatus.textContent =
+      "Loading independently validated agreement evidence…";
+    const loading = element(
+      "p",
+      "muted",
+      "Loading the same five bounded wording topics for each agreement…",
+    );
+    loading.setAttribute("role", "status");
+    decisionBriefComparisonBody.replaceChildren(loading);
+    openDialog(decisionBriefComparisonDialog);
+
+    try {
+      const settled = await Promise.allSettled(
+        selected.map((item) =>
+          fetchAgreementDecisionBrief(item.agreementId, token)
+        ),
+      );
+      if (state.token !== token) return;
+      const unauthorized = settled.find(
+        (result) =>
+          result.status === "rejected" &&
+          result.reason instanceof ApiError &&
+          result.reason.status === 401,
+      );
+      if (unauthorized) {
+        signOut(
+          "The token was not accepted or has changed. Enter the current explorer token.",
+        );
+        return;
+      }
+      const failure = settled.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+      const comparison = buildAgreementDecisionBriefComparison(
+        settled.map((result) => result.value),
+      );
+      state.decisionBriefComparison = comparison;
+      renderDecisionBriefComparison(comparison);
+      updateDecisionBriefComparisonControls(
+        `${comparison.scope.agreement_count} agreement briefs compared. Raw positive-match counts are not scores.`,
+      );
+    } catch (error) {
+      decisionBriefComparisonDialogStatus.textContent =
+        "Agreement brief comparison unavailable.";
+      decisionBriefComparisonBody.replaceChildren(
+        element(
+          "p",
+          "status error",
+          error instanceof Error
+            ? error.message
+            : "The agreement brief comparison could not be loaded.",
+        ),
+      );
+    } finally {
+      if (state.token === token) {
+        state.decisionBriefComparing = false;
+        updateDecisionBriefComparisonControls();
+      }
+    }
+  }
+
+  function downloadDecisionBriefComparison() {
+    if (!state.decisionBriefComparison) return;
+    const blob = new Blob(
+      [`${JSON.stringify(state.decisionBriefComparison, null, 2)}\n`],
+      { type: "application/json;charset=utf-8" },
+    );
+    const objectUrl = URL.createObjectURL(blob);
+    const link = element("a");
+    link.href = objectUrl;
+    link.download = `esheria-agreement-brief-comparison-${
+      state.decisionBriefComparison.generated_at.slice(0, 10)
+    }.json`;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    decisionBriefComparisonDialogStatus.textContent =
+      "Comparison JSON downloaded without a bearer token or private Storage path.";
+  }
+
   async function loadAgreementDecisionBrief(agreementId) {
     if (
       !state.token ||
@@ -10073,28 +10519,12 @@ function boot() {
     decisionBriefBody.replaceChildren(loading);
     openDialog(decisionBriefDialog);
     try {
-      const payload = await requestJson(
-        buildAgreementDecisionBriefPath(
-          agreementId,
-          AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
-        ),
-        token,
-      );
+      const brief = await fetchAgreementDecisionBrief(agreementId, token);
       if (
         state.token !== token ||
         state.decisionBriefAgreementId !== agreementId
       ) {
         return;
-      }
-      const brief = agreementDecisionBriefEvidence(
-        record(payload).data,
-        agreementId,
-        AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
-      );
-      if (brief === null) {
-        throw new ApiError(
-          "The decision brief did not match its evidence disclosure contract.",
-        );
       }
       state.decisionBrief = brief;
       renderAgreementDecisionBrief(brief);
@@ -11015,12 +11445,28 @@ function boot() {
     "click",
     () => closeDialog(decisionBriefDialog),
   );
+  byId("close-decision-brief-comparison").addEventListener(
+    "click",
+    () => closeDialog(decisionBriefComparisonDialog),
+  );
   byId("close-comparison").addEventListener(
     "click",
     () => closeDialog(comparisonDialog),
   );
   clearComparisonButton.addEventListener("click", clearComparison);
   openComparisonButton.addEventListener("click", compareSelected);
+  clearDecisionBriefComparisonButton.addEventListener(
+    "click",
+    clearDecisionBriefComparison,
+  );
+  openDecisionBriefComparisonButton.addEventListener(
+    "click",
+    compareSelectedDecisionBriefs,
+  );
+  downloadDecisionBriefComparisonButton.addEventListener(
+    "click",
+    downloadDecisionBriefComparison,
+  );
   exportPositionMatrixButton.addEventListener("click", exportPositionMatrix);
   exportTerminationMatrixButton.addEventListener(
     "click",
@@ -11354,6 +11800,8 @@ function boot() {
     state.token = null;
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
+    state.decisionBriefComparisonSelection.clear();
+    state.decisionBriefComparison = null;
     tokenInput.value = "";
   });
   window.addEventListener("pageshow", (event) => {
@@ -11363,6 +11811,7 @@ function boot() {
   });
 
   updateComparisonControls();
+  updateDecisionBriefComparisonControls();
   tokenInput.focus();
 }
 
