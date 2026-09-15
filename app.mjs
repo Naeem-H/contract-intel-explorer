@@ -452,16 +452,22 @@ export function commercialPositionEvidence(value) {
 function observedValueCandidateEntries(value) {
   const packet = record(value);
   if (packet.schema !== "esheria.liability-cap-value-candidates.v1") return [];
-  return LIABILITY_VALUE_CANDIDATE_CATEGORIES.map(([key, label]) => ({
-    key,
-    label,
-    values: array(packet[key]).slice(0, 8).map((item) => {
+  return LIABILITY_VALUE_CANDIDATE_CATEGORIES.map(([key, label]) => {
+    const seen = new Set();
+    const values = array(packet[key]).slice(0, 8).map((item) => {
       const candidate = record(item);
       return typeof candidate.observed_text === "string"
         ? candidate.observed_text
         : null;
-    }).filter(Boolean),
-  })).filter((entry) => entry.values.length);
+    }).filter((candidate) => {
+      if (!candidate) return false;
+      const normalized = candidate.replace(/\s+/gu, " ").trim().toLowerCase();
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+    return { key, label, values };
+  }).filter((entry) => entry.values.length);
 }
 
 export function safeExternalUrl(value) {
@@ -1302,14 +1308,19 @@ export function buildLiabilityPositionMatrixCsv({
       if (key === "explicit_liability_limit_formula") {
         const candidates = record(signal?.observed_value_candidates);
         const observedWindow = record(candidates.observed_window);
+        const displayedCandidates = new Map(
+          observedValueCandidateEntries(candidates).map((entry) => [
+            entry.key,
+            entry.values,
+          ]),
+        );
         row[`${prefix}_observed_value_window`] = observedWindow.text ?? null;
         row[`${prefix}_observed_value_window_sha256`] = observedWindow.sha256 ??
           null;
         for (const [category] of LIABILITY_VALUE_CANDIDATE_CATEGORIES) {
-          row[`${prefix}_observed_${category}`] = array(candidates[category])
-            .map((value) => record(value).observed_text)
-            .filter((value) => typeof value === "string")
-            .join(" | ");
+          row[`${prefix}_observed_${category}`] = array(
+            displayedCandidates.get(category),
+          ).join(" | ");
         }
         row[`${prefix}_observed_value_candidates_json`] = signal
             ?.observed_value_candidates
