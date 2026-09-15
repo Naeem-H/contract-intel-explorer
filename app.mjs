@@ -182,6 +182,7 @@ function isAllowedApiTarget(url) {
       "feature",
       "duration",
       "linkage",
+      "context",
       "limit",
       "offset",
       "kind",
@@ -205,6 +206,10 @@ function isAllowedApiTarget(url) {
     if (
       pathname !== "/api/termination-positions" &&
       (url.searchParams.has("duration") || url.searchParams.has("linkage"))
+    ) return false;
+    if (
+      pathname !== "/api/assignment-positions" &&
+      url.searchParams.has("context")
     ) return false;
     if (pathname === "/api/positions" && url.searchParams.has("q")) {
       return false;
@@ -417,6 +422,7 @@ export function buildTerminationPositionPath({
 
 export function buildAssignmentPositionPath({
   signalKeys = [],
+  context = "",
   kind = "",
   source = "",
   limit = 20,
@@ -436,6 +442,9 @@ export function buildAssignmentPositionPath({
   if (kind && !["contract", "amendment"].includes(kind)) {
     throw new TypeError("Assignment document class is not supported");
   }
+  if (context && !["general", "finance"].includes(context)) {
+    throw new TypeError("Assignment context is not supported");
+  }
   const normalizedSource = typeof source === "string"
     ? source.trim().toLowerCase()
     : "";
@@ -448,6 +457,7 @@ export function buildAssignmentPositionPath({
     offset: String(offset),
   });
   for (const signal of signals) params.append("signal", signal);
+  if (context) params.set("context", context);
   if (kind) params.set("kind", kind);
   if (normalizedSource) params.set("source", normalizedSource);
   return `/api/assignment-positions?${params.toString()}`;
@@ -2884,6 +2894,7 @@ function boot() {
     terminationSource: "",
     terminationLoading: false,
     assignmentSignal: "",
+    assignmentContext: "",
     assignmentKind: "",
     assignmentSource: "",
     assignmentLoading: false,
@@ -2923,6 +2934,7 @@ function boot() {
   const terminationStatus = byId("termination-status");
   const assignmentForm = byId("assignment-form");
   const assignmentSignalInput = byId("assignment-signal");
+  const assignmentContextInput = byId("assignment-context");
   const assignmentKindInput = byId("assignment-kind");
   const assignmentSourceInput = byId("assignment-source");
   const assignmentButton = byId("assignment-submit");
@@ -3024,6 +3036,7 @@ function boot() {
     state.terminationSource = "";
     state.terminationLoading = false;
     state.assignmentSignal = "";
+    state.assignmentContext = "";
     state.assignmentKind = "";
     state.assignmentSource = "";
     state.assignmentLoading = false;
@@ -3151,6 +3164,9 @@ function boot() {
     );
     const assignmentSignalFacets = array(
       assignmentSummary.published_signal_facets,
+    );
+    const assignmentContextFacets = array(
+      assignmentSummary.published_context_facets,
     );
 
     summaryCards.replaceChildren(
@@ -3509,6 +3525,24 @@ function boot() {
       button.type = "button";
       button.addEventListener("click", () => {
         assignmentSignalInput.value = signalKey;
+        assignmentForm.requestSubmit();
+      });
+      assignmentFacets.append(button);
+    }
+    for (const facetValue of assignmentContextFacets) {
+      const facet = record(facetValue);
+      const contextKey = displayText(facet.context_key);
+      if (!["general", "finance"].includes(contextKey)) continue;
+      const button = element(
+        "button",
+        "",
+        `${displayText(facet.label)} · ${count(facet.clauses)} clauses / ${
+          count(facet.distinct_agreements)
+        } agreements`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        assignmentContextInput.value = contextKey;
         assignmentForm.requestSubmit();
       });
       assignmentFacets.append(button);
@@ -5326,6 +5360,7 @@ function boot() {
     try {
       const path = buildAssignmentPositionPath({
         signalKeys: state.assignmentSignal ? [state.assignmentSignal] : [],
+        context: state.assignmentContext,
         kind: state.assignmentKind,
         source: state.assignmentSource,
         limit: state.limit,
@@ -6221,11 +6256,15 @@ function boot() {
     clearComparison();
     state.resultMode = "assignment_positions";
     state.assignmentSignal = assignmentSignalInput.value;
+    state.assignmentContext = assignmentContextInput.value;
     state.assignmentKind = assignmentKindInput.value;
     state.assignmentSource = assignmentSourceInput.value.trim().toLowerCase();
     const signalLabel = assignmentSignalInput.selectedOptions[0]?.textContent ??
       "Any detected wording";
-    state.query = `Assignment library: ${signalLabel}`;
+    const contextLabel =
+      assignmentContextInput.selectedOptions[0]?.textContent ??
+        "Any context";
+    state.query = `Assignment library: ${signalLabel}; ${contextLabel}`;
     state.clauseParty = "";
     state.kind = state.assignmentKind;
     state.source = state.assignmentSource;

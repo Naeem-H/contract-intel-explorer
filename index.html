@@ -215,6 +215,7 @@
         <p class="search-note">Filter positive generated wording signals anchored to one exact detector-selected source span. Finance-transfer context is labelled separately. Signals do not determine which party holds a right, whether consent is effective, or whether an exception applies.</p>
         <form id="assignment-form" class="search-form assignment-search-form">
           <label for="assignment-signal">Assignment wording</label>
+          <label for="assignment-context">Commercial context</label>
           <label for="assignment-kind">Document class</label>
           <label for="assignment-source">Source slug</label>
           <span aria-hidden="true"></span>
@@ -232,6 +233,11 @@
             <option value="assignor_continuing_obligation_language">Assignor remains responsible</option>
             <option value="finance_transfer_context">Finance-transfer context</option>
             <option value="contract_transfer_language">Contractual rights / obligations transfer</option>
+          </select>
+          <select id="assignment-context" name="context">
+            <option value="">All contexts</option>
+            <option value="general">General context (exclude finance)</option>
+            <option value="finance">Finance-transfer context only</option>
           </select>
           <select id="assignment-kind" name="kind">
             <option value="">Contracts and amendments</option>
