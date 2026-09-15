@@ -14,7 +14,7 @@ const DOCUMENT_KINDS = new Set([
   "other",
 ]);
 const MAX_RESPONSE_BYTES = 6 * 1024 * 1024;
-const REQUEST_TIMEOUT_MS = 12_000;
+const REQUEST_TIMEOUT_MS = 15_000;
 export const COMPARISON_MIN_ITEMS = 2;
 export const COMPARISON_MAX_ITEMS = 4;
 export const COMPARISON_CONTEXT_CLAUSES = 5;
