@@ -1787,6 +1787,7 @@ export function decisionBriefDirectoryEvidence(
       !UUID_PATTERN.test(agreementId) ||
       seenAgreementIds.has(agreementId) ||
       !DECISION_BRIEF_DOCUMENT_KINDS.has(item.document_kind) ||
+      (expectedKind && item.document_kind !== expectedKind) ||
       !DECISION_BRIEF_BASES.has(item.document_kind_basis) ||
       item.text_basis !== "observed" ||
       !(
@@ -1804,6 +1805,7 @@ export function decisionBriefDirectoryEvidence(
       decisionBriefString(item.extraction_version, 100) === undefined ||
       decisionBriefString(source.slug, 63) === undefined ||
       !SOURCE_PATTERN.test(source.slug) ||
+      (expectedSource && source.slug !== expectedSource) ||
       decisionBriefString(source.name, 300) === undefined ||
       !(
         source.publisher === null ||
