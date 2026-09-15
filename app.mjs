@@ -37,6 +37,12 @@ const LIABILITY_POSITION_SIGNAL_KEYS = Object.freeze([
   "cap_carveout_language",
   "express_unlimited_liability",
 ]);
+const LIABILITY_POSITION_SIGNAL_LABELS = Object.freeze({
+  explicit_liability_limit_formula: "Explicit limits",
+  excluded_loss_language: "Excluded loss",
+  cap_carveout_language: "Carve-outs",
+  express_unlimited_liability: "Express unlimited",
+});
 
 export class ApiError extends Error {
   constructor(message, status = 0, code = "request_failed", requestId = null) {
@@ -1743,6 +1749,7 @@ function boot() {
   const positionKindInput = byId("position-kind");
   const positionSourceInput = byId("position-source");
   const positionButton = byId("position-submit");
+  const positionFacets = byId("position-facets");
   const positionStatus = byId("position-status");
   const partySearchForm = byId("party-search-form");
   const partyQueryInput = byId("party-query");
@@ -1833,6 +1840,9 @@ function boot() {
     state.resultMode = "search";
     state.clauseParty = "";
     positionForm.reset();
+    positionFacets.replaceChildren(
+      element("span", "", "Available evidence:"),
+    );
     positionStatus.textContent =
       "Browse supported signals across published, nonduplicate evidence.";
     partyPrevious.disabled = true;
@@ -1906,6 +1916,15 @@ function boot() {
     const partySummary = record(root.party_summary);
     const positionSummary = record(root.position_summary);
     const positionCurrent = record(positionSummary.current);
+    const positionLibrary = record(
+      positionSummary.published_position_library,
+    );
+    const positionSignalFacets = array(
+      positionSummary.published_signal_facets,
+    );
+    const positionValueFacets = array(
+      positionSummary.published_value_candidate_facets,
+    );
 
     summaryCards.replaceChildren(
       metric(
@@ -1978,6 +1997,12 @@ function boot() {
         `${count(positionCurrent.signal_matches)} matches across ${
           count(positionCurrent.clauses_with_matches)
         } clauses`,
+      ],
+      [
+        "Published position library",
+        `${count(positionLibrary.matched_clauses)} clauses across ${
+          count(positionLibrary.distinct_agreements)
+        } agreements`,
       ],
       [
         "Liability cache repair backlog",
@@ -2053,6 +2078,64 @@ function boot() {
     summaryFreshness.textContent = `Snapshot generated ${
       date(summary.generated_at)
     }.`;
+    positionFacets.replaceChildren(
+      element("span", "", "Available evidence:"),
+    );
+    for (const facetValue of positionSignalFacets) {
+      const facet = record(facetValue);
+      const signalKey = displayText(facet.signal_key);
+      if (!LIABILITY_POSITION_SIGNAL_KEYS.includes(signalKey)) continue;
+      const button = element(
+        "button",
+        "",
+        `${LIABILITY_POSITION_SIGNAL_LABELS[signalKey]} · ${
+          count(facet.clauses)
+        } clauses / ${count(facet.distinct_agreements)} agreements`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        positionSignalInput.value = signalKey;
+        positionValueInput.value = "";
+        positionForm.requestSubmit();
+      });
+      positionFacets.append(button);
+    }
+    for (const facetValue of positionValueFacets) {
+      const facet = record(facetValue);
+      const valueCategory = displayText(facet.value_category);
+      const configured = LIABILITY_VALUE_CANDIDATE_CATEGORIES.find(
+        ([key]) => key === valueCategory,
+      );
+      if (!configured) continue;
+      const button = element(
+        "button",
+        "",
+        `${configured[1]} · ${count(facet.clauses)} clauses`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        positionSignalInput.value = "explicit_liability_limit_formula";
+        positionValueInput.value = valueCategory;
+        positionForm.requestSubmit();
+      });
+      positionFacets.append(button);
+    }
+    if (Number(positionLibrary.matched_clauses) > 0) {
+      const sourceCoverage = array(positionLibrary.by_source)
+        .slice(0, 10)
+        .map((sourceValue) => {
+          const source = record(sourceValue);
+          return `${displayText(source.source_slug)} ${count(source.clauses)}`;
+        })
+        .join(" · ");
+      positionStatus.textContent = `${
+        count(positionLibrary.matched_clauses)
+      } detected clauses across ${
+        count(positionLibrary.distinct_agreements)
+      } agreements${
+        sourceCoverage ? ` · ${sourceCoverage}` : ""
+      }; generated coverage, not market prevalence.`;
+    }
     const disclosure = record(summary.disclosure);
     const disclosureLines = [
       disclosure.coverage,
