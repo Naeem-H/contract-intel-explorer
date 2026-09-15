@@ -26,6 +26,8 @@ export const LIABILITY_POSITION_MATRIX_SCHEMA =
   "esheria.liability-position-matrix.v3";
 export const TERMINATION_POSITION_MATRIX_SCHEMA =
   "esheria.termination-position-matrix.v1";
+export const ASSIGNMENT_POSITION_MATRIX_SCHEMA =
+  "esheria.assignment-position-matrix.v1";
 
 const LIABILITY_VALUE_CANDIDATE_CATEGORIES = Object.freeze([
   ["currency_amounts", "Currency amounts"],
@@ -658,6 +660,7 @@ export function comparisonEvidence(payload, expectedClauseId) {
     anchorContext: record(data.anchor_context),
     commercialPosition: record(data.commercial_position),
     terminationPosition: record(data.termination_position),
+    assignmentPosition: record(data.assignment_position),
     truncated: data.truncated === true,
   };
 }
@@ -1431,6 +1434,125 @@ function citationTerminationPosition(value) {
   };
 }
 
+function citationAssignmentPosition(value) {
+  const position = assignmentPositionEvidence(value);
+  if (!position) return null;
+  const allowedAttributeKeys = [
+    "consent_language_present",
+    "notice_language_present",
+    "termination_language_present",
+    "facially_bilateral_language_present",
+    "finance_context_present",
+    "change_of_control_language_present",
+  ];
+  return {
+    schema: "esheria.assignment-position-signals.v1",
+    applicable: position.applicable,
+    reason: position.reason,
+    detector_version: position.detectorVersion,
+    scope: position.scope,
+    eligibility: {
+      theme: typeof position.eligibility.theme === "string"
+        ? position.eligibility.theme
+        : null,
+      theme_basis: typeof position.eligibility.theme_basis === "string"
+        ? position.eligibility.theme_basis
+        : null,
+      taxonomy_version:
+        typeof position.eligibility.taxonomy_version === "string"
+          ? position.eligibility.taxonomy_version
+          : null,
+      generated_by: typeof position.eligibility.generated_by === "string"
+        ? position.eligibility.generated_by
+        : null,
+      support_method: typeof position.eligibility.support_method === "string"
+        ? position.eligibility.support_method
+        : null,
+    },
+    signals: position.signals.map((value) => {
+      const signal = record(value);
+      const attributes = record(signal.generated_attributes);
+      const support = record(signal.observed_support);
+      const supportText = citationText(support.text, 2_000);
+      const matchedText = citationText(support.matched_text, 600);
+      return {
+        signal_key: typeof signal.signal_key === "string"
+          ? signal.signal_key
+          : null,
+        label: typeof signal.label === "string" ? signal.label : null,
+        signal_basis: typeof signal.signal_basis === "string"
+          ? signal.signal_basis
+          : null,
+        confidence: Number.isFinite(Number(signal.confidence))
+          ? Number(signal.confidence)
+          : null,
+        detector_version: typeof signal.detector_version === "string"
+          ? signal.detector_version
+          : null,
+        rule_id: typeof signal.rule_id === "string" ? signal.rule_id : null,
+        generated_attributes: Object.fromEntries(
+          allowedAttributeKeys.filter((key) =>
+            typeof attributes[key] === "boolean"
+          ).map((key) => [key, attributes[key]]),
+        ),
+        observed_support: {
+          text: supportText.text,
+          text_truncated: supportText.truncated,
+          sha256: typeof support.sha256 === "string" ? support.sha256 : null,
+          text_basis: support.text_basis === "observed" ? "observed" : null,
+          clause_char_start: citationInteger(support.clause_char_start),
+          clause_char_end: citationInteger(support.clause_char_end),
+          document_char_start: citationInteger(support.document_char_start),
+          document_char_end: citationInteger(support.document_char_end),
+          matched_text: matchedText.text,
+          matched_text_truncated: matchedText.truncated,
+          matched_text_sha256: typeof support.matched_text_sha256 === "string"
+            ? support.matched_text_sha256
+            : null,
+          matched_clause_char_start: citationInteger(
+            support.matched_clause_char_start,
+          ),
+          matched_clause_char_end: citationInteger(
+            support.matched_clause_char_end,
+          ),
+          support_method: typeof support.support_method === "string"
+            ? support.support_method
+            : null,
+          bounded_excerpt: support.bounded_excerpt === true,
+        },
+        anchor_clause_id: typeof signal.anchor_clause_id === "string" &&
+            UUID_PATTERN.test(signal.anchor_clause_id)
+          ? signal.anchor_clause_id
+          : null,
+        anchor_clause_sha256: typeof signal.anchor_clause_sha256 === "string"
+          ? signal.anchor_clause_sha256
+          : null,
+      };
+    }),
+    coverage: {
+      matched_signal_count: position.matchedSignalCount,
+      supported_rule_count: position.supportedRuleCount,
+    },
+    limits: {
+      maximum_signals: citationInteger(position.limits.maximum_signals),
+      support_maximum_characters: citationInteger(
+        position.limits.support_maximum_characters,
+      ),
+      support_is_detector_bounded:
+        position.limits.support_is_detector_bounded === true,
+      absence_is_not_evidence_of_absence:
+        position.limits.absence_is_not_evidence_of_absence === true,
+      signals_are_legal_conclusions:
+        position.limits.signals_are_legal_conclusions === true,
+      party_entitlement_is_determined:
+        position.limits.party_entitlement_is_determined === true,
+      exceptions_outside_support_may_apply:
+        position.limits.exceptions_outside_support_may_apply === true,
+    },
+    limitations: position.limitations,
+  };
+}
+
 export function buildCitationManifest({
   query = "",
   kind = "",
@@ -1566,11 +1688,14 @@ export function buildCitationManifest({
       termination_position: citationTerminationPosition(
         evidence.terminationPosition,
       ),
+      assignment_position: citationAssignmentPosition(
+        evidence.assignmentPosition,
+      ),
     };
   });
 
   return {
-    schema: "esheria.contract-citations.v6",
+    schema: "esheria.contract-citations.v7",
     generated_at: timestamp.toISOString(),
     retrieval_scope: {
       query: normalizedQuery || null,
@@ -1582,7 +1707,7 @@ export function buildCitationManifest({
       "This export contains only the selected published evidence and bounded context; it is not a representative market sample.",
       "Observed wording is evidence. Generated classifications, themes, summaries and date types are interpretations, not source facts.",
       "Definition-use matching and target resolution are generated navigation aids; unresolved references are preserved rather than guessed.",
-      "Commercial and termination position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
+      "Commercial, termination and assignment/change-of-control position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
       "Cap-value candidates are exact lexical tokens from bounded observed support, not normalized amounts or interpreted liability caps.",
       "Verify the recorded source, completeness, amendments and governing law before legal or commercial reliance.",
     ],
@@ -2161,6 +2286,271 @@ export function buildTerminationPositionMatrixCsv({
   }\r\n`;
 }
 
+const ASSIGNMENT_POSITION_MATRIX_COLUMNS = Object.freeze([
+  "matrix_schema",
+  "generated_at",
+  "retrieval_query",
+  "document_kind_filter",
+  "source_filter",
+  "selected_count",
+  "citation_number",
+  "signal_row_number",
+  "retrieval_rank",
+  "observed_published_at",
+  "source_slug",
+  "source_name",
+  "source_publisher",
+  "source_external_id",
+  "source_url",
+  "source_terms_url",
+  "source_policy_assessment_status",
+  "source_human_review_required",
+  "agreement_id",
+  "agreement_title",
+  "agreement_document_kind",
+  "agreement_document_kind_basis",
+  "artifact_sha256",
+  "extraction_method",
+  "extraction_version",
+  "agreement_text_basis",
+  "clause_id",
+  "clause_sequence",
+  "clause_heading",
+  "clause_text_basis",
+  "clause_text_sha256",
+  "clause_location",
+  "clause_char_start",
+  "clause_char_end",
+  "observed_clause_text",
+  "observed_clause_text_truncated",
+  "generated_clause_type",
+  "position_schema",
+  "position_applicable",
+  "position_reason",
+  "detector_version",
+  "detector_scope",
+  "matched_signal_count",
+  "supported_rule_count",
+  "eligibility_theme",
+  "eligibility_theme_basis",
+  "eligibility_taxonomy_version",
+  "eligibility_generated_by",
+  "eligibility_support_method",
+  "detector_match",
+  "signal_key",
+  "signal_label",
+  "signal_basis",
+  "signal_confidence",
+  "signal_rule_id",
+  "consent_language_present",
+  "notice_language_present",
+  "termination_language_present",
+  "facially_bilateral_language_present",
+  "finance_context_present",
+  "change_of_control_language_present",
+  "observed_support",
+  "support_text_truncated",
+  "support_text_basis",
+  "support_sha256",
+  "support_clause_char_start",
+  "support_clause_char_end",
+  "support_document_char_start",
+  "support_document_char_end",
+  "matched_text",
+  "matched_text_truncated",
+  "matched_text_sha256",
+  "matched_clause_char_start",
+  "matched_clause_char_end",
+  "support_method",
+  "support_is_detector_bounded",
+  "support_maximum_characters",
+  "anchor_clause_id",
+  "anchor_clause_sha256",
+  "absence_is_not_evidence_of_absence",
+  "signals_are_legal_conclusions",
+  "party_entitlement_is_determined",
+  "exceptions_outside_support_may_apply",
+  "position_limitations",
+  "export_limitations",
+]);
+
+export function buildAssignmentPositionMatrixCsv({
+  query = "",
+  kind = "",
+  source = "",
+  entries = [],
+  generatedAt = new Date().toISOString(),
+} = {}) {
+  const manifest = buildCitationManifest({
+    query,
+    kind,
+    source,
+    entries,
+    generatedAt,
+  });
+  const scope = manifest.retrieval_scope;
+  const exportLimitations = [
+    ...manifest.limitations,
+    "Each row represents one generated assignment/change-of-control signal; clauses with no supported signal produce one non-match row.",
+    "Signals do not determine party entitlement, consent effectiveness, exception applicability, transaction consequence, or legal effect.",
+    "Finance-transfer context is retained and explicitly labelled rather than treated as general commercial assignment practice.",
+  ];
+  const rows = manifest.citations.flatMap((citation) => {
+    const agreement = record(citation.agreement);
+    const clause = record(citation.matched_clause);
+    const clauseLocation = record(clause.location);
+    const interpretation = record(clause.generated_interpretation);
+    const sourceRecord = record(citation.source);
+    const retrieval = record(citation.retrieval);
+    const position = record(citation.assignment_position);
+    const coverage = record(position.coverage);
+    const eligibility = record(position.eligibility);
+    const limits = record(position.limits);
+    const positionApplicable = typeof position.applicable === "boolean"
+      ? position.applicable
+      : null;
+    const signals = array(position.signals).slice(
+      0,
+      ASSIGNMENT_POSITION_SIGNAL_MAX,
+    );
+    const signalRows = signals.length ? signals : [null];
+
+    return signalRows.map((signalValue, signalIndex) => {
+      const signal = record(signalValue);
+      const attributes = record(signal.generated_attributes);
+      const support = record(signal.observed_support);
+      const hasSignal = typeof signal.signal_key === "string";
+      return {
+        matrix_schema: ASSIGNMENT_POSITION_MATRIX_SCHEMA,
+        generated_at: manifest.generated_at,
+        retrieval_query: scope.query,
+        document_kind_filter: scope.document_kind,
+        source_filter: scope.source,
+        selected_count: scope.selected_count,
+        citation_number: citation.citation_number,
+        signal_row_number: hasSignal ? signalIndex + 1 : null,
+        retrieval_rank: retrieval.rank,
+        observed_published_at: retrieval.observed_published_at,
+        source_slug: sourceRecord.slug,
+        source_name: sourceRecord.name,
+        source_publisher: sourceRecord.publisher,
+        source_external_id: sourceRecord.external_id,
+        source_url: sourceRecord.canonical_url,
+        source_terms_url: sourceRecord.terms_url,
+        source_policy_assessment_status: sourceRecord.policy_assessment_status,
+        source_human_review_required: matrixBoolean(
+          sourceRecord.human_review_required,
+        ),
+        agreement_id: agreement.id,
+        agreement_title: agreement.title,
+        agreement_document_kind: agreement.document_kind,
+        agreement_document_kind_basis: agreement.document_kind_basis,
+        artifact_sha256: agreement.artifact_sha256,
+        extraction_method: agreement.extraction_method,
+        extraction_version: agreement.extraction_version,
+        agreement_text_basis: agreement.text_basis,
+        clause_id: clause.id,
+        clause_sequence: clause.sequence,
+        clause_heading: clause.heading,
+        clause_text_basis: clause.text_basis,
+        clause_text_sha256: clause.observed_text_sha256,
+        clause_location: clauseLocation.display,
+        clause_char_start: clauseLocation.char_start,
+        clause_char_end: clauseLocation.char_end,
+        observed_clause_text: clause.observed_text,
+        observed_clause_text_truncated: matrixBoolean(
+          clause.observed_text_truncated,
+        ),
+        generated_clause_type: interpretation.clause_type,
+        position_schema: position.schema,
+        position_applicable: matrixBoolean(positionApplicable),
+        position_reason: position.reason,
+        detector_version: position.detector_version,
+        detector_scope: position.scope,
+        matched_signal_count: coverage.matched_signal_count,
+        supported_rule_count: coverage.supported_rule_count,
+        eligibility_theme: eligibility.theme,
+        eligibility_theme_basis: eligibility.theme_basis,
+        eligibility_taxonomy_version: eligibility.taxonomy_version,
+        eligibility_generated_by: eligibility.generated_by,
+        eligibility_support_method: eligibility.support_method,
+        detector_match: hasSignal
+          ? "TRUE"
+          : positionApplicable === true
+          ? "FALSE"
+          : "",
+        signal_key: signal.signal_key,
+        signal_label: signal.label,
+        signal_basis: signal.signal_basis,
+        signal_confidence: signal.confidence,
+        signal_rule_id: signal.rule_id,
+        consent_language_present: matrixBoolean(
+          attributes.consent_language_present,
+        ),
+        notice_language_present: matrixBoolean(
+          attributes.notice_language_present,
+        ),
+        termination_language_present: matrixBoolean(
+          attributes.termination_language_present,
+        ),
+        facially_bilateral_language_present: matrixBoolean(
+          attributes.facially_bilateral_language_present,
+        ),
+        finance_context_present: matrixBoolean(
+          attributes.finance_context_present,
+        ),
+        change_of_control_language_present: matrixBoolean(
+          attributes.change_of_control_language_present,
+        ),
+        observed_support: support.text,
+        support_text_truncated: matrixBoolean(support.text_truncated),
+        support_text_basis: support.text_basis,
+        support_sha256: support.sha256,
+        support_clause_char_start: support.clause_char_start,
+        support_clause_char_end: support.clause_char_end,
+        support_document_char_start: support.document_char_start,
+        support_document_char_end: support.document_char_end,
+        matched_text: support.matched_text,
+        matched_text_truncated: matrixBoolean(support.matched_text_truncated),
+        matched_text_sha256: support.matched_text_sha256,
+        matched_clause_char_start: support.matched_clause_char_start,
+        matched_clause_char_end: support.matched_clause_char_end,
+        support_method: support.support_method,
+        support_is_detector_bounded: matrixBoolean(
+          limits.support_is_detector_bounded,
+        ),
+        support_maximum_characters: limits.support_maximum_characters,
+        anchor_clause_id: signal.anchor_clause_id,
+        anchor_clause_sha256: signal.anchor_clause_sha256,
+        absence_is_not_evidence_of_absence: matrixBoolean(
+          limits.absence_is_not_evidence_of_absence,
+        ),
+        signals_are_legal_conclusions: matrixBoolean(
+          limits.signals_are_legal_conclusions,
+        ),
+        party_entitlement_is_determined: matrixBoolean(
+          limits.party_entitlement_is_determined,
+        ),
+        exceptions_outside_support_may_apply: matrixBoolean(
+          limits.exceptions_outside_support_may_apply,
+        ),
+        position_limitations: array(position.limitations).join(" | "),
+        export_limitations: exportLimitations.join(" | "),
+      };
+    });
+  });
+
+  return `\uFEFF${
+    [
+      ASSIGNMENT_POSITION_MATRIX_COLUMNS.map(csvCell).join(","),
+      ...rows.map((row) =>
+        ASSIGNMENT_POSITION_MATRIX_COLUMNS.map((column) => csvCell(row[column]))
+          .join(",")
+      ),
+    ].join("\r\n")
+  }\r\n`;
+}
+
 async function readBoundedJson(response) {
   const declared = response.headers.get("content-length");
   if (declared && Number(declared) > MAX_RESPONSE_BYTES) {
@@ -2568,6 +2958,7 @@ function boot() {
   const openComparisonButton = byId("open-comparison");
   const exportPositionMatrixButton = byId("export-position-matrix");
   const exportTerminationMatrixButton = byId("export-termination-matrix");
+  const exportAssignmentMatrixButton = byId("export-assignment-matrix");
   const exportComparisonButton = byId("export-comparison");
   const exportStatus = byId("comparison-export-status");
   const detailDialog = byId("detail-dialog");
@@ -3180,6 +3571,8 @@ function boot() {
       state.comparisonEvidence.length === 0;
     exportTerminationMatrixButton.disabled = state.comparing ||
       state.comparisonEvidence.length === 0;
+    exportAssignmentMatrixButton.disabled = state.comparing ||
+      state.comparisonEvidence.length === 0;
     comparisonStatus.className = kind === "error" ? "status error" : "muted";
     comparisonStatus.textContent = message ??
       (selected === 0
@@ -3462,6 +3855,94 @@ function boot() {
     return container;
   }
 
+  function assignmentPositionPanel(value, collapsed = false) {
+    const position = assignmentPositionEvidence(value);
+    if (!position?.applicable) return null;
+    const container = collapsed
+      ? element("details", "comparison-context commercial-position")
+      : section("Assignment and change-of-control wording signals");
+    if (collapsed) {
+      container.append(
+        element(
+          "summary",
+          "",
+          `Assignment/control signals · ${
+            count(position.matchedSignalCount)
+          } matched`,
+        ),
+      );
+    }
+    container.append(
+      element(
+        "p",
+        "focus-note",
+        "Generated wording matches for negotiation and diligence triage. They do not determine which party holds a right, whether consent is effective, whether an exception applies, or legal effect.",
+      ),
+      element(
+        "p",
+        "muted",
+        `Scope: exact detector-selected support only · detector ${
+          displayText(position.detectorVersion)
+        } · eligibility theme ${displayText(position.eligibility.theme)} (${
+          displayText(position.eligibility.theme_basis)
+        })`,
+      ),
+    );
+    if (!position.signals.length) {
+      container.append(
+        element(
+          "p",
+          "muted",
+          "No supported assignment/change-of-control wording matched this span. Absence is not evidence of absence.",
+        ),
+      );
+      return container;
+    }
+    for (const signalValue of position.signals) {
+      const signal = record(signalValue);
+      const support = record(signal.observed_support);
+      const attributes = assignmentAttributeEntries(
+        signal.generated_attributes,
+      );
+      const card = element("article", "relationship position-signal");
+      append(
+        card,
+        element(
+          "span",
+          "badge generated",
+          "Generated assignment / control signal",
+        ),
+        element("h4", "", displayText(signal.label, signal.signal_key)),
+        element(
+          "p",
+          "muted",
+          `Confidence ${
+            Number.isFinite(Number(signal.confidence))
+              ? `${Math.round(Number(signal.confidence) * 100)}%`
+              : "not stated"
+          } · rule ${displayText(signal.rule_id)}`,
+        ),
+      );
+      if (attributes.length) card.append(dataList(attributes));
+      const evidence = element("div", "position-support");
+      append(
+        evidence,
+        element("span", "badge observed", "Observed support excerpt"),
+        element("p", "observed-text", boundedText(support.text, 2_000)),
+        element(
+          "p",
+          "muted",
+          `Clause characters ${displayText(support.clause_char_start, "?")}–${
+            displayText(support.clause_char_end, "?")
+          } · SHA-256 ${displayText(support.sha256, "not available")}`,
+        ),
+      );
+      card.append(evidence);
+      container.append(card);
+    }
+    return container;
+  }
+
   function comparisonColumn(selection, evidence, position) {
     const agreement = evidence.agreement;
     const source = evidence.source;
@@ -3626,6 +4107,11 @@ function boot() {
       true,
     );
     if (terminationPosition) column.append(terminationPosition);
+    const assignmentPosition = assignmentPositionPanel(
+      evidence.assignmentPosition,
+      true,
+    );
+    if (assignmentPosition) column.append(assignmentPosition);
 
     const connectedContext = comparisonConnectedContext(evidence.anchorContext);
     if (connectedContext) {
@@ -4024,6 +4510,38 @@ function boot() {
       exportStatus.textContent = error instanceof Error
         ? error.message
         : "Termination CSV could not be created.";
+    }
+  }
+
+  function exportAssignmentMatrix() {
+    if (!state.comparisonEvidence.length) return;
+    try {
+      const generatedAt = new Date().toISOString();
+      const csv = buildAssignmentPositionMatrixCsv({
+        query: state.query,
+        kind: state.kind,
+        source: state.source,
+        entries: state.comparisonEvidence,
+        generatedAt,
+      });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = element("a");
+      link.href = objectUrl;
+      link.download = `esheria-assignment-position-matrix-${
+        generatedAt.slice(0, 10)
+      }.csv`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      exportStatus.textContent =
+        "Assignment CSV downloaded. Each row is one generated wording signal, not a determination of party rights or legal effect.";
+    } catch (error) {
+      exportStatus.textContent = error instanceof Error
+        ? error.message
+        : "Assignment CSV could not be created.";
     }
   }
 
@@ -5059,6 +5577,10 @@ function boot() {
       data.termination_position,
     );
     if (terminationPosition) fragment.append(terminationPosition);
+    const assignmentPosition = assignmentPositionPanel(
+      data.assignment_position,
+    );
+    if (assignmentPosition) fragment.append(assignmentPosition);
 
     const anchorContext = record(data.anchor_context);
     if (
@@ -5568,6 +6090,10 @@ function boot() {
   exportTerminationMatrixButton.addEventListener(
     "click",
     exportTerminationMatrix,
+  );
+  exportAssignmentMatrixButton.addEventListener(
+    "click",
+    exportAssignmentMatrix,
   );
   exportComparisonButton.addEventListener("click", exportComparison);
   detailDialog.addEventListener("click", (event) => {
