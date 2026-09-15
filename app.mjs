@@ -2952,6 +2952,33 @@ function boot() {
       }`
       : `Clause ${displayText(item.clause_sequence)}`;
     const actions = element("div", "result-actions");
+    const position = commercialPositionEvidence(item.commercial_position);
+    const positionSummary = position?.applicable
+      ? element("div", "result-position-summary")
+      : null;
+    if (positionSummary) {
+      const signalLabels = position.signals.map((signal) =>
+        displayText(record(signal).label, record(signal).signal_key)
+      );
+      append(
+        positionSummary,
+        element("span", "badge generated", "Generated liability position"),
+        element(
+          "p",
+          "",
+          signalLabels.length
+            ? `Matched: ${signalLabels.join(" · ")}`
+            : position.reason === "position_cache_unavailable"
+            ? "Position cache unavailable; inspect the clause for live analysis."
+            : "No supported position rule matched this clause.",
+        ),
+        element(
+          "p",
+          "muted",
+          "Clause-only navigation signal. A non-match is not evidence of absence; inspect exact wording and context before reliance.",
+        ),
+      );
+    }
     const agreementId = typeof item.agreement_id === "string"
       ? item.agreement_id
       : "";
@@ -2982,6 +3009,7 @@ function boot() {
       top,
       element("p", "muted", clauseLabel),
       highlightedExcerpt(item.evidence_excerpt),
+      positionSummary,
       actions,
     );
     return card;

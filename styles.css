@@ -161,6 +161,8 @@ dialog::backdrop { background: rgb(2 7 5 / 78%); backdrop-filter: blur(4px); }
 .position-signal > h4 { margin-top: 8px; }
 .position-support { margin-top: 10px; padding-top: 9px; border-top: 1px solid #2f443a; }
 .position-support .observed-text { margin: 8px 0; }
+.result-position-summary { margin: 12px 0; padding: 10px 12px; border-left: 2px solid var(--gold); border-radius: 0 8px 8px 0; background: rgb(52 41 20 / 30%); }
+.result-position-summary p { margin: 6px 0 0; font-size: 12px; }
 .comparison-note { margin: 0 0 14px; color: var(--muted); }
 .comparison-scope { margin: -4px 0 14px; padding: 10px 12px; border-left: 2px solid var(--gold); color: #d0c8b3; background: rgb(52 41 20 / 30%); font-size: 12px; }
 .icon-button { width: 33px; height: 33px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; }
