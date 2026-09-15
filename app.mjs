@@ -127,6 +127,17 @@ const ASSIGNMENT_POSITION_SIGNALS = Object.freeze({
   contract_transfer_language: "Contractual rights / obligations transfer",
 });
 export const ASSIGNMENT_POSITION_SIGNAL_MAX = 12;
+const GOVERNING_LAW_POSITION_SIGNALS = Object.freeze({
+  governing_law_language: "Express governing law",
+  exclusive_jurisdiction_language: "Exclusive jurisdiction",
+  nonexclusive_jurisdiction_language: "Non-exclusive jurisdiction",
+  submission_to_jurisdiction_language: "Submission / consent to jurisdiction",
+  court_or_forum_language: "Court, tribunal or venue wording",
+  venue_objection_waiver_language: "Venue / forum objection waiver",
+  conflict_of_laws_qualification_language: "Conflict-of-laws qualification",
+  service_of_process_language: "Service of process / process agent",
+});
+export const GOVERNING_LAW_POSITION_SIGNAL_MAX = 8;
 const TERMINATION_DURATION_CANDIDATE_SCHEMA =
   "esheria.termination-duration-candidates.v1";
 const LOCAL_TERMINATION_TERM_PATTERN =
@@ -171,6 +182,7 @@ function isAllowedApiTarget(url) {
     pathname === "/api/search" || pathname === "/api/positions" ||
     pathname === "/api/termination-positions" ||
     pathname === "/api/assignment-positions" ||
+    pathname === "/api/governing-law-positions" ||
     pathname === "/api/parties" ||
     pathname === "/api/party-clauses"
   ) {
@@ -195,6 +207,7 @@ function isAllowedApiTarget(url) {
       pathname !== "/api/positions" &&
       pathname !== "/api/termination-positions" &&
       pathname !== "/api/assignment-positions" &&
+      pathname !== "/api/governing-law-positions" &&
       url.searchParams.has("signal")
     ) return false;
     if (pathname !== "/api/positions" && url.searchParams.has("value")) {
@@ -224,6 +237,12 @@ function isAllowedApiTarget(url) {
       (url.searchParams.has("q") || url.searchParams.has("value") ||
         url.searchParams.has("feature") || url.searchParams.has("duration") ||
         url.searchParams.has("linkage"))
+    ) return false;
+    if (
+      pathname === "/api/governing-law-positions" &&
+      (url.searchParams.has("q") || url.searchParams.has("value") ||
+        url.searchParams.has("feature") || url.searchParams.has("duration") ||
+        url.searchParams.has("linkage") || url.searchParams.has("context"))
     ) return false;
     return [...url.searchParams.keys()].every((key) => allowed.has(key));
   }
@@ -463,6 +482,44 @@ export function buildAssignmentPositionPath({
   return `/api/assignment-positions?${params.toString()}`;
 }
 
+export function buildGoverningLawPositionPath({
+  signalKeys = [],
+  kind = "",
+  source = "",
+  limit = 20,
+  offset = 0,
+} = {}) {
+  const signals = [...new Set(array(signalKeys))];
+  if (
+    signals.length > GOVERNING_LAW_POSITION_SIGNAL_MAX ||
+    signals.some((key) => !Object.hasOwn(GOVERNING_LAW_POSITION_SIGNALS, key))
+  ) throw new TypeError("Governing-law signal filter is invalid");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new TypeError("Position limit is outside the allowed range");
+  }
+  if (!Number.isInteger(offset) || offset < 0 || offset > 5_000) {
+    throw new TypeError("Position offset is outside the allowed range");
+  }
+  if (kind && !["contract", "amendment"].includes(kind)) {
+    throw new TypeError("Governing-law document class is not supported");
+  }
+  const normalizedSource = typeof source === "string"
+    ? source.trim().toLowerCase()
+    : "";
+  if (normalizedSource && !SOURCE_PATTERN.test(normalizedSource)) {
+    throw new TypeError("Source slug is invalid");
+  }
+
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  for (const signal of signals) params.append("signal", signal);
+  if (kind) params.set("kind", kind);
+  if (normalizedSource) params.set("source", normalizedSource);
+  return `/api/governing-law-positions?${params.toString()}`;
+}
+
 export function buildPartyClauseSearchPath({ party, ...input }) {
   const partyPath = buildPartySearchPath({ query: party });
   const normalizedParty = new URL(partyPath, "https://route.invalid")
@@ -671,6 +728,7 @@ export function comparisonEvidence(payload, expectedClauseId) {
     commercialPosition: record(data.commercial_position),
     terminationPosition: record(data.termination_position),
     assignmentPosition: record(data.assignment_position),
+    governingLawPosition: record(data.governing_law_position),
     truncated: data.truncated === true,
   };
 }
@@ -797,6 +855,36 @@ export function assignmentPositionEvidence(value) {
   const signals = array(position.signals).slice(
     0,
     ASSIGNMENT_POSITION_SIGNAL_MAX,
+  ).map(record);
+  const coverage = record(position.coverage);
+  return {
+    apiVersion: position.api_version,
+    applicable: position.applicable === true,
+    reason: typeof position.reason === "string" ? position.reason : null,
+    detectorVersion: typeof position.detector_version === "string"
+      ? position.detector_version
+      : null,
+    scope: typeof position.scope === "string" ? position.scope : null,
+    eligibility: record(position.eligibility),
+    signals,
+    matchedSignalCount: citationInteger(coverage.matched_signal_count) ??
+      signals.length,
+    supportedRuleCount: citationInteger(coverage.supported_rule_count),
+    limits: record(position.limits),
+    limitations: array(position.limitations).filter((item) =>
+      typeof item === "string"
+    ).slice(0, 10),
+  };
+}
+
+export function governingLawPositionEvidence(value) {
+  const position = record(value);
+  if (position.api_version !== "governing-law-position-signals-v1") {
+    return null;
+  }
+  const signals = array(position.signals).slice(
+    0,
+    GOVERNING_LAW_POSITION_SIGNAL_MAX,
   ).map(record);
   const coverage = record(position.coverage);
   return {
@@ -1563,6 +1651,129 @@ function citationAssignmentPosition(value) {
   };
 }
 
+function citationGoverningLawPosition(value) {
+  const position = governingLawPositionEvidence(value);
+  if (!position) return null;
+  const allowedAttributeKeys = [
+    "exclusive_jurisdiction_language_present",
+    "nonexclusive_jurisdiction_language_present",
+    "conflict_of_laws_language_present",
+    "venue_objection_waiver_language_present",
+    "service_of_process_language_present",
+    "arbitration_language_present",
+  ];
+  return {
+    schema: "esheria.governing-law-position-signals.v1",
+    applicable: position.applicable,
+    reason: position.reason,
+    detector_version: position.detectorVersion,
+    scope: position.scope,
+    eligibility: {
+      theme: typeof position.eligibility.theme === "string"
+        ? position.eligibility.theme
+        : null,
+      theme_basis: typeof position.eligibility.theme_basis === "string"
+        ? position.eligibility.theme_basis
+        : null,
+      taxonomy_version:
+        typeof position.eligibility.taxonomy_version === "string"
+          ? position.eligibility.taxonomy_version
+          : null,
+      generated_by: typeof position.eligibility.generated_by === "string"
+        ? position.eligibility.generated_by
+        : null,
+      support_method: typeof position.eligibility.support_method === "string"
+        ? position.eligibility.support_method
+        : null,
+    },
+    signals: position.signals.map((value) => {
+      const signal = record(value);
+      const attributes = record(signal.generated_attributes);
+      const support = record(signal.observed_support);
+      const supportText = citationText(support.text, 2_000);
+      const matchedText = citationText(support.matched_text, 600);
+      return {
+        signal_key: typeof signal.signal_key === "string"
+          ? signal.signal_key
+          : null,
+        label: typeof signal.label === "string" ? signal.label : null,
+        signal_basis: typeof signal.signal_basis === "string"
+          ? signal.signal_basis
+          : null,
+        confidence: Number.isFinite(Number(signal.confidence))
+          ? Number(signal.confidence)
+          : null,
+        detector_version: typeof signal.detector_version === "string"
+          ? signal.detector_version
+          : null,
+        rule_id: typeof signal.rule_id === "string" ? signal.rule_id : null,
+        generated_attributes: Object.fromEntries(
+          allowedAttributeKeys.filter((key) =>
+            typeof attributes[key] === "boolean"
+          ).map((key) => [key, attributes[key]]),
+        ),
+        observed_support: {
+          text: supportText.text,
+          text_truncated: supportText.truncated,
+          sha256: typeof support.sha256 === "string" ? support.sha256 : null,
+          text_basis: support.text_basis === "observed" ? "observed" : null,
+          clause_char_start: citationInteger(support.clause_char_start),
+          clause_char_end: citationInteger(support.clause_char_end),
+          document_char_start: citationInteger(support.document_char_start),
+          document_char_end: citationInteger(support.document_char_end),
+          matched_text: matchedText.text,
+          matched_text_truncated: matchedText.truncated,
+          matched_text_sha256: typeof support.matched_text_sha256 === "string"
+            ? support.matched_text_sha256
+            : null,
+          matched_clause_char_start: citationInteger(
+            support.matched_clause_char_start,
+          ),
+          matched_clause_char_end: citationInteger(
+            support.matched_clause_char_end,
+          ),
+          support_method: typeof support.support_method === "string"
+            ? support.support_method
+            : null,
+          bounded_excerpt: support.bounded_excerpt === true,
+        },
+        anchor_clause_id: typeof signal.anchor_clause_id === "string" &&
+            UUID_PATTERN.test(signal.anchor_clause_id)
+          ? signal.anchor_clause_id
+          : null,
+        anchor_clause_sha256: typeof signal.anchor_clause_sha256 === "string"
+          ? signal.anchor_clause_sha256
+          : null,
+      };
+    }),
+    coverage: {
+      matched_signal_count: position.matchedSignalCount,
+      supported_rule_count: position.supportedRuleCount,
+    },
+    limits: {
+      maximum_signals: citationInteger(position.limits.maximum_signals),
+      support_maximum_characters: citationInteger(
+        position.limits.support_maximum_characters,
+      ),
+      support_is_detector_bounded:
+        position.limits.support_is_detector_bounded === true,
+      absence_is_not_evidence_of_absence:
+        position.limits.absence_is_not_evidence_of_absence === true,
+      signals_are_legal_conclusions:
+        position.limits.signals_are_legal_conclusions === true,
+      forum_selection_is_determined:
+        position.limits.forum_selection_is_determined === true,
+      jurisdiction_is_normalized:
+        position.limits.jurisdiction_is_normalized === true,
+      conflicts_rules_are_resolved:
+        position.limits.conflicts_rules_are_resolved === true,
+      exceptions_outside_support_may_apply:
+        position.limits.exceptions_outside_support_may_apply === true,
+    },
+    limitations: position.limitations,
+  };
+}
+
 export function buildCitationManifest({
   query = "",
   kind = "",
@@ -1701,11 +1912,14 @@ export function buildCitationManifest({
       assignment_position: citationAssignmentPosition(
         evidence.assignmentPosition,
       ),
+      governing_law_position: citationGoverningLawPosition(
+        evidence.governingLawPosition,
+      ),
     };
   });
 
   return {
-    schema: "esheria.contract-citations.v7",
+    schema: "esheria.contract-citations.v8",
     generated_at: timestamp.toISOString(),
     retrieval_scope: {
       query: normalizedQuery || null,
@@ -1717,7 +1931,7 @@ export function buildCitationManifest({
       "This export contains only the selected published evidence and bounded context; it is not a representative market sample.",
       "Observed wording is evidence. Generated classifications, themes, summaries and date types are interpretations, not source facts.",
       "Definition-use matching and target resolution are generated navigation aids; unresolved references are preserved rather than guessed.",
-      "Commercial, termination and assignment/change-of-control position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
+      "Commercial, termination, assignment/change-of-control and governing-law/forum position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
       "Cap-value candidates are exact lexical tokens from bounded observed support, not normalized amounts or interpreted liability caps.",
       "Verify the recorded source, completeness, amendments and governing law before legal or commercial reliance.",
     ],
@@ -2898,6 +3112,10 @@ function boot() {
     assignmentKind: "",
     assignmentSource: "",
     assignmentLoading: false,
+    governingLawSignal: "",
+    governingLawKind: "",
+    governingLawSource: "",
+    governingLawLoading: false,
   };
 
   const authView = byId("auth-view");
@@ -2940,6 +3158,13 @@ function boot() {
   const assignmentButton = byId("assignment-submit");
   const assignmentFacets = byId("assignment-facets");
   const assignmentStatus = byId("assignment-status");
+  const governingLawForm = byId("governing-law-form");
+  const governingLawSignalInput = byId("governing-law-signal");
+  const governingLawKindInput = byId("governing-law-kind");
+  const governingLawSourceInput = byId("governing-law-source");
+  const governingLawButton = byId("governing-law-submit");
+  const governingLawFacets = byId("governing-law-facets");
+  const governingLawStatus = byId("governing-law-status");
   const partySearchForm = byId("party-search-form");
   const partyQueryInput = byId("party-query");
   const partyKindInput = byId("party-kind");
@@ -3040,6 +3265,10 @@ function boot() {
     state.assignmentKind = "";
     state.assignmentSource = "";
     state.assignmentLoading = false;
+    state.governingLawSignal = "";
+    state.governingLawKind = "";
+    state.governingLawSource = "";
+    state.governingLawLoading = false;
     state.resultMode = "search";
     state.clauseParty = "";
     positionForm.reset();
@@ -3059,6 +3288,12 @@ function boot() {
       element("span", "", "Available evidence:"),
     );
     assignmentStatus.textContent =
+      "Browse positive wording matches across published, nonduplicate contracts and amendments.";
+    governingLawForm.reset();
+    governingLawFacets.replaceChildren(
+      element("span", "", "Available evidence:"),
+    );
+    governingLawStatus.textContent =
       "Browse positive wording matches across published, nonduplicate contracts and amendments.";
     partyPrevious.disabled = true;
     partyNext.disabled = true;
@@ -3167,6 +3402,14 @@ function boot() {
     );
     const assignmentContextFacets = array(
       assignmentSummary.published_context_facets,
+    );
+    const governingLawSummary = record(root.governing_law_summary);
+    const governingLawCurrent = record(governingLawSummary.current);
+    const governingLawLibrary = record(
+      governingLawSummary.published_position_library,
+    );
+    const governingLawSignalFacets = array(
+      governingLawSummary.published_signal_facets,
     );
 
     summaryCards.replaceChildren(
@@ -3288,6 +3531,18 @@ function boot() {
         `${count(assignmentSurface.clauses_with_exact_detector_support)} / ${
           count(assignmentSurface.clauses)
         } theme clauses`,
+      ],
+      [
+        "Published governing-law library",
+        `${count(governingLawLibrary.matched_clauses)} clauses across ${
+          count(governingLawLibrary.distinct_agreements)
+        } agreements`,
+      ],
+      [
+        "Governing-law cache repair backlog",
+        Number(governingLawCurrent.missing_clauses) === 0
+          ? "Complete"
+          : `${count(governingLawCurrent.missing_clauses)} missing`,
       ],
       [
         "Average extraction confidence",
@@ -3563,6 +3818,44 @@ function boot() {
         sourceCoverage ? ` · ${sourceCoverage}` : ""
       }; generated wording coverage, not party entitlement or a legal conclusion.`;
     }
+    governingLawFacets.replaceChildren(
+      element("span", "", "Available evidence:"),
+    );
+    for (const facetValue of governingLawSignalFacets) {
+      const facet = record(facetValue);
+      const signalKey = displayText(facet.signal_key);
+      const label = GOVERNING_LAW_POSITION_SIGNALS[signalKey];
+      if (!label || facet.signal_basis !== "generated") continue;
+      const button = element(
+        "button",
+        "",
+        `${label} · ${count(facet.clauses)} clauses / ${
+          count(facet.distinct_agreements)
+        } agreements`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        governingLawSignalInput.value = signalKey;
+        governingLawForm.requestSubmit();
+      });
+      governingLawFacets.append(button);
+    }
+    if (Number(governingLawLibrary.matched_clauses) > 0) {
+      const sourceCoverage = array(governingLawLibrary.by_source)
+        .slice(0, 10)
+        .map((sourceValue) => {
+          const source = record(sourceValue);
+          return `${displayText(source.source_slug)} ${count(source.clauses)}`;
+        })
+        .join(" · ");
+      governingLawStatus.textContent = `${
+        count(governingLawLibrary.matched_clauses)
+      } detected clauses across ${
+        count(governingLawLibrary.distinct_agreements)
+      } useful agreements${
+        sourceCoverage ? ` · ${sourceCoverage}` : ""
+      }; generated wording coverage, not a normalized jurisdiction or legal conclusion.`;
+    }
     const disclosure = record(summary.disclosure);
     const disclosureLines = [
       disclosure.coverage,
@@ -3576,6 +3869,9 @@ function boot() {
       assignmentSummary.measurement,
       assignmentSummary.absence_warning,
       assignmentSummary.context_warning,
+      governingLawSummary.measurement,
+      governingLawSummary.absence_warning,
+      governingLawSummary.interpretation_warning,
     ].filter((value) => typeof value === "string");
     corpusDisclosure.replaceChildren(
       ...disclosureLines.map((line) => element("p", "", line)),
@@ -3977,6 +4273,90 @@ function boot() {
     return container;
   }
 
+  function governingLawPositionPanel(value, collapsed = false) {
+    const position = governingLawPositionEvidence(value);
+    if (!position?.applicable) return null;
+    const container = collapsed
+      ? element("details", "comparison-context commercial-position")
+      : section("Governing-law and forum wording signals");
+    if (collapsed) {
+      container.append(
+        element(
+          "summary",
+          "",
+          `Governing-law/forum signals · ${
+            count(position.matchedSignalCount)
+          } matched`,
+        ),
+      );
+    }
+    container.append(
+      element(
+        "p",
+        "focus-note",
+        "Generated wording matches for negotiation and diligence triage. They do not normalize a jurisdiction, determine forum enforceability, resolve conflicts rules, or reconcile arbitration and amendments.",
+      ),
+      element(
+        "p",
+        "muted",
+        `Scope: exact detector-selected support only · detector ${
+          displayText(position.detectorVersion)
+        } · eligibility theme ${displayText(position.eligibility.theme)} (${
+          displayText(position.eligibility.theme_basis)
+        })`,
+      ),
+    );
+    if (!position.signals.length) {
+      container.append(
+        element(
+          "p",
+          "muted",
+          "No supported governing-law or forum wording matched this span. Absence is not evidence of absence.",
+        ),
+      );
+      return container;
+    }
+    for (const signalValue of position.signals) {
+      const signal = record(signalValue);
+      const support = record(signal.observed_support);
+      const card = element("article", "relationship position-signal");
+      append(
+        card,
+        element(
+          "span",
+          "badge generated",
+          "Generated governing-law / forum signal",
+        ),
+        element("h4", "", displayText(signal.label, signal.signal_key)),
+        element(
+          "p",
+          "muted",
+          `Confidence ${
+            Number.isFinite(Number(signal.confidence))
+              ? `${Math.round(Number(signal.confidence) * 100)}%`
+              : "not stated"
+          } · rule ${displayText(signal.rule_id)}`,
+        ),
+      );
+      const evidence = element("div", "position-support");
+      append(
+        evidence,
+        element("span", "badge observed", "Observed support excerpt"),
+        element("p", "observed-text", boundedText(support.text, 2_000)),
+        element(
+          "p",
+          "muted",
+          `Clause characters ${displayText(support.clause_char_start, "?")}–${
+            displayText(support.clause_char_end, "?")
+          } · SHA-256 ${displayText(support.sha256, "not available")}`,
+        ),
+      );
+      card.append(evidence);
+      container.append(card);
+    }
+    return container;
+  }
+
   function comparisonColumn(selection, evidence, position) {
     const agreement = evidence.agreement;
     const source = evidence.source;
@@ -4146,6 +4526,11 @@ function boot() {
       true,
     );
     if (assignmentPosition) column.append(assignmentPosition);
+    const governingLawPosition = governingLawPositionPanel(
+      evidence.governingLawPosition,
+      true,
+    );
+    if (governingLawPosition) column.append(governingLawPosition);
 
     const connectedContext = comparisonConnectedContext(evidence.anchorContext);
     if (connectedContext) {
@@ -5136,6 +5521,41 @@ function boot() {
         ),
       );
     }
+    const governingLawPosition = governingLawPositionEvidence(
+      item.governing_law_position,
+    );
+    const governingLawSummary = governingLawPosition?.applicable
+      ? element("div", "result-position-summary")
+      : null;
+    if (governingLawSummary) {
+      const signalLabels = governingLawPosition.signals.map((signal) => {
+        const item = record(signal);
+        return displayText(
+          GOVERNING_LAW_POSITION_SIGNALS[item.signal_key],
+          item.label ?? item.signal_key,
+        );
+      });
+      append(
+        governingLawSummary,
+        element(
+          "span",
+          "badge generated",
+          "Generated governing-law / forum wording",
+        ),
+        element(
+          "p",
+          "",
+          signalLabels.length
+            ? `Matched: ${signalLabels.join(" · ")}`
+            : "No supported governing-law or forum wording matched this clause.",
+        ),
+        element(
+          "p",
+          "muted",
+          "Detector-support navigation signal; jurisdiction is not normalized and enforceability, conflicts rules, arbitration interaction and amendments require review.",
+        ),
+      );
+    }
     const agreementId = typeof item.agreement_id === "string"
       ? item.agreement_id
       : "";
@@ -5169,6 +5589,7 @@ function boot() {
       positionSummary,
       terminationSummary,
       assignmentSummary,
+      governingLawSummary,
       actions,
     );
     return card;
@@ -5192,6 +5613,8 @@ function boot() {
             ? "No published termination-position evidence matched these filters."
             : state.resultMode === "assignment_positions"
             ? "No published assignment/change-of-control evidence matched these filters."
+            : state.resultMode === "governing_law_positions"
+            ? "No published governing-law/forum evidence matched these filters."
             : "No published clause evidence matched this query.",
         ),
       ]),
@@ -5225,6 +5648,15 @@ function boot() {
           rows.length === 1 ? "" : "s"
         } loaded below.`
         : "No assignment/change-of-control wording matched these filters.";
+    } else if (state.resultMode === "governing_law_positions") {
+      searchStatus.textContent = rows.length
+        ? `Showing governing-law/forum evidence ${start}–${end}. Generated wording matches do not normalize a jurisdiction or determine enforceability.`
+        : "No governing-law/forum evidence returned. Detector and corpus coverage may be incomplete.";
+      governingLawStatus.textContent = rows.length
+        ? `${rows.length} bounded governing-law result${
+          rows.length === 1 ? "" : "s"
+        } loaded below.`
+        : "No governing-law or forum wording matched these filters.";
     } else {
       searchStatus.textContent = rows.length
         ? `Showing results ${start}–${end}${
@@ -5240,13 +5672,15 @@ function boot() {
   async function performSearch() {
     if (
       !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading || state.assignmentLoading
+      state.terminationLoading || state.assignmentLoading ||
+      state.governingLawLoading
     ) return;
     state.searching = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
     assignmentButton.disabled = true;
+    governingLawButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Searching published clause evidence…";
@@ -5267,19 +5701,22 @@ function boot() {
       positionButton.disabled = false;
       terminationButton.disabled = false;
       assignmentButton.disabled = false;
+      governingLawButton.disabled = false;
     }
   }
 
   async function performPositionBrowse() {
     if (
       !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading || state.assignmentLoading
+      state.terminationLoading || state.assignmentLoading ||
+      state.governingLawLoading
     ) return;
     state.positionLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
     assignmentButton.disabled = true;
+    governingLawButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published liability positions…";
@@ -5303,19 +5740,22 @@ function boot() {
       positionButton.disabled = false;
       terminationButton.disabled = false;
       assignmentButton.disabled = false;
+      governingLawButton.disabled = false;
     }
   }
 
   async function performTerminationBrowse() {
     if (
       !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading || state.assignmentLoading
+      state.terminationLoading || state.assignmentLoading ||
+      state.governingLawLoading
     ) return;
     state.terminationLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
     assignmentButton.disabled = true;
+    governingLawButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published termination wording…";
@@ -5339,19 +5779,22 @@ function boot() {
       positionButton.disabled = false;
       terminationButton.disabled = false;
       assignmentButton.disabled = false;
+      governingLawButton.disabled = false;
     }
   }
 
   async function performAssignmentBrowse() {
     if (
       !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading || state.assignmentLoading
+      state.terminationLoading || state.assignmentLoading ||
+      state.governingLawLoading
     ) return;
     state.assignmentLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
     assignmentButton.disabled = true;
+    governingLawButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent =
@@ -5375,6 +5818,45 @@ function boot() {
       positionButton.disabled = false;
       terminationButton.disabled = false;
       assignmentButton.disabled = false;
+      governingLawButton.disabled = false;
+    }
+  }
+
+  async function performGoverningLawBrowse() {
+    if (
+      !state.token || state.searching || state.positionLoading ||
+      state.terminationLoading || state.assignmentLoading ||
+      state.governingLawLoading
+    ) return;
+    state.governingLawLoading = true;
+    searchButton.disabled = true;
+    positionButton.disabled = true;
+    terminationButton.disabled = true;
+    assignmentButton.disabled = true;
+    governingLawButton.disabled = true;
+    previous.disabled = true;
+    next.disabled = true;
+    searchStatus.textContent =
+      "Loading published governing-law and forum wording…";
+    governingLawStatus.textContent = "Applying evidence filters…";
+    try {
+      const path = buildGoverningLawPositionPath({
+        signalKeys: state.governingLawSignal ? [state.governingLawSignal] : [],
+        kind: state.governingLawKind,
+        source: state.governingLawSource,
+        limit: state.limit,
+        offset: state.offset,
+      });
+      renderSearch(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, governingLawStatus);
+    } finally {
+      state.governingLawLoading = false;
+      searchButton.disabled = false;
+      positionButton.disabled = false;
+      terminationButton.disabled = false;
+      assignmentButton.disabled = false;
+      governingLawButton.disabled = false;
     }
   }
 
@@ -5616,6 +6098,10 @@ function boot() {
       data.assignment_position,
     );
     if (assignmentPosition) fragment.append(assignmentPosition);
+    const governingLawPosition = governingLawPositionPanel(
+      data.governing_law_position,
+    );
+    if (governingLawPosition) fragment.append(governingLawPosition);
 
     const anchorContext = record(data.anchor_context);
     if (
@@ -6274,6 +6760,27 @@ function boot() {
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
+  governingLawForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearComparison();
+    state.resultMode = "governing_law_positions";
+    state.governingLawSignal = governingLawSignalInput.value;
+    state.governingLawKind = governingLawKindInput.value;
+    state.governingLawSource = governingLawSourceInput.value.trim()
+      .toLowerCase();
+    const signalLabel =
+      governingLawSignalInput.selectedOptions[0]?.textContent ??
+        "Any detected wording";
+    state.query = `Governing-law library: ${signalLabel}`;
+    state.clauseParty = "";
+    state.kind = state.governingLawKind;
+    state.source = state.governingLawSource;
+    state.offset = 0;
+    syncGuideSelection("");
+    performGoverningLawBrowse();
+    resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const query = queryInput.value.trim();
@@ -6300,12 +6807,18 @@ function boot() {
       performTerminationBrowse();
     } else if (state.resultMode === "assignment_positions") {
       performAssignmentBrowse();
+    } else if (state.resultMode === "governing_law_positions") {
+      performGoverningLawBrowse();
     } else performSearch();
   });
   next.addEventListener("click", () => {
     if (!state.hasMore) return;
     state.offset = Math.min(
-      ["termination_positions", "assignment_positions"].includes(
+      [
+          "termination_positions",
+          "assignment_positions",
+          "governing_law_positions",
+        ].includes(
           state.resultMode,
         )
         ? 5_000
@@ -6317,6 +6830,8 @@ function boot() {
       performTerminationBrowse();
     } else if (state.resultMode === "assignment_positions") {
       performAssignmentBrowse();
+    } else if (state.resultMode === "governing_law_positions") {
+      performGoverningLawBrowse();
     } else performSearch();
   });
   for (const button of document.querySelectorAll("[data-query]")) {

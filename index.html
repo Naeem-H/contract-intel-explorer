@@ -251,6 +251,38 @@
         <p id="assignment-status" class="muted" role="status" aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
       </section>
 
+      <section class="search-panel" aria-labelledby="governing-law-library-title">
+        <p class="eyebrow">Choice-of-law and forum library</p>
+        <h2 id="governing-law-library-title">Browse governing-law and jurisdiction wording</h2>
+        <p class="search-note">Filter positive generated wording signals anchored to exact detector support. Jurisdictions are not normalized, and the signals do not determine enforceability, resolve conflicts rules, or reconcile arbitration and amendments.</p>
+        <form id="governing-law-form" class="search-form governing-law-search-form">
+          <label for="governing-law-signal">Law or forum wording</label>
+          <label for="governing-law-kind">Document class</label>
+          <label for="governing-law-source">Source slug</label>
+          <span aria-hidden="true"></span>
+          <select id="governing-law-signal" name="signal">
+            <option value="">Any detected wording</option>
+            <option value="governing_law_language">Express governing law</option>
+            <option value="exclusive_jurisdiction_language">Exclusive jurisdiction</option>
+            <option value="nonexclusive_jurisdiction_language">Non-exclusive jurisdiction</option>
+            <option value="submission_to_jurisdiction_language">Submission / consent to jurisdiction</option>
+            <option value="court_or_forum_language">Court, tribunal or venue wording</option>
+            <option value="venue_objection_waiver_language">Venue / forum objection waiver</option>
+            <option value="conflict_of_laws_qualification_language">Conflict-of-laws qualification</option>
+            <option value="service_of_process_language">Service of process / process agent</option>
+          </select>
+          <select id="governing-law-kind" name="kind">
+            <option value="">Contracts and amendments</option>
+            <option value="contract">Contracts</option>
+            <option value="amendment">Amendments</option>
+          </select>
+          <input id="governing-law-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="e.g. sec_edgar">
+          <button id="governing-law-submit" class="button primary" type="submit">Browse law and forum</button>
+        </form>
+        <div id="governing-law-facets" class="quick" aria-label="Available governing-law-position evidence"><span>Available evidence:</span></div>
+        <p id="governing-law-status" class="muted" role="status" aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
+      </section>
+
       <section class="search-panel" aria-labelledby="party-search-title">
         <p class="eyebrow">Vendor and counterparty trail</p>
         <h2 id="party-search-title">Find published agreements by party</h2>
