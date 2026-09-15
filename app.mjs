@@ -21,6 +21,8 @@ export const COMPARISON_CONTEXT_CLAUSES = 5;
 export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
+export const LIABILITY_POSITION_MATRIX_SCHEMA =
+  "esheria.liability-position-matrix.v1";
 
 export class ApiError extends Error {
   constructor(message, status = 0, code = "request_failed", requestId = null) {
@@ -947,6 +949,268 @@ export function buildCitationManifest({
   };
 }
 
+const LIABILITY_POSITION_MATRIX_SIGNALS = Object.freeze([
+  {
+    key: "explicit_liability_limit_formula",
+    prefix: "liability_limit_formula",
+    attributes: [
+      "currency_amount_present",
+      "percentage_present",
+      "fees_or_charges_basis_present",
+      "greater_or_lesser_formula_present",
+      "facially_bilateral_language_present",
+    ],
+  },
+  {
+    key: "excluded_loss_language",
+    prefix: "excluded_loss",
+    attributes: [
+      "indirect",
+      "consequential",
+      "special",
+      "incidental",
+      "exemplary",
+      "punitive",
+    ],
+  },
+  {
+    key: "cap_carveout_language",
+    prefix: "cap_carveout",
+    attributes: [
+      "death_or_personal_injury",
+      "fraud",
+      "wilful_or_willful_misconduct",
+    ],
+  },
+  {
+    key: "express_unlimited_liability",
+    prefix: "express_unlimited_liability",
+    attributes: [],
+  },
+]);
+
+const LIABILITY_POSITION_MATRIX_BASE_COLUMNS = Object.freeze([
+  "matrix_schema",
+  "generated_at",
+  "retrieval_query",
+  "document_kind_filter",
+  "source_filter",
+  "selected_count",
+  "citation_number",
+  "retrieval_rank",
+  "observed_published_at",
+  "source_slug",
+  "source_name",
+  "source_publisher",
+  "source_external_id",
+  "source_url",
+  "source_terms_url",
+  "source_policy_assessment_status",
+  "source_human_review_required",
+  "agreement_id",
+  "agreement_title",
+  "agreement_document_kind",
+  "agreement_document_kind_basis",
+  "artifact_sha256",
+  "extraction_method",
+  "extraction_version",
+  "agreement_text_basis",
+  "clause_id",
+  "clause_sequence",
+  "clause_heading",
+  "clause_text_basis",
+  "clause_text_sha256",
+  "clause_location",
+  "clause_char_start",
+  "clause_char_end",
+  "observed_clause_text",
+  "observed_clause_text_truncated",
+  "generated_clause_type",
+  "position_schema",
+  "position_applicable",
+  "position_reason",
+  "detector_version",
+  "detector_scope",
+  "matched_signal_count",
+  "supported_rule_count",
+]);
+
+const LIABILITY_POSITION_MATRIX_SIGNAL_COLUMNS = Object.freeze(
+  LIABILITY_POSITION_MATRIX_SIGNALS.flatMap(({ prefix, attributes }) => [
+    `${prefix}_detector_match`,
+    `${prefix}_signal_basis`,
+    `${prefix}_confidence`,
+    `${prefix}_rule_id`,
+    ...attributes.map((attribute) => `${prefix}_${attribute}`),
+    `${prefix}_observed_support`,
+    `${prefix}_support_text_basis`,
+    `${prefix}_support_sha256`,
+    `${prefix}_matched_text`,
+    `${prefix}_matched_text_sha256`,
+  ]),
+);
+
+const LIABILITY_POSITION_MATRIX_COLUMNS = Object.freeze([
+  ...LIABILITY_POSITION_MATRIX_BASE_COLUMNS,
+  ...LIABILITY_POSITION_MATRIX_SIGNAL_COLUMNS,
+  "support_is_bounded_excerpt",
+  "absence_is_not_evidence_of_absence",
+  "signals_are_legal_conclusions",
+  "position_limitations",
+  "export_limitations",
+]);
+
+function matrixBoolean(value) {
+  if (value === true) return "TRUE";
+  if (value === false) return "FALSE";
+  return "";
+}
+
+function csvCell(value) {
+  let content = value === null || value === undefined ? "" : String(value);
+  if (/^\s*[=+\-@]/u.test(content)) content = `'${content}`;
+  content = content.replaceAll('"', '""');
+  return `"${content}"`;
+}
+
+export function buildLiabilityPositionMatrixCsv({
+  query = "",
+  kind = "",
+  source = "",
+  entries = [],
+  generatedAt = new Date().toISOString(),
+} = {}) {
+  const manifest = buildCitationManifest({
+    query,
+    kind,
+    source,
+    entries,
+    generatedAt,
+  });
+  const scope = manifest.retrieval_scope;
+  const rows = manifest.citations.map((citation) => {
+    const agreement = record(citation.agreement);
+    const clause = record(citation.matched_clause);
+    const clauseLocation = record(clause.location);
+    const interpretation = record(clause.generated_interpretation);
+    const sourceRecord = record(citation.source);
+    const retrieval = record(citation.retrieval);
+    const position = record(citation.commercial_position);
+    const coverage = record(position.coverage);
+    const limits = record(position.limits);
+    const positionApplicable = typeof position.applicable === "boolean"
+      ? position.applicable
+      : null;
+    const signalMap = new Map();
+    for (const value of array(position.signals)) {
+      const signal = record(value);
+      if (
+        typeof signal.signal_key === "string" &&
+        !signalMap.has(signal.signal_key)
+      ) signalMap.set(signal.signal_key, signal);
+    }
+    const row = {
+      matrix_schema: LIABILITY_POSITION_MATRIX_SCHEMA,
+      generated_at: manifest.generated_at,
+      retrieval_query: scope.query,
+      document_kind_filter: scope.document_kind,
+      source_filter: scope.source,
+      selected_count: scope.selected_count,
+      citation_number: citation.citation_number,
+      retrieval_rank: retrieval.rank,
+      observed_published_at: retrieval.observed_published_at,
+      source_slug: sourceRecord.slug,
+      source_name: sourceRecord.name,
+      source_publisher: sourceRecord.publisher,
+      source_external_id: sourceRecord.external_id,
+      source_url: sourceRecord.canonical_url,
+      source_terms_url: sourceRecord.terms_url,
+      source_policy_assessment_status: sourceRecord.policy_assessment_status,
+      source_human_review_required: matrixBoolean(
+        sourceRecord.human_review_required,
+      ),
+      agreement_id: agreement.id,
+      agreement_title: agreement.title,
+      agreement_document_kind: agreement.document_kind,
+      agreement_document_kind_basis: agreement.document_kind_basis,
+      artifact_sha256: agreement.artifact_sha256,
+      extraction_method: agreement.extraction_method,
+      extraction_version: agreement.extraction_version,
+      agreement_text_basis: agreement.text_basis,
+      clause_id: clause.id,
+      clause_sequence: clause.sequence,
+      clause_heading: clause.heading,
+      clause_text_basis: clause.text_basis,
+      clause_text_sha256: clause.observed_text_sha256,
+      clause_location: clauseLocation.display,
+      clause_char_start: clauseLocation.char_start,
+      clause_char_end: clauseLocation.char_end,
+      observed_clause_text: clause.observed_text,
+      observed_clause_text_truncated: matrixBoolean(
+        clause.observed_text_truncated,
+      ),
+      generated_clause_type: interpretation.clause_type,
+      position_schema: position.schema,
+      position_applicable: matrixBoolean(positionApplicable),
+      position_reason: position.reason,
+      detector_version: position.detector_version,
+      detector_scope: position.scope,
+      matched_signal_count: coverage.matched_signal_count,
+      supported_rule_count: coverage.supported_rule_count,
+    };
+
+    for (
+      const { key, prefix, attributes } of LIABILITY_POSITION_MATRIX_SIGNALS
+    ) {
+      const signal = signalMap.get(key);
+      const generatedAttributes = record(signal?.generated_attributes);
+      const support = record(signal?.observed_support);
+      row[`${prefix}_detector_match`] = signal
+        ? "TRUE"
+        : positionApplicable === true
+        ? "FALSE"
+        : "";
+      row[`${prefix}_signal_basis`] = signal?.signal_basis ?? null;
+      row[`${prefix}_confidence`] = signal?.confidence ?? null;
+      row[`${prefix}_rule_id`] = signal?.rule_id ?? null;
+      for (const attribute of attributes) {
+        row[`${prefix}_${attribute}`] = matrixBoolean(
+          generatedAttributes[attribute],
+        );
+      }
+      row[`${prefix}_observed_support`] = support.text ?? null;
+      row[`${prefix}_support_text_basis`] = support.text_basis ?? null;
+      row[`${prefix}_support_sha256`] = support.sha256 ?? null;
+      row[`${prefix}_matched_text`] = support.matched_text ?? null;
+      row[`${prefix}_matched_text_sha256`] = support.matched_text_sha256 ??
+        null;
+    }
+
+    row.support_is_bounded_excerpt = matrixBoolean(
+      limits.support_is_bounded_excerpt,
+    );
+    row.absence_is_not_evidence_of_absence = matrixBoolean(
+      limits.absence_is_not_evidence_of_absence,
+    );
+    row.signals_are_legal_conclusions = matrixBoolean(
+      limits.signals_are_legal_conclusions,
+    );
+    row.position_limitations = array(position.limitations).join(" | ");
+    row.export_limitations = manifest.limitations.join(" | ");
+    return row;
+  });
+
+  return `\uFEFF${
+    [
+      LIABILITY_POSITION_MATRIX_COLUMNS.map(csvCell).join(","),
+      ...rows.map((row) =>
+        LIABILITY_POSITION_MATRIX_COLUMNS.map((column) => csvCell(row[column]))
+          .join(",")
+      ),
+    ].join("\r\n")
+  }\r\n`;
+}
+
 async function readBoundedJson(response) {
   const declared = response.headers.get("content-length");
   if (declared && Number(declared) > MAX_RESPONSE_BYTES) {
@@ -1280,6 +1544,7 @@ function boot() {
   const comparisonStatus = byId("comparison-status");
   const clearComparisonButton = byId("clear-comparison");
   const openComparisonButton = byId("open-comparison");
+  const exportPositionMatrixButton = byId("export-position-matrix");
   const exportComparisonButton = byId("export-comparison");
   const exportStatus = byId("comparison-export-status");
   const detailDialog = byId("detail-dialog");
@@ -1561,6 +1826,8 @@ function boot() {
     openComparisonButton.disabled = selected < COMPARISON_MIN_ITEMS ||
       selected > COMPARISON_MAX_ITEMS || state.comparing;
     exportComparisonButton.disabled = state.comparing ||
+      state.comparisonEvidence.length === 0;
+    exportPositionMatrixButton.disabled = state.comparing ||
       state.comparisonEvidence.length === 0;
     comparisonStatus.className = kind === "error" ? "status error" : "muted";
     comparisonStatus.textContent = message ??
@@ -2183,8 +2450,8 @@ function boot() {
     exportStatus.textContent = loadedEntries.length
       ? `${loadedEntries.length} evidence citation${
         loadedEntries.length === 1 ? "" : "s"
-      } ready for JSON export.`
-      : "No evidence was loaded, so no citation file is available.";
+      } ready for JSON and CSV export.`
+      : "No evidence was loaded, so no export file is available.";
     state.comparing = false;
     updateComparisonControls();
   }
@@ -2218,6 +2485,38 @@ function boot() {
       exportStatus.textContent = error instanceof Error
         ? error.message
         : "Citation export could not be created.";
+    }
+  }
+
+  function exportPositionMatrix() {
+    if (!state.comparisonEvidence.length) return;
+    try {
+      const generatedAt = new Date().toISOString();
+      const csv = buildLiabilityPositionMatrixCsv({
+        query: state.query,
+        kind: state.kind,
+        source: state.source,
+        entries: state.comparisonEvidence,
+        generatedAt,
+      });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = element("a");
+      link.href = objectUrl;
+      link.download = `esheria-liability-position-matrix-${
+        generatedAt.slice(0, 10)
+      }.csv`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      exportStatus.textContent =
+        "Position CSV downloaded. Detector non-matches are not evidence that wording is absent.";
+    } catch (error) {
+      exportStatus.textContent = error instanceof Error
+        ? error.message
+        : "Position CSV could not be created.";
     }
   }
 
@@ -3475,6 +3774,7 @@ function boot() {
   );
   clearComparisonButton.addEventListener("click", clearComparison);
   openComparisonButton.addEventListener("click", compareSelected);
+  exportPositionMatrixButton.addEventListener("click", exportPositionMatrix);
   exportComparisonButton.addEventListener("click", exportComparison);
   detailDialog.addEventListener("click", (event) => {
     if (event.target === detailDialog) closeDialog(detailDialog);
