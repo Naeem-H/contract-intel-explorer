@@ -32,6 +32,8 @@ export const ASSIGNMENT_POSITION_MATRIX_SCHEMA =
   "esheria.assignment-position-matrix.v1";
 export const GOVERNING_LAW_POSITION_MATRIX_SCHEMA =
   "esheria.governing-law-position-matrix.v1";
+export const INDEMNITY_POSITION_MATRIX_SCHEMA =
+  "esheria.indemnity-position-matrix.v1";
 
 const LIABILITY_VALUE_CANDIDATE_CATEGORIES = Object.freeze([
   ["currency_amounts", "Currency amounts"],
@@ -142,6 +144,25 @@ const GOVERNING_LAW_POSITION_SIGNALS = Object.freeze({
   service_of_process_language: "Service of process / process agent",
 });
 export const GOVERNING_LAW_POSITION_SIGNAL_MAX = 8;
+const INDEMNITY_POSITION_SIGNALS = Object.freeze({
+  operative_indemnity_obligation_language: "Operative indemnity obligation",
+  hold_harmless_language: "Hold harmless",
+  defence_obligation_language: "Defence obligation",
+  third_party_claim_language: "Third-party claims",
+  direct_claim_language: "Direct or first-party claims",
+  breach_negligence_or_misconduct_trigger_language:
+    "Breach, negligence or misconduct trigger",
+  intellectual_property_claim_language: "Intellectual-property claims",
+  tax_indemnity_language: "Tax or VAT indemnity",
+  employment_transfer_indemnity_language: "Employment or TUPE indemnity",
+  claim_notice_language: "Claim notice",
+  defence_control_language: "Control or conduct of defence",
+  settlement_consent_language: "Settlement consent or approval",
+  cooperation_language: "Claim or defence cooperation",
+  exclusive_remedy_language: "Sole or exclusive remedy",
+  survival_or_claim_period_language: "Survival or claims period",
+});
+export const INDEMNITY_POSITION_SIGNAL_MAX = 15;
 const TERMINATION_DURATION_CANDIDATE_SCHEMA =
   "esheria.termination-duration-candidates.v1";
 const LOCAL_TERMINATION_TERM_PATTERN =
@@ -181,13 +202,18 @@ function isAllowedApiTarget(url) {
     pathname === "/api/dashboard" ||
     pathname === "/api/summary" ||
     pathname === "/api/metrics" ||
-    pathname === "/api/governing-law-summary"
-  ) return url.search === "";
+    pathname === "/api/governing-law-summary" ||
+    pathname === "/api/indemnity-summary"
+  ) {
+    return url.search === "";
+  }
   if (
-    pathname === "/api/search" || pathname === "/api/positions" ||
+    pathname === "/api/search" ||
+    pathname === "/api/positions" ||
     pathname === "/api/termination-positions" ||
     pathname === "/api/assignment-positions" ||
     pathname === "/api/governing-law-positions" ||
+    pathname === "/api/indemnity-positions" ||
     pathname === "/api/parties" ||
     pathname === "/api/party-clauses"
   ) {
@@ -205,56 +231,88 @@ function isAllowedApiTarget(url) {
       "kind",
       "source",
     ]);
-    if (
-      pathname !== "/api/party-clauses" && url.searchParams.has("party")
-    ) return false;
+    if (pathname !== "/api/party-clauses" && url.searchParams.has("party")) {
+      return false;
+    }
     if (
       pathname !== "/api/positions" &&
       pathname !== "/api/termination-positions" &&
       pathname !== "/api/assignment-positions" &&
       pathname !== "/api/governing-law-positions" &&
+      pathname !== "/api/indemnity-positions" &&
       url.searchParams.has("signal")
-    ) return false;
+    ) {
+      return false;
+    }
     if (pathname !== "/api/positions" && url.searchParams.has("value")) {
       return false;
     }
-    if (
-      pathname !== "/api/positions" && url.searchParams.has("feature")
-    ) return false;
+    if (pathname !== "/api/positions" && url.searchParams.has("feature")) {
+      return false;
+    }
     if (
       pathname !== "/api/termination-positions" &&
       (url.searchParams.has("duration") || url.searchParams.has("linkage"))
-    ) return false;
+    ) {
+      return false;
+    }
     if (
       pathname !== "/api/assignment-positions" &&
       url.searchParams.has("context")
-    ) return false;
+    ) {
+      return false;
+    }
     if (pathname === "/api/positions" && url.searchParams.has("q")) {
       return false;
     }
     if (
       pathname === "/api/termination-positions" &&
-      (url.searchParams.has("q") || url.searchParams.has("value") ||
+      (url.searchParams.has("q") ||
+        url.searchParams.has("value") ||
         url.searchParams.has("feature"))
-    ) return false;
+    ) {
+      return false;
+    }
     if (
       pathname === "/api/assignment-positions" &&
-      (url.searchParams.has("q") || url.searchParams.has("value") ||
-        url.searchParams.has("feature") || url.searchParams.has("duration") ||
+      (url.searchParams.has("q") ||
+        url.searchParams.has("value") ||
+        url.searchParams.has("feature") ||
+        url.searchParams.has("duration") ||
         url.searchParams.has("linkage"))
-    ) return false;
+    ) {
+      return false;
+    }
     if (
       pathname === "/api/governing-law-positions" &&
-      (url.searchParams.has("q") || url.searchParams.has("value") ||
-        url.searchParams.has("feature") || url.searchParams.has("duration") ||
-        url.searchParams.has("linkage") || url.searchParams.has("context"))
-    ) return false;
+      (url.searchParams.has("q") ||
+        url.searchParams.has("value") ||
+        url.searchParams.has("feature") ||
+        url.searchParams.has("duration") ||
+        url.searchParams.has("linkage") ||
+        url.searchParams.has("context"))
+    ) {
+      return false;
+    }
+    if (
+      pathname === "/api/indemnity-positions" &&
+      (url.searchParams.has("q") ||
+        url.searchParams.has("value") ||
+        url.searchParams.has("feature") ||
+        url.searchParams.has("duration") ||
+        url.searchParams.has("linkage") ||
+        url.searchParams.has("context"))
+    ) {
+      return false;
+    }
     return [...url.searchParams.keys()].every((key) => allowed.has(key));
   }
   if (pathname === "/api/party-dossier") {
     const allowed = new Set(["party", "themes", "examples"]);
-    return url.searchParams.getAll("party").length === 1 &&
-      [...url.searchParams.keys()].every((key) => allowed.has(key));
+    return (
+      url.searchParams.getAll("party").length === 1 &&
+      [...url.searchParams.keys()].every((key) => allowed.has(key))
+    );
   }
   const match = pathname.match(/^\/api\/(agreements|claims)\/([^/]+)$/);
   if (!match || !UUID_PATTERN.test(match[2])) return false;
@@ -266,12 +324,16 @@ function isAllowedApiTarget(url) {
   if (
     url.searchParams.getAll("clauses").length > 1 ||
     url.searchParams.getAll("clause").length > 1
-  ) return false;
+  ) {
+    return false;
+  }
   const clauseLimit = url.searchParams.get("clauses");
   if (
     clauseLimit !== null &&
     (!/^[1-9]\d*$/.test(clauseLimit) || Number(clauseLimit) > 40)
-  ) return false;
+  ) {
+    return false;
+  }
   const anchorClauseId = url.searchParams.get("clause");
   return anchorClauseId === null || UUID_PATTERN.test(anchorClauseId);
 }
@@ -282,7 +344,8 @@ export function apiUrl(path) {
   }
   const relative = new URL(path, "https://route.invalid");
   if (
-    relative.origin !== "https://route.invalid" || relative.hash ||
+    relative.origin !== "https://route.invalid" ||
+    relative.hash ||
     !isAllowedApiTarget(relative)
   ) {
     throw new TypeError("API path is not allowed");
@@ -299,7 +362,8 @@ export function buildSearchPath({
 }) {
   const normalizedQuery = typeof query === "string" ? query.trim() : "";
   if (
-    normalizedQuery.length < 2 || normalizedQuery.length > 200 ||
+    normalizedQuery.length < 2 ||
+    normalizedQuery.length > 200 ||
     !/[\p{L}\p{N}]/u.test(normalizedQuery)
   ) {
     throw new TypeError("Search needs 2–200 characters and a letter or number");
@@ -349,15 +413,23 @@ export function buildLiabilityPositionPath({
   if (
     signals.length > LIABILITY_POSITION_SIGNAL_KEYS.length ||
     signals.some((key) => !LIABILITY_POSITION_SIGNAL_KEYS.includes(key))
-  ) throw new TypeError("Position signal filter is invalid");
+  ) {
+    throw new TypeError("Position signal filter is invalid");
+  }
   if (
     values.length > LIABILITY_VALUE_CANDIDATE_CATEGORIES.length ||
-    values.some((key) =>
-      !LIABILITY_VALUE_CANDIDATE_CATEGORIES.some(([allowed]) => allowed === key)
+    values.some(
+      (key) =>
+        !LIABILITY_VALUE_CANDIDATE_CATEGORIES.some(
+          ([allowed]) => allowed === key,
+        ),
     )
-  ) throw new TypeError("Cap-value category filter is invalid");
+  ) {
+    throw new TypeError("Cap-value category filter is invalid");
+  }
   if (
-    values.length && signals.length &&
+    values.length &&
+    signals.length &&
     !signals.includes("explicit_liability_limit_formula")
   ) {
     throw new TypeError(
@@ -367,7 +439,9 @@ export function buildLiabilityPositionPath({
   if (
     features.length > Object.keys(LIABILITY_POSITION_FEATURES).length ||
     features.some((key) => !Object.hasOwn(LIABILITY_POSITION_FEATURES, key))
-  ) throw new TypeError("Liability feature filter is invalid");
+  ) {
+    throw new TypeError("Liability feature filter is invalid");
+  }
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
     throw new TypeError("Position limit is outside the allowed range");
   }
@@ -409,7 +483,9 @@ export function buildTerminationPositionPath({
   if (
     signals.length > Object.keys(TERMINATION_POSITION_SIGNALS).length ||
     signals.some((key) => !Object.hasOwn(TERMINATION_POSITION_SIGNALS, key))
-  ) throw new TypeError("Termination signal filter is invalid");
+  ) {
+    throw new TypeError("Termination signal filter is invalid");
+  }
   if (typeof hasDuration !== "boolean") {
     throw new TypeError("Duration filter is invalid");
   }
@@ -456,7 +532,9 @@ export function buildAssignmentPositionPath({
   if (
     signals.length > ASSIGNMENT_POSITION_SIGNAL_MAX ||
     signals.some((key) => !Object.hasOwn(ASSIGNMENT_POSITION_SIGNALS, key))
-  ) throw new TypeError("Assignment signal filter is invalid");
+  ) {
+    throw new TypeError("Assignment signal filter is invalid");
+  }
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
     throw new TypeError("Position limit is outside the allowed range");
   }
@@ -498,7 +576,9 @@ export function buildGoverningLawPositionPath({
   if (
     signals.length > GOVERNING_LAW_POSITION_SIGNAL_MAX ||
     signals.some((key) => !Object.hasOwn(GOVERNING_LAW_POSITION_SIGNALS, key))
-  ) throw new TypeError("Governing-law signal filter is invalid");
+  ) {
+    throw new TypeError("Governing-law signal filter is invalid");
+  }
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
     throw new TypeError("Position limit is outside the allowed range");
   }
@@ -525,10 +605,52 @@ export function buildGoverningLawPositionPath({
   return `/api/governing-law-positions?${params.toString()}`;
 }
 
+export function buildIndemnityPositionPath({
+  signalKeys = [],
+  kind = "",
+  source = "",
+  limit = 20,
+  offset = 0,
+} = {}) {
+  const signals = [...new Set(array(signalKeys))];
+  if (
+    signals.length > INDEMNITY_POSITION_SIGNAL_MAX ||
+    signals.some((key) => !Object.hasOwn(INDEMNITY_POSITION_SIGNALS, key))
+  ) {
+    throw new TypeError("Indemnity signal filter is invalid");
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new TypeError("Position limit is outside the allowed range");
+  }
+  if (!Number.isInteger(offset) || offset < 0 || offset > 5_000) {
+    throw new TypeError("Position offset is outside the allowed range");
+  }
+  if (kind && !["contract", "amendment"].includes(kind)) {
+    throw new TypeError("Indemnity document class is not supported");
+  }
+  const normalizedSource = typeof source === "string"
+    ? source.trim().toLowerCase()
+    : "";
+  if (normalizedSource && !SOURCE_PATTERN.test(normalizedSource)) {
+    throw new TypeError("Source slug is invalid");
+  }
+
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  for (const signal of signals) params.append("signal", signal);
+  if (kind) params.set("kind", kind);
+  if (normalizedSource) params.set("source", normalizedSource);
+  return `/api/indemnity-positions?${params.toString()}`;
+}
+
 export function buildPartyClauseSearchPath({ party, ...input }) {
   const partyPath = buildPartySearchPath({ query: party });
-  const normalizedParty = new URL(partyPath, "https://route.invalid")
-    .searchParams.get("q");
+  const normalizedParty = new URL(
+    partyPath,
+    "https://route.invalid",
+  ).searchParams.get("q");
   if (!normalizedParty) throw new TypeError("Party search term is invalid");
   const clausePath = buildSearchPath(input);
   const params = new URL(clausePath, "https://route.invalid").searchParams;
@@ -542,14 +664,17 @@ export function buildPartyDossierPath({
   examplesPerTheme = 2,
 }) {
   const partyPath = buildPartySearchPath({ query: party });
-  const normalizedParty = new URL(partyPath, "https://route.invalid")
-    .searchParams.get("q");
+  const normalizedParty = new URL(
+    partyPath,
+    "https://route.invalid",
+  ).searchParams.get("q");
   if (!normalizedParty) throw new TypeError("Party name is invalid");
   if (!Number.isInteger(themeLimit) || themeLimit < 1 || themeLimit > 20) {
     throw new TypeError("Theme limit is outside the allowed range");
   }
   if (
-    !Number.isInteger(examplesPerTheme) || examplesPerTheme < 1 ||
+    !Number.isInteger(examplesPerTheme) ||
+    examplesPerTheme < 1 ||
     examplesPerTheme > 3
   ) {
     throw new TypeError("Examples per theme is outside the allowed range");
@@ -575,8 +700,7 @@ export function buildAgreementPath(
   }
   if (
     anchorClauseId !== null &&
-    (typeof anchorClauseId !== "string" ||
-      !UUID_PATTERN.test(anchorClauseId))
+    (typeof anchorClauseId !== "string" || !UUID_PATTERN.test(anchorClauseId))
   ) {
     throw new TypeError("Anchor clause identifier is invalid");
   }
@@ -652,7 +776,9 @@ export function formatEvidenceLocation(value) {
   if (
     typeof clause.evidence_location === "string" &&
     clause.evidence_location.trim()
-  ) return clause.evidence_location.trim();
+  ) {
+    return clause.evidence_location.trim();
+  }
 
   const location = record(clause.evidence_location);
   const parts = [];
@@ -665,7 +791,9 @@ export function formatEvidenceLocation(value) {
   if (
     typeof location.archive_member_sha256 === "string" &&
     /^[0-9a-f]{64}$/.test(location.archive_member_sha256)
-  ) parts.push(`member SHA-256 ${location.archive_member_sha256}`);
+  ) {
+    parts.push(`member SHA-256 ${location.archive_member_sha256}`);
+  }
 
   const pageStart = Number.isSafeInteger(clause.page_start)
     ? clause.page_start
@@ -703,7 +831,8 @@ export function formatEvidenceLocation(value) {
 
 export function comparisonEvidence(payload, expectedClauseId) {
   if (
-    typeof expectedClauseId !== "string" || !UUID_PATTERN.test(expectedClauseId)
+    typeof expectedClauseId !== "string" ||
+    !UUID_PATTERN.test(expectedClauseId)
   ) {
     throw new TypeError("Comparison clause identifier is invalid");
   }
@@ -734,6 +863,7 @@ export function comparisonEvidence(payload, expectedClauseId) {
     terminationPosition: record(data.termination_position),
     assignmentPosition: record(data.assignment_position),
     governingLawPosition: record(data.governing_law_position),
+    indemnityPosition: record(data.indemnity_position),
     truncated: data.truncated === true,
   };
 }
@@ -741,27 +871,26 @@ export function comparisonEvidence(payload, expectedClauseId) {
 export function comparisonConnectedContext(value) {
   const context = record(value);
   if (context.api_version !== "anchor-clause-context-v1") return null;
-  const definitionCandidates = array(context.definition_candidates).slice(
-    0,
-    COMPARISON_CONNECTED_CONTEXT_ITEMS,
-  ).map(record);
+  const definitionCandidates = array(context.definition_candidates)
+    .slice(0, COMPARISON_CONNECTED_CONTEXT_ITEMS)
+    .map(record);
   const resolvedReferenceTargets = array(context.resolved_reference_targets)
-    .slice(0, COMPARISON_CONNECTED_CONTEXT_ITEMS).map(record);
-  const unresolvedReferences = array(context.unresolved_references).slice(
-    0,
-    COMPARISON_CONNECTED_CONTEXT_ITEMS,
-  ).map(record);
+    .slice(0, COMPARISON_CONNECTED_CONTEXT_ITEMS)
+    .map(record);
+  const unresolvedReferences = array(context.unresolved_references)
+    .slice(0, COMPARISON_CONNECTED_CONTEXT_ITEMS)
+    .map(record);
   const coverage = record(context.coverage);
   const totals = {
-    definitionCandidates: citationInteger(
-      coverage.definition_candidates_total,
-    ) ?? definitionCandidates.length,
-    resolvedReferenceTargets: citationInteger(
-      coverage.resolved_reference_targets_total,
-    ) ?? resolvedReferenceTargets.length,
-    unresolvedReferences: citationInteger(
-      coverage.unresolved_references_total,
-    ) ?? unresolvedReferences.length,
+    definitionCandidates:
+      citationInteger(coverage.definition_candidates_total) ??
+        definitionCandidates.length,
+    resolvedReferenceTargets:
+      citationInteger(coverage.resolved_reference_targets_total) ??
+        resolvedReferenceTargets.length,
+    unresolvedReferences:
+      citationInteger(coverage.unresolved_references_total) ??
+        unresolvedReferences.length,
   };
   return {
     definitionCandidates,
@@ -783,11 +912,12 @@ export function commercialPositionEvidence(value) {
       "liability-position-signals-v3",
       "liability-position-signals-v4",
     ].includes(position.api_version)
-  ) return null;
-  const signals = array(position.signals).slice(
-    0,
-    COMMERCIAL_POSITION_SIGNAL_MAX,
-  ).map(record);
+  ) {
+    return null;
+  }
+  const signals = array(position.signals)
+    .slice(0, COMMERCIAL_POSITION_SIGNAL_MAX)
+    .map(record);
   const coverage = record(position.coverage);
   return {
     apiVersion: position.api_version,
@@ -810,19 +940,18 @@ export function commercialPositionEvidence(value) {
       signals.length,
     supportedRuleCount: citationInteger(coverage.supported_rule_count),
     limits: record(position.limits),
-    limitations: array(position.limitations).filter((item) =>
-      typeof item === "string"
-    ).slice(0, 10),
+    limitations: array(position.limitations)
+      .filter((item) => typeof item === "string")
+      .slice(0, 10),
   };
 }
 
 export function terminationPositionEvidence(value) {
   const position = record(value);
   if (position.api_version !== "termination-position-signals-v1") return null;
-  const signals = array(position.signals).slice(
-    0,
-    TERMINATION_POSITION_SIGNAL_MAX,
-  ).map(record);
+  const signals = array(position.signals)
+    .slice(0, TERMINATION_POSITION_SIGNAL_MAX)
+    .map(record);
   const coverage = record(position.coverage);
   return {
     apiVersion: position.api_version,
@@ -842,25 +971,26 @@ export function terminationPositionEvidence(value) {
       signals.length,
     supportedRuleCount: citationInteger(coverage.supported_rule_count),
     limits: record(position.limits),
-    limitations: array(position.limitations).filter((item) =>
-      typeof item === "string"
-    ).slice(0, 10),
+    limitations: array(position.limitations)
+      .filter((item) => typeof item === "string")
+      .slice(0, 10),
   };
 }
 
 export function terminationSignalHasLocalLinkage(value) {
   const support = record(record(value).observed_support);
-  return typeof support.text === "string" &&
-    LOCAL_TERMINATION_TERM_PATTERN.test(support.text);
+  return (
+    typeof support.text === "string" &&
+    LOCAL_TERMINATION_TERM_PATTERN.test(support.text)
+  );
 }
 
 export function assignmentPositionEvidence(value) {
   const position = record(value);
   if (position.api_version !== "assignment-position-signals-v1") return null;
-  const signals = array(position.signals).slice(
-    0,
-    ASSIGNMENT_POSITION_SIGNAL_MAX,
-  ).map(record);
+  const signals = array(position.signals)
+    .slice(0, ASSIGNMENT_POSITION_SIGNAL_MAX)
+    .map(record);
   const coverage = record(position.coverage);
   return {
     apiVersion: position.api_version,
@@ -876,9 +1006,9 @@ export function assignmentPositionEvidence(value) {
       signals.length,
     supportedRuleCount: citationInteger(coverage.supported_rule_count),
     limits: record(position.limits),
-    limitations: array(position.limitations).filter((item) =>
-      typeof item === "string"
-    ).slice(0, 10),
+    limitations: array(position.limitations)
+      .filter((item) => typeof item === "string")
+      .slice(0, 10),
   };
 }
 
@@ -887,10 +1017,9 @@ export function governingLawPositionEvidence(value) {
   if (position.api_version !== "governing-law-position-signals-v1") {
     return null;
   }
-  const signals = array(position.signals).slice(
-    0,
-    GOVERNING_LAW_POSITION_SIGNAL_MAX,
-  ).map(record);
+  const signals = array(position.signals)
+    .slice(0, GOVERNING_LAW_POSITION_SIGNAL_MAX)
+    .map(record);
   const coverage = record(position.coverage);
   return {
     apiVersion: position.api_version,
@@ -906,9 +1035,37 @@ export function governingLawPositionEvidence(value) {
       signals.length,
     supportedRuleCount: citationInteger(coverage.supported_rule_count),
     limits: record(position.limits),
-    limitations: array(position.limitations).filter((item) =>
-      typeof item === "string"
-    ).slice(0, 10),
+    limitations: array(position.limitations)
+      .filter((item) => typeof item === "string")
+      .slice(0, 10),
+  };
+}
+
+export function indemnityPositionEvidence(value) {
+  const position = record(value);
+  if (position.api_version !== "indemnity-position-signals-v1") return null;
+  const signals = array(position.signals)
+    .slice(0, INDEMNITY_POSITION_SIGNAL_MAX)
+    .map(record);
+  const coverage = record(position.coverage);
+  return {
+    apiVersion: position.api_version,
+    applicable: position.applicable === true,
+    reason: typeof position.reason === "string" ? position.reason : null,
+    detectorVersion: typeof position.detector_version === "string"
+      ? position.detector_version
+      : null,
+    scope: typeof position.scope === "string" ? position.scope : null,
+    analysisWindow: record(position.analysis_window),
+    eligibility: record(position.eligibility),
+    signals,
+    matchedSignalCount: citationInteger(coverage.matched_signal_count) ??
+      signals.length,
+    supportedRuleCount: citationInteger(coverage.supported_rule_count),
+    limits: record(position.limits),
+    limitations: array(position.limitations)
+      .filter((item) => typeof item === "string")
+      .slice(0, 10),
   };
 }
 
@@ -916,17 +1073,20 @@ export function observedDurationEntries(value) {
   const packet = record(value);
   if (packet.schema !== TERMINATION_DURATION_CANDIDATE_SCHEMA) return [];
   const seen = new Set();
-  return array(packet.duration_terms).slice(0, 4).map((item) => {
-    const candidate = record(item);
-    return typeof candidate.observed_text === "string"
-      ? candidate.observed_text
-      : null;
-  }).filter((candidate) => {
-    if (!candidate) return false;
-    const normalized = candidate.replace(/\s+/gu, " ").trim().toLowerCase();
-    if (!normalized || seen.has(normalized)) return false;
-    seen.add(normalized);
-    return true;
+  return array(packet.duration_terms)
+    .slice(0, 4)
+    .map((item) => {
+      const candidate = record(item);
+      return typeof candidate.observed_text === "string"
+        ? candidate.observed_text
+        : null;
+    })
+    .filter((candidate) => {
+      if (!candidate) return false;
+      const normalized = candidate.replace(/\s+/gu, " ").trim().toLowerCase();
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
   });
 }
 
@@ -935,17 +1095,20 @@ function observedValueCandidateEntries(value) {
   if (!LIABILITY_VALUE_CANDIDATE_SCHEMAS.has(packet.schema)) return [];
   return LIABILITY_VALUE_CANDIDATE_CATEGORIES.map(([key, label]) => {
     const seen = new Set();
-    const values = array(packet[key]).slice(0, 8).map((item) => {
-      const candidate = record(item);
-      return typeof candidate.observed_text === "string"
-        ? candidate.observed_text
-        : null;
-    }).filter((candidate) => {
-      if (!candidate) return false;
-      const normalized = candidate.replace(/\s+/gu, " ").trim().toLowerCase();
-      if (!normalized || seen.has(normalized)) return false;
-      seen.add(normalized);
-      return true;
+    const values = array(packet[key])
+      .slice(0, 8)
+      .map((item) => {
+        const candidate = record(item);
+        return typeof candidate.observed_text === "string"
+          ? candidate.observed_text
+          : null;
+      })
+      .filter((candidate) => {
+        if (!candidate) return false;
+        const normalized = candidate.replace(/\s+/gu, " ").trim().toLowerCase();
+        if (!normalized || seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
     });
     return { key, label, values };
   }).filter((entry) => entry.values.length);
@@ -1029,7 +1192,8 @@ function citationAnchorContext(value) {
         UUID_PATTERN.test(context.anchor_clause_id)
       ? context.anchor_clause_id
       : null,
-    definition_candidates: array(context.definition_candidates).slice(0, 20)
+    definition_candidates: array(context.definition_candidates)
+      .slice(0, 20)
       .map((value) => {
         const definition = record(value);
         const observed = citationText(definition.definition, 4_000);
@@ -1073,7 +1237,8 @@ function citationAnchorContext(value) {
         };
       }),
     resolved_reference_targets: array(context.resolved_reference_targets)
-      .slice(0, 20).map((value) => {
+      .slice(0, 20)
+      .map((value) => {
         const reference = record(value);
         const target = citationText(reference.target_text, 8_000);
         return {
@@ -1135,7 +1300,8 @@ function citationAnchorContext(value) {
             : null,
         };
       }),
-    unresolved_references: array(context.unresolved_references).slice(0, 20)
+    unresolved_references: array(context.unresolved_references)
+      .slice(0, 20)
       .map((value) => {
         const reference = record(value);
         return {
@@ -1255,9 +1421,9 @@ function citationObservedValueCandidates(value) {
     },
   };
   for (const [key] of LIABILITY_VALUE_CANDIDATE_CATEGORIES) {
-    result[key] = array(packet[key]).slice(0, 8).map(
-      citationObservedValueCandidate,
-    );
+    result[key] = array(packet[key])
+      .slice(0, 8)
+      .map(citationObservedValueCandidate);
   }
   return result;
 }
@@ -1331,9 +1497,9 @@ function citationCommercialPosition(value) {
           : null,
         rule_id: typeof signal.rule_id === "string" ? signal.rule_id : null,
         generated_attributes: Object.fromEntries(
-          allowedAttributeKeys.filter((key) =>
-            typeof attributes[key] === "boolean"
-          ).map((key) => [key, attributes[key]]),
+          allowedAttributeKeys
+            .filter((key) => typeof attributes[key] === "boolean")
+            .map((key) => [key, attributes[key]]),
         ),
         observed_support: {
           text: supportText.text,
@@ -1411,9 +1577,9 @@ function citationObservedDurationCandidates(value) {
         document_char_start: citationInteger(window.document_char_start),
         document_char_end: citationInteger(window.document_char_end),
       },
-    duration_terms: array(packet.duration_terms).slice(0, 4).map(
-      citationObservedValueCandidate,
-    ),
+    duration_terms: array(packet.duration_terms)
+      .slice(0, 4)
+      .map(citationObservedValueCandidate),
     limits: {
       maximum_candidates: citationInteger(limits.maximum_candidates),
       candidate_values_are_legal_conclusions:
@@ -1477,9 +1643,9 @@ function citationTerminationPosition(value) {
           : null,
         rule_id: typeof signal.rule_id === "string" ? signal.rule_id : null,
         generated_attributes: Object.fromEntries(
-          allowedAttributeKeys.filter((key) =>
-            typeof attributes[key] === "boolean"
-          ).map((key) => [key, attributes[key]]),
+          allowedAttributeKeys
+            .filter((key) => typeof attributes[key] === "boolean")
+            .map((key) => [key, attributes[key]]),
         ),
         observed_support: {
           text: supportText.text,
@@ -1594,9 +1760,9 @@ function citationAssignmentPosition(value) {
           : null,
         rule_id: typeof signal.rule_id === "string" ? signal.rule_id : null,
         generated_attributes: Object.fromEntries(
-          allowedAttributeKeys.filter((key) =>
-            typeof attributes[key] === "boolean"
-          ).map((key) => [key, attributes[key]]),
+          allowedAttributeKeys
+            .filter((key) => typeof attributes[key] === "boolean")
+            .map((key) => [key, attributes[key]]),
         ),
         observed_support: {
           text: supportText.text,
@@ -1713,9 +1879,9 @@ function citationGoverningLawPosition(value) {
           : null,
         rule_id: typeof signal.rule_id === "string" ? signal.rule_id : null,
         generated_attributes: Object.fromEntries(
-          allowedAttributeKeys.filter((key) =>
-            typeof attributes[key] === "boolean"
-          ).map((key) => [key, attributes[key]]),
+          allowedAttributeKeys
+            .filter((key) => typeof attributes[key] === "boolean")
+            .map((key) => [key, attributes[key]]),
         ),
         observed_support: {
           text: supportText.text,
@@ -1779,6 +1945,144 @@ function citationGoverningLawPosition(value) {
   };
 }
 
+function citationIndemnityPosition(value) {
+  const position = indemnityPositionEvidence(value);
+  if (!position) return null;
+  const allowedAttributeKeys = [
+    "facially_bilateral_language_present",
+    "on_demand_language_present",
+    "losses_language_present",
+    "liability_cap_reference_present",
+    "insurance_language_present",
+    "negligence_or_misconduct_language_present",
+  ];
+  const window = position.analysisWindow;
+  return {
+    schema: "esheria.indemnity-position-signals.v1",
+    applicable: position.applicable,
+    reason: position.reason,
+    detector_version: position.detectorVersion,
+    scope: position.scope,
+    analysis_window: {
+      text_basis: window.text_basis === "observed" ? "observed" : null,
+      sha256: typeof window.sha256 === "string" ? window.sha256 : null,
+      clause_char_start: citationInteger(window.clause_char_start),
+      clause_char_end: citationInteger(window.clause_char_end),
+      clause_character_count: citationInteger(window.clause_character_count),
+      truncated_before: window.truncated_before === true,
+      truncated_after: window.truncated_after === true,
+      centered_on_theme_support: window.centered_on_theme_support === true,
+    },
+    eligibility: {
+      theme: typeof position.eligibility.theme === "string"
+        ? position.eligibility.theme
+        : null,
+      theme_basis: typeof position.eligibility.theme_basis === "string"
+        ? position.eligibility.theme_basis
+        : null,
+      taxonomy_version:
+        typeof position.eligibility.taxonomy_version === "string"
+          ? position.eligibility.taxonomy_version
+          : null,
+      generated_by: typeof position.eligibility.generated_by === "string"
+        ? position.eligibility.generated_by
+        : null,
+      support_method: typeof position.eligibility.support_method === "string"
+        ? position.eligibility.support_method
+        : null,
+      theme_support_sha256:
+        typeof position.eligibility.theme_support_sha256 === "string"
+          ? position.eligibility.theme_support_sha256
+          : null,
+    },
+    signals: position.signals.map((value) => {
+      const signal = record(value);
+      const attributes = record(signal.generated_attributes);
+      const support = record(signal.observed_support);
+      const supportText = citationText(support.text, 2_000);
+      const matchedText = citationText(support.matched_text, 600);
+      return {
+        signal_key: typeof signal.signal_key === "string"
+          ? signal.signal_key
+          : null,
+        label: typeof signal.label === "string" ? signal.label : null,
+        signal_basis: typeof signal.signal_basis === "string"
+          ? signal.signal_basis
+          : null,
+        confidence: Number.isFinite(Number(signal.confidence))
+          ? Number(signal.confidence)
+          : null,
+        detector_version: typeof signal.detector_version === "string"
+          ? signal.detector_version
+          : null,
+        rule_id: typeof signal.rule_id === "string" ? signal.rule_id : null,
+        generated_attributes: Object.fromEntries(
+          allowedAttributeKeys
+            .filter((key) => typeof attributes[key] === "boolean")
+            .map((key) => [key, attributes[key]]),
+        ),
+        observed_support: {
+          text: supportText.text,
+          text_truncated: supportText.truncated,
+          sha256: typeof support.sha256 === "string" ? support.sha256 : null,
+          text_basis: support.text_basis === "observed" ? "observed" : null,
+          clause_char_start: citationInteger(support.clause_char_start),
+          clause_char_end: citationInteger(support.clause_char_end),
+          document_char_start: citationInteger(support.document_char_start),
+          document_char_end: citationInteger(support.document_char_end),
+          matched_text: matchedText.text,
+          matched_text_truncated: matchedText.truncated,
+          matched_text_sha256: typeof support.matched_text_sha256 === "string"
+            ? support.matched_text_sha256
+            : null,
+          matched_clause_char_start: citationInteger(
+            support.matched_clause_char_start,
+          ),
+          matched_clause_char_end: citationInteger(
+            support.matched_clause_char_end,
+          ),
+          bounded_excerpt: support.bounded_excerpt === true,
+        },
+        anchor_clause_id: typeof signal.anchor_clause_id === "string" &&
+            UUID_PATTERN.test(signal.anchor_clause_id)
+          ? signal.anchor_clause_id
+          : null,
+        anchor_clause_sha256: typeof signal.anchor_clause_sha256 === "string"
+          ? signal.anchor_clause_sha256
+          : null,
+      };
+    }),
+    coverage: {
+      matched_signal_count: position.matchedSignalCount,
+      supported_rule_count: position.supportedRuleCount,
+    },
+    limits: {
+      maximum_signals: citationInteger(position.limits.maximum_signals),
+      analysis_window_maximum_characters: citationInteger(
+        position.limits.analysis_window_maximum_characters,
+      ),
+      support_maximum_characters: citationInteger(
+        position.limits.support_maximum_characters,
+      ),
+      support_is_bounded_excerpt:
+        position.limits.support_is_bounded_excerpt === true,
+      absence_is_not_evidence_of_absence:
+        position.limits.absence_is_not_evidence_of_absence === true,
+      signals_are_legal_conclusions:
+        position.limits.signals_are_legal_conclusions === true,
+      party_entitlement_is_determined:
+        position.limits.party_entitlement_is_determined === true,
+      claim_coverage_is_determined:
+        position.limits.claim_coverage_is_determined === true,
+      enforceability_is_determined:
+        position.limits.enforceability_is_determined === true,
+      exceptions_outside_support_may_apply:
+        position.limits.exceptions_outside_support_may_apply === true,
+    },
+    limitations: position.limitations,
+  };
+}
+
 export function buildCitationManifest({
   query = "",
   kind = "",
@@ -1808,7 +2112,8 @@ export function buildCitationManifest({
     const evidence = record(entry.evidence);
     const selectionKey = comparisonSelectionKey(selection);
     if (
-      !selectionKey || evidence.anchor?.id !== selection.clause_id ||
+      !selectionKey ||
+      evidence.anchor?.id !== selection.clause_id ||
       typeof evidence.anchor?.observed_text !== "string"
     ) {
       throw new TypeError(
@@ -1841,9 +2146,9 @@ export function buildCitationManifest({
         slug: typeof sourceRecord.slug === "string" ? sourceRecord.slug : null,
         name: typeof sourceRecord.observed_name === "string"
           ? sourceRecord.observed_name
-          : (typeof selection.source_name === "string"
-            ? selection.source_name
-            : null),
+          : typeof selection.source_name === "string"
+          ? selection.source_name
+          : null,
         publisher: typeof sourceRecord.observed_publisher === "string"
           ? sourceRecord.observed_publisher
           : null,
@@ -1868,14 +2173,14 @@ export function buildCitationManifest({
         id: selection.agreement_id,
         title: typeof agreement.observed_title === "string"
           ? agreement.observed_title
-          : (typeof selection.observed_title === "string"
-            ? selection.observed_title
-            : null),
+          : typeof selection.observed_title === "string"
+          ? selection.observed_title
+          : null,
         document_kind: typeof agreement.document_kind === "string"
           ? agreement.document_kind
-          : (typeof selection.document_kind === "string"
-            ? selection.document_kind
-            : null),
+          : typeof selection.document_kind === "string"
+          ? selection.document_kind
+          : null,
         document_kind_basis: typeof agreement.document_kind_basis === "string"
           ? agreement.document_kind_basis
           : null,
@@ -1920,11 +2225,12 @@ export function buildCitationManifest({
       governing_law_position: citationGoverningLawPosition(
         evidence.governingLawPosition,
       ),
+      indemnity_position: citationIndemnityPosition(evidence.indemnityPosition),
     };
   });
 
   return {
-    schema: "esheria.contract-citations.v8",
+    schema: "esheria.contract-citations.v9",
     generated_at: timestamp.toISOString(),
     retrieval_scope: {
       query: normalizedQuery || null,
@@ -1936,7 +2242,7 @@ export function buildCitationManifest({
       "This export contains only the selected published evidence and bounded context; it is not a representative market sample.",
       "Observed wording is evidence. Generated classifications, themes, summaries and date types are interpretations, not source facts.",
       "Definition-use matching and target resolution are generated navigation aids; unresolved references are preserved rather than guessed.",
-      "Commercial, termination, assignment/change-of-control and governing-law/forum position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
+      "Commercial, termination, assignment/change-of-control, governing-law/forum and indemnity position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
       "Cap-value candidates are exact lexical tokens from bounded observed support, not normalized amounts or interpreted liability caps.",
       "Verify the recorded source, completeness, amendments and governing law before legal or commercial reliance.",
     ],
@@ -2119,7 +2425,9 @@ export function buildLiabilityPositionMatrixCsv({
       if (
         typeof signal.signal_key === "string" &&
         !signalMap.has(signal.signal_key)
-      ) signalMap.set(signal.signal_key, signal);
+      ) {
+        signalMap.set(signal.signal_key, signal);
+      }
     }
     const row = {
       matrix_schema: LIABILITY_POSITION_MATRIX_SCHEMA,
@@ -2174,7 +2482,11 @@ export function buildLiabilityPositionMatrixCsv({
     };
 
     for (
-      const { key, prefix, attributes } of LIABILITY_POSITION_MATRIX_SIGNALS
+      const {
+        key,
+        prefix,
+        attributes,
+      } of LIABILITY_POSITION_MATRIX_SIGNALS
     ) {
       const signal = signalMap.get(key);
       const generatedAttributes = record(signal?.generated_attributes);
@@ -2215,10 +2527,10 @@ export function buildLiabilityPositionMatrixCsv({
             displayedCandidates.get(category),
           ).join(" | ");
         }
-        row[`${prefix}_observed_value_candidates_json`] = signal
-            ?.observed_value_candidates
-          ? JSON.stringify(signal.observed_value_candidates)
-          : null;
+        row[`${prefix}_observed_value_candidates_json`] =
+          signal?.observed_value_candidates
+            ? JSON.stringify(signal.observed_value_candidates)
+            : null;
       }
     }
 
@@ -2477,12 +2789,14 @@ export function buildTerminationPositionMatrixCsv({
         duration_candidate_extractor_version:
           durationPacket.value_extractor_version,
         duration_candidate_count: durationTerms.length,
-        observed_duration_terms: durationTerms.map((value) =>
-          record(value).observed_text
-        ).filter((value) => typeof value === "string").join(" | "),
-        observed_duration_candidate_hashes: durationTerms.map((value) =>
-          record(value).sha256
-        ).filter((value) => typeof value === "string").join(" | "),
+        observed_duration_terms: durationTerms
+          .map((value) => record(value).observed_text)
+          .filter((value) => typeof value === "string")
+          .join(" | "),
+        observed_duration_candidate_hashes: durationTerms
+          .map((value) => record(value).sha256)
+          .filter((value) => typeof value === "string")
+          .join(" | "),
         observed_duration_candidates_json: hasSignal
           ? JSON.stringify(signal.observed_duration_candidates ?? null)
           : null,
@@ -3047,7 +3361,305 @@ export function buildGoverningLawPositionMatrixCsv({
       ...rows.map((row) =>
         GOVERNING_LAW_POSITION_MATRIX_COLUMNS.map((column) =>
           csvCell(row[column])
-        )
+        ).join(",")
+      ),
+    ].join("\r\n")
+  }\r\n`;
+}
+
+const INDEMNITY_POSITION_MATRIX_COLUMNS = Object.freeze([
+  "matrix_schema",
+  "generated_at",
+  "retrieval_query",
+  "document_kind_filter",
+  "source_filter",
+  "selected_count",
+  "citation_number",
+  "signal_row_number",
+  "retrieval_rank",
+  "observed_published_at",
+  "source_slug",
+  "source_name",
+  "source_publisher",
+  "source_external_id",
+  "source_url",
+  "source_terms_url",
+  "source_policy_assessment_status",
+  "source_human_review_required",
+  "agreement_id",
+  "agreement_title",
+  "agreement_document_kind",
+  "agreement_document_kind_basis",
+  "artifact_sha256",
+  "extraction_method",
+  "extraction_version",
+  "agreement_text_basis",
+  "clause_id",
+  "clause_sequence",
+  "clause_heading",
+  "clause_text_basis",
+  "clause_text_sha256",
+  "clause_location",
+  "clause_char_start",
+  "clause_char_end",
+  "observed_clause_text",
+  "observed_clause_text_truncated",
+  "generated_clause_type",
+  "position_schema",
+  "position_applicable",
+  "position_reason",
+  "detector_version",
+  "detector_scope",
+  "matched_signal_count",
+  "supported_rule_count",
+  "eligibility_theme",
+  "eligibility_theme_basis",
+  "eligibility_taxonomy_version",
+  "eligibility_generated_by",
+  "eligibility_support_method",
+  "eligibility_theme_support_sha256",
+  "analysis_window_text_basis",
+  "analysis_window_sha256",
+  "analysis_window_clause_char_start",
+  "analysis_window_clause_char_end",
+  "analysis_window_clause_character_count",
+  "analysis_window_truncated_before",
+  "analysis_window_truncated_after",
+  "analysis_window_centered_on_theme_support",
+  "detector_match",
+  "signal_key",
+  "signal_label",
+  "signal_basis",
+  "signal_confidence",
+  "signal_rule_id",
+  "facially_bilateral_language_present",
+  "on_demand_language_present",
+  "losses_language_present",
+  "liability_cap_reference_present",
+  "insurance_language_present",
+  "negligence_or_misconduct_language_present",
+  "observed_support",
+  "support_text_truncated",
+  "support_text_basis",
+  "support_sha256",
+  "support_clause_char_start",
+  "support_clause_char_end",
+  "support_document_char_start",
+  "support_document_char_end",
+  "matched_text",
+  "matched_text_truncated",
+  "matched_text_sha256",
+  "matched_clause_char_start",
+  "matched_clause_char_end",
+  "support_is_bounded_excerpt",
+  "support_maximum_characters",
+  "analysis_window_maximum_characters",
+  "anchor_clause_id",
+  "anchor_clause_sha256",
+  "absence_is_not_evidence_of_absence",
+  "signals_are_legal_conclusions",
+  "party_entitlement_is_determined",
+  "claim_coverage_is_determined",
+  "enforceability_is_determined",
+  "exceptions_outside_support_may_apply",
+  "position_limitations",
+  "export_limitations",
+]);
+
+export function buildIndemnityPositionMatrixCsv({
+  query = "",
+  kind = "",
+  source = "",
+  entries = [],
+  generatedAt = new Date().toISOString(),
+} = {}) {
+  const manifest = buildCitationManifest({
+    query,
+    kind,
+    source,
+    entries,
+    generatedAt,
+  });
+  const scope = manifest.retrieval_scope;
+  const exportLimitations = [
+    ...manifest.limitations,
+    "Each row represents one generated indemnity signal; clauses with no supported signal produce one non-match row.",
+    "The detector does not determine the indemnifying party, covered loss, claim validity, cap interaction, remedy exclusivity or enforceability.",
+  ];
+  const rows = manifest.citations.flatMap((citation) => {
+    const agreement = record(citation.agreement);
+    const clause = record(citation.matched_clause);
+    const clauseLocation = record(clause.location);
+    const interpretation = record(clause.generated_interpretation);
+    const sourceRecord = record(citation.source);
+    const retrieval = record(citation.retrieval);
+    const position = record(citation.indemnity_position);
+    const coverage = record(position.coverage);
+    const eligibility = record(position.eligibility);
+    const analysisWindow = record(position.analysis_window);
+    const limits = record(position.limits);
+    const positionApplicable = typeof position.applicable === "boolean"
+      ? position.applicable
+      : null;
+    const signals = array(position.signals).slice(
+      0,
+      INDEMNITY_POSITION_SIGNAL_MAX,
+    );
+    const signalRows = signals.length ? signals : [null];
+
+    return signalRows.map((signalValue, signalIndex) => {
+      const signal = record(signalValue);
+      const attributes = record(signal.generated_attributes);
+      const support = record(signal.observed_support);
+      const hasSignal = typeof signal.signal_key === "string";
+      return {
+        matrix_schema: INDEMNITY_POSITION_MATRIX_SCHEMA,
+        generated_at: manifest.generated_at,
+        retrieval_query: scope.query,
+        document_kind_filter: scope.document_kind,
+        source_filter: scope.source,
+        selected_count: scope.selected_count,
+        citation_number: citation.citation_number,
+        signal_row_number: hasSignal ? signalIndex + 1 : null,
+        retrieval_rank: retrieval.rank,
+        observed_published_at: retrieval.observed_published_at,
+        source_slug: sourceRecord.slug,
+        source_name: sourceRecord.name,
+        source_publisher: sourceRecord.publisher,
+        source_external_id: sourceRecord.external_id,
+        source_url: sourceRecord.canonical_url,
+        source_terms_url: sourceRecord.terms_url,
+        source_policy_assessment_status: sourceRecord.policy_assessment_status,
+        source_human_review_required: matrixBoolean(
+          sourceRecord.human_review_required,
+        ),
+        agreement_id: agreement.id,
+        agreement_title: agreement.title,
+        agreement_document_kind: agreement.document_kind,
+        agreement_document_kind_basis: agreement.document_kind_basis,
+        artifact_sha256: agreement.artifact_sha256,
+        extraction_method: agreement.extraction_method,
+        extraction_version: agreement.extraction_version,
+        agreement_text_basis: agreement.text_basis,
+        clause_id: clause.id,
+        clause_sequence: clause.sequence,
+        clause_heading: clause.heading,
+        clause_text_basis: clause.text_basis,
+        clause_text_sha256: clause.observed_text_sha256,
+        clause_location: clauseLocation.display,
+        clause_char_start: clauseLocation.char_start,
+        clause_char_end: clauseLocation.char_end,
+        observed_clause_text: clause.observed_text,
+        observed_clause_text_truncated: matrixBoolean(
+          clause.observed_text_truncated,
+        ),
+        generated_clause_type: interpretation.clause_type,
+        position_schema: position.schema,
+        position_applicable: matrixBoolean(positionApplicable),
+        position_reason: position.reason,
+        detector_version: position.detector_version,
+        detector_scope: position.scope,
+        matched_signal_count: coverage.matched_signal_count,
+        supported_rule_count: coverage.supported_rule_count,
+        eligibility_theme: eligibility.theme,
+        eligibility_theme_basis: eligibility.theme_basis,
+        eligibility_taxonomy_version: eligibility.taxonomy_version,
+        eligibility_generated_by: eligibility.generated_by,
+        eligibility_support_method: eligibility.support_method,
+        eligibility_theme_support_sha256: eligibility.theme_support_sha256,
+        analysis_window_text_basis: analysisWindow.text_basis,
+        analysis_window_sha256: analysisWindow.sha256,
+        analysis_window_clause_char_start: analysisWindow.clause_char_start,
+        analysis_window_clause_char_end: analysisWindow.clause_char_end,
+        analysis_window_clause_character_count:
+          analysisWindow.clause_character_count,
+        analysis_window_truncated_before: matrixBoolean(
+          analysisWindow.truncated_before,
+        ),
+        analysis_window_truncated_after: matrixBoolean(
+          analysisWindow.truncated_after,
+        ),
+        analysis_window_centered_on_theme_support: matrixBoolean(
+          analysisWindow.centered_on_theme_support,
+        ),
+        detector_match: hasSignal
+          ? "TRUE"
+          : positionApplicable === true
+          ? "FALSE"
+          : "",
+        signal_key: signal.signal_key,
+        signal_label: signal.label,
+        signal_basis: signal.signal_basis,
+        signal_confidence: signal.confidence,
+        signal_rule_id: signal.rule_id,
+        facially_bilateral_language_present: matrixBoolean(
+          attributes.facially_bilateral_language_present,
+        ),
+        on_demand_language_present: matrixBoolean(
+          attributes.on_demand_language_present,
+        ),
+        losses_language_present: matrixBoolean(
+          attributes.losses_language_present,
+        ),
+        liability_cap_reference_present: matrixBoolean(
+          attributes.liability_cap_reference_present,
+        ),
+        insurance_language_present: matrixBoolean(
+          attributes.insurance_language_present,
+        ),
+        negligence_or_misconduct_language_present: matrixBoolean(
+          attributes.negligence_or_misconduct_language_present,
+        ),
+        observed_support: support.text,
+        support_text_truncated: matrixBoolean(support.text_truncated),
+        support_text_basis: support.text_basis,
+        support_sha256: support.sha256,
+        support_clause_char_start: support.clause_char_start,
+        support_clause_char_end: support.clause_char_end,
+        support_document_char_start: support.document_char_start,
+        support_document_char_end: support.document_char_end,
+        matched_text: support.matched_text,
+        matched_text_truncated: matrixBoolean(support.matched_text_truncated),
+        matched_text_sha256: support.matched_text_sha256,
+        matched_clause_char_start: support.matched_clause_char_start,
+        matched_clause_char_end: support.matched_clause_char_end,
+        support_is_bounded_excerpt: matrixBoolean(
+          limits.support_is_bounded_excerpt,
+        ),
+        support_maximum_characters: limits.support_maximum_characters,
+        analysis_window_maximum_characters:
+          limits.analysis_window_maximum_characters,
+        anchor_clause_id: signal.anchor_clause_id,
+        anchor_clause_sha256: signal.anchor_clause_sha256,
+        absence_is_not_evidence_of_absence: matrixBoolean(
+          limits.absence_is_not_evidence_of_absence,
+        ),
+        signals_are_legal_conclusions: matrixBoolean(
+          limits.signals_are_legal_conclusions,
+        ),
+        party_entitlement_is_determined: matrixBoolean(
+          limits.party_entitlement_is_determined,
+        ),
+        claim_coverage_is_determined: matrixBoolean(
+          limits.claim_coverage_is_determined,
+        ),
+        enforceability_is_determined: matrixBoolean(
+          limits.enforceability_is_determined,
+        ),
+        exceptions_outside_support_may_apply: matrixBoolean(
+          limits.exceptions_outside_support_may_apply,
+        ),
+        position_limitations: array(position.limitations).join(" | "),
+        export_limitations: exportLimitations.join(" | "),
+      };
+    });
+  });
+
+  return `\uFEFF${
+    [
+      INDEMNITY_POSITION_MATRIX_COLUMNS.map(csvCell).join(","),
+      ...rows.map((row) =>
+        INDEMNITY_POSITION_MATRIX_COLUMNS.map((column) => csvCell(row[column]))
           .join(",")
       ),
     ].join("\r\n")
@@ -3137,9 +3749,7 @@ export async function requestJson(
             ? record(payload).request_id
             : null,
         );
-        if (
-          attempt === 0 && RETRYABLE_RESPONSE_STATUSES.has(response.status)
-        ) {
+        if (attempt === 0 && RETRYABLE_RESPONSE_STATUSES.has(response.status)) {
           await waitImpl(RETRY_DELAY_MS);
           continue;
         }
@@ -3241,6 +3851,16 @@ const ASSIGNMENT_ATTRIBUTE_LABELS = Object.freeze({
   change_of_control_language_present: "Change-of-control wording appears",
 });
 
+const INDEMNITY_ATTRIBUTE_LABELS = Object.freeze({
+  facially_bilateral_language_present: "Facially bilateral wording appears",
+  on_demand_language_present: "On-demand wording appears",
+  losses_language_present: "Loss, damage, liability or cost wording appears",
+  liability_cap_reference_present: "Liability-cap reference appears",
+  insurance_language_present: "Insurance wording appears",
+  negligence_or_misconduct_language_present:
+    "Negligence, misconduct, fraud or omission wording appears",
+});
+
 function positionAttributeEntries(value) {
   const attributes = record(value);
   return Object.entries(POSITION_ATTRIBUTE_LABELS)
@@ -3258,6 +3878,13 @@ function terminationAttributeEntries(value) {
 function assignmentAttributeEntries(value) {
   const attributes = record(value);
   return Object.entries(ASSIGNMENT_ATTRIBUTE_LABELS)
+    .filter(([key]) => typeof attributes[key] === "boolean")
+    .map(([key, label]) => [label, attributes[key] ? "Yes" : "No"]);
+}
+
+function indemnityAttributeEntries(value) {
+  const attributes = record(value);
+  return Object.entries(INDEMNITY_ATTRIBUTE_LABELS)
     .filter(([key]) => typeof attributes[key] === "boolean")
     .map(([key, label]) => [label, attributes[key] ? "Yes" : "No"]);
 }
@@ -3415,6 +4042,10 @@ function boot() {
     governingLawKind: "",
     governingLawSource: "",
     governingLawLoading: false,
+    indemnitySignal: "",
+    indemnityKind: "",
+    indemnitySource: "",
+    indemnityLoading: false,
   };
 
   const authView = byId("auth-view");
@@ -3464,6 +4095,13 @@ function boot() {
   const governingLawButton = byId("governing-law-submit");
   const governingLawFacets = byId("governing-law-facets");
   const governingLawStatus = byId("governing-law-status");
+  const indemnityForm = byId("indemnity-form");
+  const indemnitySignalInput = byId("indemnity-signal");
+  const indemnityKindInput = byId("indemnity-kind");
+  const indemnitySourceInput = byId("indemnity-source");
+  const indemnityButton = byId("indemnity-submit");
+  const indemnityFacets = byId("indemnity-facets");
+  const indemnityStatus = byId("indemnity-status");
   const partySearchForm = byId("party-search-form");
   const partyQueryInput = byId("party-query");
   const partyKindInput = byId("party-kind");
@@ -3495,9 +4133,8 @@ function boot() {
   const exportPositionMatrixButton = byId("export-position-matrix");
   const exportTerminationMatrixButton = byId("export-termination-matrix");
   const exportAssignmentMatrixButton = byId("export-assignment-matrix");
-  const exportGoverningLawMatrixButton = byId(
-    "export-governing-law-matrix",
-  );
+  const exportGoverningLawMatrixButton = byId("export-governing-law-matrix");
+  const exportIndemnityMatrixButton = byId("export-indemnity-matrix");
   const exportComparisonButton = byId("export-comparison");
   const exportStatus = byId("comparison-export-status");
   const detailDialog = byId("detail-dialog");
@@ -3571,12 +4208,14 @@ function boot() {
     state.governingLawKind = "";
     state.governingLawSource = "";
     state.governingLawLoading = false;
+    state.indemnitySignal = "";
+    state.indemnityKind = "";
+    state.indemnitySource = "";
+    state.indemnityLoading = false;
     state.resultMode = "search";
     state.clauseParty = "";
     positionForm.reset();
-    positionFacets.replaceChildren(
-      element("span", "", "Available evidence:"),
-    );
+    positionFacets.replaceChildren(element("span", "", "Available evidence:"));
     positionStatus.textContent =
       "Browse supported signals across published, nonduplicate evidence.";
     terminationForm.reset();
@@ -3596,6 +4235,10 @@ function boot() {
       element("span", "", "Available evidence:"),
     );
     governingLawStatus.textContent =
+      "Browse positive wording matches across published, nonduplicate contracts and amendments.";
+    indemnityForm.reset();
+    indemnityFacets.replaceChildren(element("span", "", "Available evidence:"));
+    indemnityStatus.textContent =
       "Browse positive wording matches across published, nonduplicate contracts and amendments.";
     partyPrevious.disabled = true;
     partyNext.disabled = true;
@@ -3668,12 +4311,8 @@ function boot() {
     const partySummary = record(root.party_summary);
     const positionSummary = record(root.position_summary);
     const positionCurrent = record(positionSummary.current);
-    const positionLibrary = record(
-      positionSummary.published_position_library,
-    );
-    const positionSignalFacets = array(
-      positionSummary.published_signal_facets,
-    );
+    const positionLibrary = record(positionSummary.published_position_library);
+    const positionSignalFacets = array(positionSummary.published_signal_facets);
     const positionFeatureFacets = array(
       positionSummary.published_feature_facets,
     );
@@ -3743,129 +4382,153 @@ function boot() {
         : element("p", "muted", "No published document classes yet."),
     );
 
-    operations.replaceChildren(dataList([
-      ["Acquired source items", count(acquisition.source_items)],
-      ["Distinct artifacts", count(acquisition.distinct_content_artifacts)],
-      [
-        "All useful distinct agreements",
-        count(corpus.useful_distinct_agreements),
-      ],
-      ["Current extractions", count(corpus.current_extractions)],
-      [
-        "Searchable party observations",
-        `${count(partySummary.searchable_party_observations)} across ${
-          count(partySummary.searchable_agreements)
-        } agreements`,
-      ],
-      [
-        "Distinct observed party names",
-        count(partySummary.distinct_observed_names),
+    operations.replaceChildren(
+      dataList([
+        ["Acquired source items", count(acquisition.source_items)],
+        ["Distinct artifacts", count(acquisition.distinct_content_artifacts)],
+        [
+          "All useful distinct agreements",
+          count(corpus.useful_distinct_agreements),
+        ],
+        ["Current extractions", count(corpus.current_extractions)],
+        [
+          "Searchable party observations",
+          `${count(partySummary.searchable_party_observations)} across ${
+            count(
+              partySummary.searchable_agreements,
+            )
+          } agreements`,
+        ],
+        [
+          "Distinct observed party names",
+          count(partySummary.distinct_observed_names),
       ],
       [
         "Low-specificity party names",
-        count(partySummary.low_specificity_name_observations),
-      ],
-      [
-        "Liability position cache",
-        `${count(positionCurrent.cached_clauses)} / ${
-          count(positionCurrent.eligible_clauses)
-        } current clauses`,
-      ],
-      [
-        "Cached liability signals",
-        `${count(positionCurrent.signal_matches)} matches across ${
-          count(positionCurrent.clauses_with_matches)
-        } clauses`,
-      ],
-      [
-        "Published position library",
-        `${count(positionLibrary.matched_clauses)} clauses across ${
-          count(positionLibrary.distinct_agreements)
-        } agreements`,
-      ],
-      [
-        "Liability cache repair backlog",
-        Number(positionCurrent.missing_clauses) === 0
+          count(partySummary.low_specificity_name_observations),
+        ],
+        [
+          "Liability position cache",
+          `${count(positionCurrent.cached_clauses)} / ${
+            count(
+              positionCurrent.eligible_clauses,
+            )
+          } current clauses`,
+        ],
+        [
+          "Cached liability signals",
+          `${count(positionCurrent.signal_matches)} matches across ${
+            count(
+              positionCurrent.clauses_with_matches,
+            )
+          } clauses`,
+        ],
+        [
+          "Published position library",
+          `${count(positionLibrary.matched_clauses)} clauses across ${
+            count(
+              positionLibrary.distinct_agreements,
+            )
+          } agreements`,
+        ],
+        [
+          "Liability cache repair backlog",
+          Number(positionCurrent.missing_clauses) === 0
           ? "Complete"
-          : `${count(positionCurrent.missing_clauses)} missing`,
-      ],
-      [
-        "Termination position cache",
-        `${count(terminationCurrent.cached_clauses)} / ${
-          count(terminationCurrent.eligible_clauses)
-        } current clauses`,
-      ],
-      [
-        "Published termination library",
-        `${count(terminationLibrary.matched_clauses)} clauses across ${
-          count(terminationLibrary.distinct_agreements)
-        } agreements`,
-      ],
-      [
-        "Same-support termination evidence",
-        `${count(terminationLocalLinkageFacet.clauses)} clauses across ${
-          count(terminationLocalLinkageFacet.distinct_agreements)
-        } agreements`,
-      ],
-      [
-        "Termination cache repair backlog",
-        Number(terminationCurrent.missing_clauses) === 0
+            : `${count(positionCurrent.missing_clauses)} missing`,
+        ],
+        [
+          "Termination position cache",
+          `${count(terminationCurrent.cached_clauses)} / ${
+            count(
+              terminationCurrent.eligible_clauses,
+            )
+          } current clauses`,
+        ],
+        [
+          "Published termination library",
+          `${count(terminationLibrary.matched_clauses)} clauses across ${
+            count(
+              terminationLibrary.distinct_agreements,
+            )
+          } agreements`,
+        ],
+        [
+          "Same-support termination evidence",
+          `${count(terminationLocalLinkageFacet.clauses)} clauses across ${
+            count(
+              terminationLocalLinkageFacet.distinct_agreements,
+            )
+          } agreements`,
+        ],
+        [
+          "Termination cache repair backlog",
+          Number(terminationCurrent.missing_clauses) === 0
           ? "Complete"
-          : `${count(terminationCurrent.missing_clauses)} missing`,
-      ],
-      [
-        "Published assignment library",
-        `${count(assignmentLibrary.matched_clauses)} clauses across ${
-          count(assignmentLibrary.distinct_agreements)
-        } agreements`,
-      ],
-      [
-        "Assignment support coverage",
-        `${count(assignmentSurface.clauses_with_exact_detector_support)} / ${
-          count(assignmentSurface.clauses)
-        } theme clauses`,
-      ],
-      [
-        "Average extraction confidence",
-        displayText(quality.average_current_extraction_confidence),
-      ],
-      [
-        "Write-guarded clause offsets",
-        `${count(evidenceQuality.write_guarded_clauses_with_exact_offsets)} / ${
-          count(evidenceQuality.current_clauses)
-        }`,
-      ],
-      [
-        "Evidence checkpoint",
-        evidenceQuality.integrity_passed === true
-          ? "Passed (trigger-backed)"
-          : evidenceQuality.audit_stale === true
-          ? "Checkpoint or full audit stale"
-          : "Needs review",
-      ],
-      [
-        "Last fast checkpoint",
-        date(evidenceQuality.checkpointed_at),
-      ],
-      [
-        "Last full SHA audit",
-        date(evidenceQuality.full_audited_at || evidenceQuality.audited_at),
-      ],
-      [
-        "Full-audit clause coverage",
-        `${count(evidenceQuality.baseline_full_clause_hash_matches)} / ${
-          count(evidenceQuality.baseline_full_current_clauses)
-        }`,
-      ],
-      [
-        "Clause references",
-        `${count(evidenceQuality.resolved_clause_relationships)} resolved · ${
-          count(evidenceQuality.unresolved_clause_references)
-        } observed unresolved`,
-      ],
-      ["Last successful run", date(acquisition.last_successful_run_at)],
-      [
-        "Failed/dead-letter (30 days)",
+            : `${count(terminationCurrent.missing_clauses)} missing`,
+        ],
+        [
+          "Published assignment library",
+          `${count(assignmentLibrary.matched_clauses)} clauses across ${
+            count(
+              assignmentLibrary.distinct_agreements,
+            )
+          } agreements`,
+        ],
+        [
+          "Assignment support coverage",
+          `${count(assignmentSurface.clauses_with_exact_detector_support)} / ${
+            count(
+              assignmentSurface.clauses,
+            )
+          } theme clauses`,
+        ],
+        [
+          "Average extraction confidence",
+          displayText(quality.average_current_extraction_confidence),
+        ],
+        [
+          "Write-guarded clause offsets",
+          `${
+            count(evidenceQuality.write_guarded_clauses_with_exact_offsets)
+          } / ${
+            count(
+              evidenceQuality.current_clauses,
+            )
+          }`,
+        ],
+        [
+          "Evidence checkpoint",
+          evidenceQuality.integrity_passed === true
+            ? "Passed (trigger-backed)"
+            : evidenceQuality.audit_stale === true
+            ? "Checkpoint or full audit stale"
+            : "Needs review",
+        ],
+        ["Last fast checkpoint", date(evidenceQuality.checkpointed_at)],
+        [
+          "Last full SHA audit",
+          date(evidenceQuality.full_audited_at || evidenceQuality.audited_at),
+        ],
+        [
+          "Full-audit clause coverage",
+          `${count(evidenceQuality.baseline_full_clause_hash_matches)} / ${
+            count(
+              evidenceQuality.baseline_full_current_clauses,
+            )
+          }`,
+        ],
+        [
+          "Clause references",
+          `${count(evidenceQuality.resolved_clause_relationships)} resolved · ${
+            count(
+              evidenceQuality.unresolved_clause_references,
+            )
+          } observed unresolved`,
+        ],
+        ["Last successful run", date(acquisition.last_successful_run_at)],
+        [
+          "Failed/dead-letter (30 days)",
         count(failures.total_failed_or_dead_letter),
       ],
       [
@@ -3879,23 +4542,26 @@ function boot() {
           } (${count(record(failureGroups[0]).count)})`
           : "None",
       ],
-      ...sourceBreakdown.slice(0, 10).map((sourceValue) => {
-        const source = record(sourceValue);
-        return [
-          `Source · ${displayText(source.source_slug)}`,
-          `${count(source.useful_distinct_agreements)} useful · ${
-            count(source.current_clauses)
-          } clauses`,
-        ];
-      }),
-    ]));
+        ...sourceBreakdown.slice(0, 10).map((sourceValue) => {
+          const source = record(sourceValue);
+          return [
+            `Source · ${displayText(source.source_slug)}`,
+            `${count(source.useful_distinct_agreements)} useful · ${
+              count(
+                source.current_clauses,
+              )
+            } clauses`,
+          ];
+        }),
+      ]),
+    );
 
     summaryFreshness.textContent = `Snapshot generated ${
-      date(summary.generated_at)
+      date(
+        summary.generated_at,
+      )
     }.`;
-    positionFacets.replaceChildren(
-      element("span", "", "Available evidence:"),
-    );
+    positionFacets.replaceChildren(element("span", "", "Available evidence:"));
     for (const facetValue of positionSignalFacets) {
       const facet = record(facetValue);
       const signalKey = displayText(facet.signal_key);
@@ -3904,7 +4570,9 @@ function boot() {
         "button",
         "",
         `${LIABILITY_POSITION_SIGNAL_LABELS[signalKey]} · ${
-          count(facet.clauses)
+          count(
+            facet.clauses,
+          )
         } clauses / ${count(facet.distinct_agreements)} agreements`,
       );
       button.type = "button";
@@ -3925,7 +4593,9 @@ function boot() {
         "button",
         "",
         `${configured.label} · ${count(facet.clauses)} clauses / ${
-          count(facet.distinct_agreements)
+          count(
+            facet.distinct_agreements,
+          )
         } agreements`,
       );
       button.type = "button";
@@ -3968,9 +4638,13 @@ function boot() {
         })
         .join(" · ");
       positionStatus.textContent = `${
-        count(positionLibrary.matched_clauses)
+        count(
+          positionLibrary.matched_clauses,
+        )
       } detected clauses across ${
-        count(positionLibrary.distinct_agreements)
+        count(
+          positionLibrary.distinct_agreements,
+        )
       } agreements${
         sourceCoverage ? ` · ${sourceCoverage}` : ""
       }; generated coverage, not market prevalence.`;
@@ -3987,7 +4661,9 @@ function boot() {
         "button",
         "",
         `${label} · ${count(facet.clauses)} clauses / ${
-          count(facet.distinct_agreements)
+          count(
+            facet.distinct_agreements,
+          )
         } agreements`,
       );
       button.type = "button";
@@ -4002,7 +4678,9 @@ function boot() {
         "button",
         "",
         `Exact duration candidates · ${
-          count(terminationDurationFacet.clauses)
+          count(
+            terminationDurationFacet.clauses,
+          )
         } clauses`,
       );
       button.type = "button";
@@ -4017,7 +4695,9 @@ function boot() {
         "button",
         "",
         `Explicit termination term in same support · ${
-          count(terminationLocalLinkageFacet.clauses)
+          count(
+            terminationLocalLinkageFacet.clauses,
+          )
         } clauses`,
       );
       button.type = "button";
@@ -4036,9 +4716,13 @@ function boot() {
         })
         .join(" · ");
       terminationStatus.textContent = `${
-        count(terminationLibrary.matched_clauses)
+        count(
+          terminationLibrary.matched_clauses,
+        )
       } detected clauses across ${
-        count(terminationLibrary.distinct_agreements)
+        count(
+          terminationLibrary.distinct_agreements,
+        )
       } useful agreements${
         sourceCoverage ? ` · ${sourceCoverage}` : ""
       }; generated wording coverage, not legal conclusions.`;
@@ -4055,7 +4739,9 @@ function boot() {
         "button",
         "",
         `${label} · ${count(facet.clauses)} clauses / ${
-          count(facet.distinct_agreements)
+          count(
+            facet.distinct_agreements,
+          )
         } agreements`,
       );
       button.type = "button";
@@ -4073,7 +4759,9 @@ function boot() {
         "button",
         "",
         `${displayText(facet.label)} · ${count(facet.clauses)} clauses / ${
-          count(facet.distinct_agreements)
+          count(
+            facet.distinct_agreements,
+          )
         } agreements`,
       );
       button.type = "button";
@@ -4092,9 +4780,13 @@ function boot() {
         })
         .join(" · ");
       assignmentStatus.textContent = `${
-        count(assignmentLibrary.matched_clauses)
+        count(
+          assignmentLibrary.matched_clauses,
+        )
       } detected clauses across ${
-        count(assignmentLibrary.distinct_agreements)
+        count(
+          assignmentLibrary.distinct_agreements,
+        )
       } useful agreements${
         sourceCoverage ? ` · ${sourceCoverage}` : ""
       }; generated wording coverage, not party entitlement or a legal conclusion.`;
@@ -4136,7 +4828,9 @@ function boot() {
         "button",
         "",
         `${label} · ${count(facet.clauses)} clauses / ${
-          count(facet.distinct_agreements)
+          count(
+            facet.distinct_agreements,
+          )
         } agreements`,
       );
       button.type = "button";
@@ -4160,11 +4854,17 @@ function boot() {
     statusMessage(
       governingLawStatus,
       `${count(library.matched_clauses)} detected clauses across ${
-        count(library.distinct_agreements)
+        count(
+          library.distinct_agreements,
+        )
       } useful agreements${sourceCoverage ? ` · ${sourceCoverage}` : ""}; ${
-        count(current.cached_clauses)
+        count(
+          current.cached_clauses,
+        )
       } / ${
-        count(current.eligible_clauses)
+        count(
+          current.eligible_clauses,
+        )
       } current clauses cached (${repairStatus}); generated wording coverage, not a normalized jurisdiction or legal conclusion.`,
       "success",
     );
@@ -4199,14 +4899,99 @@ function boot() {
     }
   }
 
+  function renderIndemnitySummary(value) {
+    const summary = record(value);
+    const current = record(summary.current);
+    const library = record(summary.published_position_library);
+    const signalFacets = array(summary.published_signal_facets);
+
+    indemnityFacets.replaceChildren(element("span", "", "Available evidence:"));
+    for (const facetValue of signalFacets) {
+      const facet = record(facetValue);
+      const signalKey = displayText(facet.signal_key);
+      const label = INDEMNITY_POSITION_SIGNALS[signalKey];
+      if (!label || facet.signal_basis !== "generated") continue;
+      const button = element(
+        "button",
+        "",
+        `${label} · ${count(facet.clauses)} clauses / ${
+          count(
+            facet.distinct_agreements,
+          )
+        } agreements`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        indemnitySignalInput.value = signalKey;
+        indemnityForm.requestSubmit();
+      });
+      indemnityFacets.append(button);
+    }
+
+    const sourceCoverage = array(library.by_source)
+      .slice(0, 10)
+      .map((sourceValue) => {
+        const source = record(sourceValue);
+        return `${displayText(source.source_slug)} ${count(source.clauses)}`;
+      })
+      .join(" · ");
+    const repairStatus = Number(current.missing_clauses) === 0
+      ? "cache complete"
+      : `${count(current.missing_clauses)} cache rows missing`;
+    statusMessage(
+      indemnityStatus,
+      `${count(library.matched_clauses)} detected clauses across ${
+        count(
+          library.distinct_agreements,
+        )
+      } useful agreements${sourceCoverage ? ` · ${sourceCoverage}` : ""}; ${
+        count(
+          current.cached_clauses,
+        )
+      } / ${
+        count(
+          current.eligible_clauses,
+        )
+      } current clauses cached (${repairStatus}); generated wording coverage, not indemnity scope or a legal conclusion.`,
+      "success",
+    );
+
+    for (
+      const line of [
+        summary.measurement,
+        summary.absence_warning,
+        summary.interpretation_warning,
+      ]
+    ) {
+      if (typeof line === "string") {
+        corpusDisclosure.append(element("p", "", line));
+      }
+    }
+  }
+
+  async function loadIndemnitySummary() {
+    if (!state.token) return;
+    indemnityFacets.replaceChildren(
+      element("span", "", "Loading available evidence…"),
+    );
+    statusMessage(indemnityStatus, "Loading indemnity coverage…");
+    try {
+      const payload = await requestJson("/api/indemnity-summary", state.token);
+      renderIndemnitySummary(record(payload).data);
+    } catch (error) {
+      handleFailure(error, indemnityStatus);
+    }
+  }
+
   async function loadDashboard(prefetched = null) {
     statusMessage(workspaceStatus, "Loading the published corpus snapshot…");
     try {
       const payload = prefetched ??
-        await requestJson("/api/dashboard", state.token);
+        (await requestJson("/api/dashboard", state.token));
       renderDashboard(payload);
       statusMessage(workspaceStatus, "Published snapshot loaded.", "success");
       await loadGoverningLawSummary();
+      await loadIndemnitySummary();
     } catch (error) {
       handleFailure(error, workspaceStatus);
     }
@@ -4216,7 +5001,8 @@ function boot() {
     const selected = state.comparisonSelection.size;
     clearComparisonButton.disabled = selected === 0 || state.comparing;
     openComparisonButton.disabled = selected < COMPARISON_MIN_ITEMS ||
-      selected > COMPARISON_MAX_ITEMS || state.comparing;
+      selected > COMPARISON_MAX_ITEMS ||
+      state.comparing;
     exportComparisonButton.disabled = state.comparing ||
       state.comparisonEvidence.length === 0;
     exportPositionMatrixButton.disabled = state.comparing ||
@@ -4226,6 +5012,8 @@ function boot() {
     exportAssignmentMatrixButton.disabled = state.comparing ||
       state.comparisonEvidence.length === 0;
     exportGoverningLawMatrixButton.disabled = state.comparing ||
+      state.comparisonEvidence.length === 0;
+    exportIndemnityMatrixButton.disabled = state.comparing ||
       state.comparisonEvidence.length === 0;
     comparisonStatus.className = kind === "error" ? "status error" : "muted";
     comparisonStatus.textContent = message ??
@@ -4286,10 +5074,7 @@ function boot() {
     input.type = "checkbox";
     input.checked = state.comparisonSelection.has(key);
     input.setAttribute("data-comparison-key", key);
-    input.setAttribute(
-      "aria-label",
-      comparisonAccessibleLabel(item),
-    );
+    input.setAttribute("aria-label", comparisonAccessibleLabel(item));
     input.addEventListener("change", () => toggleComparison(item, input));
     append(label, input, element("span", "", "Select for comparison"));
     return label;
@@ -4331,9 +5116,13 @@ function boot() {
         "p",
         "muted",
         `Scope: matched clause only · detector ${
-          displayText(position.detectorVersion)
+          displayText(
+            position.detectorVersion,
+          )
         } · eligibility theme ${displayText(position.eligibility.theme)} (${
-          displayText(position.eligibility.theme_basis)
+          displayText(
+            position.eligibility.theme_basis,
+          )
         })`,
       ),
     );
@@ -4375,10 +5164,12 @@ function boot() {
         append(
           values,
           element("span", "badge observed", "Observed cap-value candidates"),
-          dataList(valueEntries.map((entry) => [
-            entry.label,
-            entry.values.join(" · "),
-          ])),
+          dataList(
+            valueEntries.map((entry) => [
+              entry.label,
+              entry.values.join(" · "),
+            ]),
+          ),
           element(
             "p",
             "muted",
@@ -4391,16 +5182,15 @@ function boot() {
       append(
         evidence,
         element("span", "badge observed", "Observed support excerpt"),
-        element(
-          "p",
-          "observed-text",
-          boundedText(support.text, 2_000),
-        ),
+        element("p", "observed-text", boundedText(support.text, 2_000)),
         element(
           "p",
           "muted",
           `Clause characters ${displayText(support.clause_char_start, "?")}–${
-            displayText(support.clause_char_end, "?")
+            displayText(
+              support.clause_char_end,
+              "?",
+            )
           } · SHA-256 ${displayText(support.sha256, "not available")}`,
         ),
       );
@@ -4435,9 +5225,13 @@ function boot() {
         "p",
         "muted",
         `Scope: matched clause only · detector ${
-          displayText(position.detectorVersion)
+          displayText(
+            position.detectorVersion,
+          )
         } · eligibility theme ${displayText(position.eligibility.theme)} (${
-          displayText(position.eligibility.theme_basis)
+          displayText(
+            position.eligibility.theme_basis,
+          )
         })`,
       ),
     );
@@ -4499,7 +5293,10 @@ function boot() {
           "p",
           "muted",
           `Clause characters ${displayText(support.clause_char_start, "?")}–${
-            displayText(support.clause_char_end, "?")
+            displayText(
+              support.clause_char_end,
+              "?",
+            )
           } · SHA-256 ${displayText(support.sha256, "not available")}`,
         ),
       );
@@ -4521,7 +5318,9 @@ function boot() {
           "summary",
           "",
           `Assignment/control signals · ${
-            count(position.matchedSignalCount)
+            count(
+              position.matchedSignalCount,
+            )
           } matched`,
         ),
       );
@@ -4536,9 +5335,13 @@ function boot() {
         "p",
         "muted",
         `Scope: exact detector-selected support only · detector ${
-          displayText(position.detectorVersion)
+          displayText(
+            position.detectorVersion,
+          )
         } · eligibility theme ${displayText(position.eligibility.theme)} (${
-          displayText(position.eligibility.theme_basis)
+          displayText(
+            position.eligibility.theme_basis,
+          )
         })`,
       ),
     );
@@ -4587,7 +5390,10 @@ function boot() {
           "p",
           "muted",
           `Clause characters ${displayText(support.clause_char_start, "?")}–${
-            displayText(support.clause_char_end, "?")
+            displayText(
+              support.clause_char_end,
+              "?",
+            )
           } · SHA-256 ${displayText(support.sha256, "not available")}`,
         ),
       );
@@ -4609,7 +5415,9 @@ function boot() {
           "summary",
           "",
           `Governing-law/forum signals · ${
-            count(position.matchedSignalCount)
+            count(
+              position.matchedSignalCount,
+            )
           } matched`,
         ),
       );
@@ -4624,9 +5432,13 @@ function boot() {
         "p",
         "muted",
         `Scope: exact detector-selected support only · detector ${
-          displayText(position.detectorVersion)
+          displayText(
+            position.detectorVersion,
+          )
         } · eligibility theme ${displayText(position.eligibility.theme)} (${
-          displayText(position.eligibility.theme_basis)
+          displayText(
+            position.eligibility.theme_basis,
+          )
         })`,
       ),
     );
@@ -4671,7 +5483,103 @@ function boot() {
           "p",
           "muted",
           `Clause characters ${displayText(support.clause_char_start, "?")}–${
-            displayText(support.clause_char_end, "?")
+            displayText(
+              support.clause_char_end,
+              "?",
+            )
+          } · SHA-256 ${displayText(support.sha256, "not available")}`,
+        ),
+      );
+      card.append(evidence);
+      container.append(card);
+    }
+    return container;
+  }
+
+  function indemnityPositionPanel(value, collapsed = false) {
+    const position = indemnityPositionEvidence(value);
+    if (!position?.applicable) return null;
+    const container = collapsed
+      ? element("details", "comparison-context commercial-position")
+      : section("Indemnity structure and procedure signals");
+    if (collapsed) {
+      container.append(
+        element(
+          "summary",
+          "",
+          `Indemnity signals · ${count(position.matchedSignalCount)} matched`,
+        ),
+      );
+    }
+    const window = position.analysisWindow;
+    container.append(
+      element(
+        "p",
+        "focus-note",
+        "Generated wording matches for negotiation and diligence triage. They do not identify the indemnifying party, decide claim coverage, resolve limitation interaction, or determine enforceability.",
+      ),
+      element(
+        "p",
+        "muted",
+        `Scope: bounded observed clause window around exact indemnity-theme support · detector ${
+          displayText(
+            position.detectorVersion,
+          )
+        } · window ${displayText(window.clause_char_start, "?")}–${
+          displayText(
+            window.clause_char_end,
+            "?",
+          )
+        } · eligibility theme ${displayText(position.eligibility.theme)} (${
+          displayText(
+            position.eligibility.theme_basis,
+          )
+        })`,
+      ),
+    );
+    if (!position.signals.length) {
+      container.append(
+        element(
+          "p",
+          "muted",
+          "No supported indemnity structure or procedure wording matched this bounded window. Absence is not evidence of absence.",
+        ),
+      );
+      return container;
+    }
+    for (const signalValue of position.signals) {
+      const signal = record(signalValue);
+      const support = record(signal.observed_support);
+      const attributes = indemnityAttributeEntries(signal.generated_attributes);
+      const card = element("article", "relationship position-signal");
+      append(
+        card,
+        element("span", "badge generated", "Generated indemnity signal"),
+        element("h4", "", displayText(signal.label, signal.signal_key)),
+        element(
+          "p",
+          "muted",
+          `Confidence ${
+            Number.isFinite(Number(signal.confidence))
+              ? `${Math.round(Number(signal.confidence) * 100)}%`
+              : "not stated"
+          } · rule ${displayText(signal.rule_id)}`,
+        ),
+      );
+      if (attributes.length) card.append(dataList(attributes));
+      const evidence = element("div", "position-support");
+      append(
+        evidence,
+        element("span", "badge observed", "Observed support excerpt"),
+        element("p", "observed-text", boundedText(support.text, 2_000)),
+        element(
+          "p",
+          "muted",
+          `Clause characters ${displayText(support.clause_char_start, "?")}–${
+            displayText(
+              support.clause_char_end,
+              "?",
+            )
           } · SHA-256 ${displayText(support.sha256, "not available")}`,
         ),
       );
@@ -4711,7 +5619,10 @@ function boot() {
         "p",
         "muted",
         `${executionDate.label} · ${
-          displayText(executionDate.value, "not stated")
+          displayText(
+            executionDate.value,
+            "not stated",
+          )
         }`,
       ),
     );
@@ -4727,9 +5638,15 @@ function boot() {
         "p",
         "",
         `Class: ${
-          displayText(agreement.document_kind, selection.document_kind)
+          displayText(
+            agreement.document_kind,
+            selection.document_kind,
+          )
         } · recorded basis: ${
-          displayText(agreement.document_kind_basis, "generated")
+          displayText(
+            agreement.document_kind_basis,
+            "generated",
+          )
         }`,
       ),
     );
@@ -4766,11 +5683,7 @@ function boot() {
     const sourcePolicy = element("section", "generated");
     append(
       sourcePolicy,
-      element(
-        "strong",
-        "",
-        "Source-use assessment · not source wording",
-      ),
+      element("strong", "", "Source-use assessment · not source wording"),
       dataList([
         [
           "Assessment status",
@@ -4855,6 +5768,11 @@ function boot() {
       true,
     );
     if (governingLawPosition) column.append(governingLawPosition);
+    const indemnityPosition = indemnityPositionPanel(
+      evidence.indemnityPosition,
+      true,
+    );
+    if (indemnityPosition) column.append(indemnityPosition);
 
     const connectedContext = comparisonConnectedContext(evidence.anchorContext);
     if (connectedContext) {
@@ -4867,11 +5785,17 @@ function boot() {
           "summary",
           "",
           `Connected context · ${
-            count(connectedContext.totals.definitionCandidates)
+            count(
+              connectedContext.totals.definitionCandidates,
+            )
           } definitions · ${
-            count(connectedContext.totals.resolvedReferenceTargets)
+            count(
+              connectedContext.totals.resolvedReferenceTargets,
+            )
           } resolved · ${
-            count(connectedContext.totals.unresolvedReferences)
+            count(
+              connectedContext.totals.unresolvedReferences,
+            )
           } unresolved`,
         ),
         element(
@@ -4892,7 +5816,10 @@ function boot() {
               "h4",
               "",
               `“${displayText(definition.term, "Unnamed term")}” · clause ${
-                displayText(definition.defining_clause_sequence, "?")
+                displayText(
+                  definition.defining_clause_sequence,
+                  "?",
+                )
               }`,
             ),
             element(
@@ -4904,7 +5831,10 @@ function boot() {
               "p",
               "muted",
               `Definition SHA-256 ${
-                displayText(definition.definition_sha256, "not available")
+                displayText(
+                  definition.definition_sha256,
+                  "not available",
+                )
               }${
                 definition.definition_truncated
                   ? " · definition text truncated by the bounded API"
@@ -4936,7 +5866,10 @@ function boot() {
               "h4",
               "",
               `${
-                displayText(reference.observed_reference, "Reference")
+                displayText(
+                  reference.observed_reference,
+                  "Reference",
+                )
               } → clause ${displayText(reference.target_sequence, "?")}`,
             ),
             element(
@@ -4956,7 +5889,10 @@ function boot() {
               "p",
               "muted",
               `Target text SHA-256 ${
-                displayText(reference.target_text_sha256, "not available")
+                displayText(
+                  reference.target_text_sha256,
+                  "not available",
+                )
               }${
                 reference.target_text_truncated
                   ? " · target text truncated by the bounded API"
@@ -5008,11 +5944,7 @@ function boot() {
     const first = displayText(window.first_sequence, "?");
     const last = displayText(window.last_sequence, "?");
     context.append(
-      element(
-        "summary",
-        "",
-        `Bounded context · clauses ${first}–${last}`,
-      ),
+      element("summary", "", `Bounded context · clauses ${first}–${last}`),
       element(
         "p",
         "muted",
@@ -5028,12 +5960,12 @@ function boot() {
       );
       const neighborSequence = Number(nearby.sequence);
       const anchorSequence = Number(clause.sequence);
-      const relation = Number.isFinite(neighborSequence) &&
-          Number.isFinite(anchorSequence)
-        ? neighborSequence < anchorSequence
-          ? "Before matched clause"
-          : "After matched clause"
-        : "Surrounding clause";
+      const relation =
+        Number.isFinite(neighborSequence) && Number.isFinite(anchorSequence)
+          ? neighborSequence < anchorSequence
+            ? "Before matched clause"
+            : "After matched clause"
+          : "Surrounding clause";
       append(
         neighbor,
         element(
@@ -5059,44 +5991,47 @@ function boot() {
   async function compareSelected() {
     const selected = [...state.comparisonSelection.values()];
     if (
-      !state.token || state.comparing ||
+      !state.token ||
+      state.comparing ||
       selected.length < COMPARISON_MIN_ITEMS ||
       selected.length > COMPARISON_MAX_ITEMS
-    ) return;
+    ) {
+      return;
+    }
 
     state.comparing = true;
     state.comparisonEvidence = [];
     exportStatus.textContent = "";
     updateComparisonControls("Loading bounded source context…");
-    const loading = element(
-      "p",
-      "muted",
-      "Loading selected clause evidence…",
-    );
+    const loading = element("p", "muted", "Loading selected clause evidence…");
     loading.setAttribute("role", "status");
     comparisonBody.replaceChildren(loading);
     openDialog(comparisonDialog);
     const token = state.token;
-    const settled = await Promise.allSettled(selected.map(async (item) => {
-      const payload = await requestJson(
-        buildAgreementPath(
-          item.agreement_id,
-          COMPARISON_CONTEXT_CLAUSES,
-          item.clause_id,
-        ),
-        token,
-      );
-      return comparisonEvidence(payload, item.clause_id);
-    }));
+    const settled = await Promise.allSettled(
+      selected.map(async (item) => {
+        const payload = await requestJson(
+          buildAgreementPath(
+            item.agreement_id,
+            COMPARISON_CONTEXT_CLAUSES,
+            item.clause_id,
+          ),
+          token,
+        );
+        return comparisonEvidence(payload, item.clause_id);
+      }),
+    );
 
     if (state.token !== token) {
       state.comparing = false;
       return;
     }
 
-    const unauthorized = settled.find((result) =>
-      result.status === "rejected" && result.reason instanceof ApiError &&
-      result.reason.status === 401
+    const unauthorized = settled.find(
+      (result) =>
+        result.status === "rejected" &&
+        result.reason instanceof ApiError &&
+        result.reason.status === 401,
     );
     if (unauthorized) {
       state.comparing = false;
@@ -5176,7 +6111,10 @@ function boot() {
       const link = element("a");
       link.href = objectUrl;
       link.download = `esheria-contract-citations-${
-        manifest.generated_at.slice(0, 10)
+        manifest.generated_at.slice(
+          0,
+          10,
+        )
       }.json`;
       link.hidden = true;
       document.body.append(link);
@@ -5208,7 +6146,10 @@ function boot() {
       const link = element("a");
       link.href = objectUrl;
       link.download = `esheria-liability-position-matrix-${
-        generatedAt.slice(0, 10)
+        generatedAt.slice(
+          0,
+          10,
+        )
       }.csv`;
       link.hidden = true;
       document.body.append(link);
@@ -5240,7 +6181,10 @@ function boot() {
       const link = element("a");
       link.href = objectUrl;
       link.download = `esheria-termination-position-matrix-${
-        generatedAt.slice(0, 10)
+        generatedAt.slice(
+          0,
+          10,
+        )
       }.csv`;
       link.hidden = true;
       document.body.append(link);
@@ -5272,7 +6216,10 @@ function boot() {
       const link = element("a");
       link.href = objectUrl;
       link.download = `esheria-assignment-position-matrix-${
-        generatedAt.slice(0, 10)
+        generatedAt.slice(
+          0,
+          10,
+        )
       }.csv`;
       link.hidden = true;
       document.body.append(link);
@@ -5305,7 +6252,10 @@ function boot() {
       const link = element("a");
       link.href = objectUrl;
       link.download = `esheria-governing-law-position-matrix-${
-        generatedAt.slice(0, 10)
+        generatedAt.slice(
+          0,
+          10,
+        )
       }.csv`;
       link.hidden = true;
       document.body.append(link);
@@ -5321,6 +6271,42 @@ function boot() {
     }
   }
 
+  function exportIndemnityMatrix() {
+    if (!state.comparisonEvidence.length) return;
+    try {
+      const generatedAt = new Date().toISOString();
+      const indemnityMode = state.resultMode === "indemnity_positions";
+      const csv = buildIndemnityPositionMatrixCsv({
+        query: indemnityMode ? state.indemnitySignal : state.query,
+        kind: indemnityMode ? state.indemnityKind : state.kind,
+        source: indemnityMode ? state.indemnitySource : state.source,
+        entries: state.comparisonEvidence,
+        generatedAt,
+      });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = element("a");
+      link.href = objectUrl;
+      link.download = `esheria-indemnity-position-matrix-${
+        generatedAt.slice(
+          0,
+          10,
+        )
+      }.csv`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      exportStatus.textContent =
+        "Indemnity CSV downloaded. Each row is one generated wording signal; party entitlement, claim coverage, cap interaction and enforceability are not determined.";
+    } catch (error) {
+      exportStatus.textContent = error instanceof Error
+        ? error.message
+        : "Indemnity CSV could not be created.";
+    }
+  }
+
   function partyResultCard(itemValue) {
     const item = record(itemValue);
     const card = element("article", "result-card");
@@ -5328,23 +6314,20 @@ function boot() {
     const headingGroup = element("div");
     append(
       headingGroup,
-      element(
-        "span",
-        "badge basis-observed",
-        "Observed party-name match",
-      ),
-      element(
-        "h3",
-        "",
-        displayText(item.observed_party_name, "Unnamed party"),
-      ),
+      element("span", "badge basis-observed", "Observed party-name match"),
+      element("h3", "", displayText(item.observed_party_name, "Unnamed party")),
       element(
         "div",
         "meta",
         `${displayText(item.observed_party_role, "role not stated")} · ${
-          partyCapturePresentation(item.party_capture_method)
+          partyCapturePresentation(
+            item.party_capture_method,
+          )
         } · entity status ${
-          displayText(item.party_resolution_status, "unresolved")
+          displayText(
+            item.party_resolution_status,
+            "unresolved",
+          )
         }`,
       ),
     );
@@ -5407,7 +6390,10 @@ function boot() {
           "p",
           "",
           `${displayText(party.observed_name, "Unnamed party")} · ${
-            displayText(party.observed_role, "role not stated")
+            displayText(
+              party.observed_role,
+              "role not stated",
+            )
           } · entity ${displayText(party.resolution_status, "unresolved")}`,
         ),
       );
@@ -5418,13 +6404,13 @@ function boot() {
       );
     }
 
-    const partyEvidence = typeof item.party_evidence_quote === "string" &&
-        item.party_evidence_quote
-      ? append(
-        element("blockquote", "observed-text"),
-        element("strong", "", "Observed party evidence"),
-        element("p", "", boundedText(item.party_evidence_quote, 500)),
-      )
+    const partyEvidence =
+      typeof item.party_evidence_quote === "string" && item.party_evidence_quote
+        ? append(
+          element("blockquote", "observed-text"),
+          element("strong", "", "Observed party evidence"),
+          element("p", "", boundedText(item.party_evidence_quote, 500)),
+        )
       : null;
 
     const actions = element("div", "result-actions");
@@ -5529,7 +6515,10 @@ function boot() {
     const themes = array(root.theme_coverage).slice(0, 20);
     const sources = array(coverage.sources);
     partyDossierTitle.textContent = `Observed-party dossier · ${
-      displayText(scope.query, scope.normalized_query)
+      displayText(
+        scope.query,
+        scope.normalized_query,
+      )
     }`;
     partyDossierSummary.replaceChildren(
       metric(
@@ -5542,21 +6531,13 @@ function boot() {
         count(coverage.observed_clauses),
         "Current published evidence",
       ),
-      metric(
-        "Theme groups",
-        count(themes.length),
-        "Generated/reviewed labels",
-      ),
+      metric("Theme groups", count(themes.length), "Generated/reviewed labels"),
       metric(
         "Party records",
         count(scope.matched_party_records),
         "Identity resolution not applied",
       ),
-      metric(
-        "Sources",
-        count(sources.length),
-        "Rights-gated source systems",
-      ),
+      metric("Sources", count(sources.length), "Rights-gated source systems"),
     );
     partyDossierThemes.replaceChildren();
     if (!themes.length) {
@@ -5585,7 +6566,9 @@ function boot() {
           "p",
           "muted tiny",
           `${count(theme.clause_matches)} matching clause tags across ${
-            count(theme.document_records)
+            count(
+              theme.document_records,
+            )
           } document records · not a prevalence measure`,
         ),
       );
@@ -5595,7 +6578,9 @@ function boot() {
           "span",
           "muted tiny",
           `Detector confidence ${displayText(theme.detector_confidence_min)}–${
-            displayText(theme.detector_confidence_max)
+            displayText(
+              theme.detector_confidence_max,
+            )
           }`,
         ),
       );
@@ -5622,7 +6607,10 @@ function boot() {
             "p",
             "muted tiny",
             `${displayText(example.observed_title, "Untitled agreement")} · ${
-              displayText(example.source_name, example.source_slug)
+              displayText(
+                example.source_name,
+                example.source_slug,
+              )
             } · ${displayText(example.observed_party_role, "role not stated")}`,
           ),
           element(
@@ -5634,7 +6622,9 @@ function boot() {
             "p",
             "muted tiny",
             `Clause SHA-256 ${
-              displayText(example.observed_text_sha256)
+              displayText(
+                example.observed_text_sha256,
+              )
             } · artifact ${displayText(example.artifact_sha256)}${
               example.observed_text_excerpt_truncated
                 ? " · excerpt truncated"
@@ -5671,7 +6661,9 @@ function boot() {
     partyDossierStatus.textContent = scope.low_specificity_warning === true
       ? "This is a low-specificity observed name. Treat every result as ambiguous and inspect source evidence."
       : `${
-        count(coverage.document_records)
+        count(
+          coverage.document_records,
+        )
       } exact-name document records. Identity resolution was not applied; theme counts are navigation aids, not market prevalence.`;
   }
 
@@ -5725,7 +6717,10 @@ function boot() {
           "span",
           "",
           `Party ${displayText(item.observed_party_name)} (${
-            displayText(item.observed_party_role, "role not stated")
+            displayText(
+              item.observed_party_role,
+              "role not stated",
+            )
           })`,
         )
         : null,
@@ -5749,7 +6744,9 @@ function boot() {
 
     const clauseLabel = item.clause_heading
       ? `Clause ${displayText(item.clause_sequence)} · ${
-        displayText(item.clause_heading)
+        displayText(
+          item.clause_heading,
+        )
       }`
       : `Clause ${displayText(item.clause_sequence)}`;
     const actions = element("div", "result-actions");
@@ -5761,11 +6758,13 @@ function boot() {
       const signalLabels = position.signals.map((signal) =>
         displayText(record(signal).label, record(signal).signal_key)
       );
-      const observedValues = position.signals.flatMap((signal) =>
-        observedValueCandidateEntries(
-          record(signal).observed_value_candidates,
-        ).flatMap((entry) => entry.values)
-      ).slice(0, 6);
+      const observedValues = position.signals
+        .flatMap((signal) =>
+          observedValueCandidateEntries(
+            record(signal).observed_value_candidates,
+          ).flatMap((entry) => entry.values)
+        )
+        .slice(0, 6);
       append(
         positionSummary,
         element("span", "badge generated", "Generated liability position"),
@@ -5802,11 +6801,11 @@ function boot() {
       const signalLabels = terminationPosition.signals.map((signal) =>
         displayText(record(signal).label, record(signal).signal_key)
       );
-      const durations = terminationPosition.signals.flatMap((signal) =>
-        observedDurationEntries(
-          record(signal).observed_duration_candidates,
+      const durations = terminationPosition.signals
+        .flatMap((signal) =>
+          observedDurationEntries(record(signal).observed_duration_candidates)
         )
-      ).slice(0, 6);
+        .slice(0, 6);
       append(
         terminationSummary,
         element("span", "badge generated", "Generated termination wording"),
@@ -5849,7 +6848,9 @@ function boot() {
       });
       const presentAttributes = assignmentAttributeEntries(
         record(assignmentPosition.signals[0]).generated_attributes,
-      ).filter((entry) => entry[1] === "Yes").map((entry) => entry[0]);
+      )
+        .filter((entry) => entry[1] === "Yes")
+        .map((entry) => entry[0]);
       append(
         assignmentSummary,
         element(
@@ -5913,13 +6914,44 @@ function boot() {
         ),
       );
     }
+    const indemnityPosition = indemnityPositionEvidence(
+      item.indemnity_position,
+    );
+    const indemnitySummary = indemnityPosition?.applicable
+      ? element("div", "result-position-summary")
+      : null;
+    if (indemnitySummary) {
+      const signalLabels = indemnityPosition.signals.map((signal) => {
+        const item = record(signal);
+        return displayText(
+          INDEMNITY_POSITION_SIGNALS[item.signal_key],
+          item.label ?? item.signal_key,
+        );
+      });
+      append(
+        indemnitySummary,
+        element("span", "badge generated", "Generated indemnity wording"),
+        element(
+          "p",
+          "",
+          signalLabels.length
+            ? `Matched: ${signalLabels.join(" · ")}`
+            : "No supported indemnity wording matched this bounded window.",
+        ),
+        element(
+          "p",
+          "muted",
+          "Detector-support navigation signal; party entitlement, claim coverage, cap interaction and enforceability require review.",
+        ),
+      );
+    }
     const agreementId = typeof item.agreement_id === "string"
       ? item.agreement_id
       : "";
-    const clauseId = typeof item.clause_id === "string" &&
-        UUID_PATTERN.test(item.clause_id)
-      ? item.clause_id
-      : null;
+    const clauseId =
+      typeof item.clause_id === "string" && UUID_PATTERN.test(item.clause_id)
+        ? item.clause_id
+        : null;
     const comparisonKey = comparisonSelectionKey(item);
     if (comparisonKey) {
       actions.append(comparisonChoice(item, comparisonKey));
@@ -5947,6 +6979,7 @@ function boot() {
       terminationSummary,
       assignmentSummary,
       governingLawSummary,
+      indemnitySummary,
       actions,
     );
     return card;
@@ -5972,6 +7005,8 @@ function boot() {
             ? "No published assignment/change-of-control evidence matched these filters."
             : state.resultMode === "governing_law_positions"
             ? "No published governing-law/forum evidence matched these filters."
+            : state.resultMode === "indemnity_positions"
+            ? "No published indemnity-position evidence matched these filters."
             : "No published clause evidence matched this query.",
         ),
       ]),
@@ -6014,6 +7049,15 @@ function boot() {
           rows.length === 1 ? "" : "s"
         } loaded below.`
         : "No governing-law or forum wording matched these filters.";
+    } else if (state.resultMode === "indemnity_positions") {
+      searchStatus.textContent = rows.length
+        ? `Showing indemnity evidence ${start}–${end}. Generated wording matches do not determine party entitlement, claim coverage, cap interaction or enforceability.`
+        : "No indemnity evidence returned. Detector and corpus coverage may be incomplete.";
+      indemnityStatus.textContent = rows.length
+        ? `${rows.length} bounded indemnity result${
+          rows.length === 1 ? "" : "s"
+        } loaded below.`
+        : "No indemnity wording matched these filters.";
     } else {
       searchStatus.textContent = rows.length
         ? `Showing results ${start}–${end}${
@@ -6028,16 +7072,23 @@ function boot() {
 
   async function performSearch() {
     if (
-      !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading || state.assignmentLoading ||
-      state.governingLawLoading
-    ) return;
+      !state.token ||
+      state.searching ||
+      state.positionLoading ||
+      state.terminationLoading ||
+      state.assignmentLoading ||
+      state.governingLawLoading ||
+      state.indemnityLoading
+    ) {
+      return;
+    }
     state.searching = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
+    indemnityButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Searching published clause evidence…";
@@ -6059,21 +7110,29 @@ function boot() {
       terminationButton.disabled = false;
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
+      indemnityButton.disabled = false;
     }
   }
 
   async function performPositionBrowse() {
     if (
-      !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading || state.assignmentLoading ||
-      state.governingLawLoading
-    ) return;
+      !state.token ||
+      state.searching ||
+      state.positionLoading ||
+      state.terminationLoading ||
+      state.assignmentLoading ||
+      state.governingLawLoading ||
+      state.indemnityLoading
+    ) {
+      return;
+    }
     state.positionLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
+    indemnityButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published liability positions…";
@@ -6098,21 +7157,29 @@ function boot() {
       terminationButton.disabled = false;
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
+      indemnityButton.disabled = false;
     }
   }
 
   async function performTerminationBrowse() {
     if (
-      !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading || state.assignmentLoading ||
-      state.governingLawLoading
-    ) return;
+      !state.token ||
+      state.searching ||
+      state.positionLoading ||
+      state.terminationLoading ||
+      state.assignmentLoading ||
+      state.governingLawLoading ||
+      state.indemnityLoading
+    ) {
+      return;
+    }
     state.terminationLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
+    indemnityButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published termination wording…";
@@ -6137,21 +7204,29 @@ function boot() {
       terminationButton.disabled = false;
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
+      indemnityButton.disabled = false;
     }
   }
 
   async function performAssignmentBrowse() {
     if (
-      !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading || state.assignmentLoading ||
-      state.governingLawLoading
-    ) return;
+      !state.token ||
+      state.searching ||
+      state.positionLoading ||
+      state.terminationLoading ||
+      state.assignmentLoading ||
+      state.governingLawLoading ||
+      state.indemnityLoading
+    ) {
+      return;
+    }
     state.assignmentLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
+    indemnityButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent =
@@ -6176,21 +7251,29 @@ function boot() {
       terminationButton.disabled = false;
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
+      indemnityButton.disabled = false;
     }
   }
 
   async function performGoverningLawBrowse() {
     if (
-      !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading || state.assignmentLoading ||
-      state.governingLawLoading
-    ) return;
+      !state.token ||
+      state.searching ||
+      state.positionLoading ||
+      state.terminationLoading ||
+      state.assignmentLoading ||
+      state.governingLawLoading ||
+      state.indemnityLoading
+    ) {
+      return;
+    }
     state.governingLawLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
+    indemnityButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent =
@@ -6214,6 +7297,52 @@ function boot() {
       terminationButton.disabled = false;
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
+      indemnityButton.disabled = false;
+    }
+  }
+
+  async function performIndemnityBrowse() {
+    if (
+      !state.token ||
+      state.searching ||
+      state.positionLoading ||
+      state.terminationLoading ||
+      state.assignmentLoading ||
+      state.governingLawLoading ||
+      state.indemnityLoading
+    ) {
+      return;
+    }
+    state.indemnityLoading = true;
+    searchButton.disabled = true;
+    positionButton.disabled = true;
+    terminationButton.disabled = true;
+    assignmentButton.disabled = true;
+    governingLawButton.disabled = true;
+    indemnityButton.disabled = true;
+    previous.disabled = true;
+    next.disabled = true;
+    searchStatus.textContent = "Loading published indemnity wording…";
+    indemnityStatus.textContent = "Applying evidence filters…";
+    try {
+      const path = buildIndemnityPositionPath({
+        signalKeys: state.indemnitySignal ? [state.indemnitySignal] : [],
+        kind: state.indemnityKind,
+        source: state.indemnitySource,
+        limit: state.limit,
+        offset: state.offset,
+      });
+      renderSearch(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, indemnityStatus);
+    } finally {
+      state.indemnityLoading = false;
+      searchButton.disabled = false;
+      positionButton.disabled = false;
+      terminationButton.disabled = false;
+      assignmentButton.disabled = false;
+      governingLawButton.disabled = false;
+      indemnityButton.disabled = false;
     }
   }
 
@@ -6252,7 +7381,10 @@ function boot() {
           "p",
           "muted",
           `${displayText(item.relationship, "evidence")} · ${
-            displayText(item.evidence_location, "location unavailable")
+            displayText(
+              item.evidence_location,
+              "location unavailable",
+            )
           }`,
         ),
         quote,
@@ -6330,7 +7462,9 @@ function boot() {
         [
           "Extraction",
           `${displayText(agreement.extraction_method)} · confidence ${
-            displayText(agreement.extraction_confidence)
+            displayText(
+              agreement.extraction_confidence,
+            )
           }`,
         ],
         ["Artifact SHA-256", displayText(agreement.artifact_sha256)],
@@ -6362,7 +7496,10 @@ function boot() {
           "p",
           "status warning",
           `Source-use status: ${
-            displayText(source.policy_assessment_status, "automated assessment")
+            displayText(
+              source.policy_assessment_status,
+              "automated assessment",
+            )
           }; qualified human/legal review remains pending.`,
         ),
       );
@@ -6380,7 +7517,10 @@ function boot() {
             "strong",
             "",
             `Generated ${
-              displayText(dateEvidence.date_type, "date").replaceAll("_", " ")
+              displayText(dateEvidence.date_type, "date").replaceAll(
+                "_",
+                " ",
+              )
             } candidate · ${displayText(dateEvidence.observed_date)}`,
           ),
           element(
@@ -6395,9 +7535,15 @@ function boot() {
             "p",
             "muted",
             `Observed text at characters ${
-              displayText(dateEvidence.observed_char_start, "?")
+              displayText(
+                dateEvidence.observed_char_start,
+                "?",
+              )
             }–${displayText(dateEvidence.observed_char_end, "?")} · rule ${
-              displayText(dateEvidence.rule_id, "unknown")
+              displayText(
+                dateEvidence.rule_id,
+                "unknown",
+              )
             }${dateEvidence.is_conflicting ? " · conflicting candidates" : ""}${
               dateEvidence.has_historical_disagreement
                 ? " · differs across extraction history"
@@ -6433,7 +7579,9 @@ function boot() {
               "p",
               "generated",
               `Generated role: ${displayText(party.generated_role)} · ${
-                displayText(party.resolution_status)
+                displayText(
+                  party.resolution_status,
+                )
               }`,
             )
             : null,
@@ -6459,6 +7607,8 @@ function boot() {
       data.governing_law_position,
     );
     if (governingLawPosition) fragment.append(governingLawPosition);
+    const indemnityPosition = indemnityPositionPanel(data.indemnity_position);
+    if (indemnityPosition) fragment.append(indemnityPosition);
 
     const anchorContext = record(data.anchor_context);
     if (
@@ -6500,9 +7650,15 @@ function boot() {
               "p",
               "muted",
               `Defined in clause ${
-                displayText(definition.defining_clause_sequence, "?")
+                displayText(
+                  definition.defining_clause_sequence,
+                  "?",
+                )
               } · SHA-256 ${
-                displayText(definition.definition_sha256).slice(0, 12)
+                displayText(definition.definition_sha256).slice(
+                  0,
+                  12,
+                )
               }…${
                 definition.ambiguous_definition_occurrences
                   ? " · multiple definition occurrences"
@@ -6553,7 +7709,10 @@ function boot() {
               "h4",
               "",
               `${
-                displayText(reference.observed_reference, "Reference")
+                displayText(
+                  reference.observed_reference,
+                  "Reference",
+                )
               } → clause ${displayText(reference.target_sequence, "?")}`,
             ),
             element(
@@ -6581,7 +7740,10 @@ function boot() {
                   char_end: reference.target_char_end,
                 })
               } · SHA-256 ${
-                displayText(reference.target_text_sha256).slice(0, 12)
+                displayText(reference.target_text_sha256).slice(
+                  0,
+                  12,
+                )
               }…`,
             ),
           );
@@ -6623,7 +7785,9 @@ function boot() {
                   "Reference unavailable",
                 )
               } · ${
-                referenceResolutionLabel(reference.target_resolution_status)
+                referenceResolutionLabel(
+                  reference.target_resolution_status,
+                )
               }`,
             ),
           );
@@ -6636,11 +7800,17 @@ function boot() {
           "p",
           "muted",
           `${
-            count(contextCoverage.definition_candidates_total)
+            count(
+              contextCoverage.definition_candidates_total,
+            )
           } definition candidates · ${
-            count(contextCoverage.resolved_reference_targets_total)
+            count(
+              contextCoverage.resolved_reference_targets_total,
+            )
           } resolved references · ${
-            count(contextCoverage.unresolved_references_total)
+            count(
+              contextCoverage.unresolved_references_total,
+            )
           } unresolved references. Term-use matching and target resolution are navigation aids, not legal interpretations.`,
         ),
       );
@@ -6690,11 +7860,7 @@ function boot() {
         isAnchor ? element("span", "badge match-badge", "Search match") : null,
         element("span", `badge ${clauseBasis.className}`, clauseBasis.label),
         element("h3", "", heading),
-        element(
-          "p",
-          "muted",
-          formatEvidenceLocation(clause),
-        ),
+        element("p", "muted", formatEvidenceLocation(clause)),
         element("p", "observed-text", boundedText(clause.observed_text)),
       );
       if (clause.generated_summary || clause.generated_clause_type) {
@@ -6706,7 +7872,10 @@ function boot() {
             "p",
             "",
             `${displayText(clause.generated_clause_type, "unclassified")} · ${
-              displayText(clause.generated_summary, "No summary")
+              displayText(
+                clause.generated_summary,
+                "No summary",
+              )
             }`,
           ),
         );
@@ -6716,14 +7885,17 @@ function boot() {
       for (const definitionValue of definitions) {
         const definition = record(definitionValue);
         const definitionBasis = textBasisPresentation(
-          definition.definition_basis ?? clause.text_basis ??
+          definition.definition_basis ??
+            clause.text_basis ??
             agreement.text_basis,
         );
         const definitionBox = element(
           "p",
           "observed-text",
           `${definitionBasis.label} defined term “${
-            displayText(definition.term)
+            displayText(
+              definition.term,
+            )
           }”: ${boundedText(definition.definition, 8_000)}`,
         );
         if (
@@ -6774,19 +7946,20 @@ function boot() {
         );
         append(
           resolution,
-          element(
-            "strong",
-            "",
-            referenceResolutionProvenance(resolutionBasis),
-          ),
+          element("strong", "", referenceResolutionProvenance(resolutionBasis)),
           element(
             "p",
             "",
             targetId
               ? `Clause ${displayText(reference.target_sequence)} · ${
-                displayText(reference.target_heading, "Untitled clause")
+                displayText(
+                  reference.target_heading,
+                  "Untitled clause",
+                )
               } · ${
-                referenceResolutionLabel(reference.target_resolution_status)
+                referenceResolutionLabel(
+                  reference.target_resolution_status,
+                )
               }`
               : referenceResolutionLabel(reference.target_resolution_status),
           ),
@@ -6824,14 +7997,18 @@ function boot() {
             "p",
             "relationship",
             `${displayText(relationship.relationship_type)} · ${
-              displayText(relationship.direction)
+              displayText(
+                relationship.direction,
+              )
             } · ${
               displayText(
                 relationship.observed_reference,
                 "reference unavailable",
               )
             } · basis ${displayText(relationship.basis)} · confidence ${
-              displayText(relationship.confidence)
+              displayText(
+                relationship.confidence,
+              )
             }`,
           ),
         );
@@ -6859,7 +8036,9 @@ function boot() {
             "p",
             "muted",
             `Support: ${displayText(claim.support_status)} · confidence ${
-              displayText(claim.confidence)
+              displayText(
+                claim.confidence,
+              )
             } · reviewed ${date(claim.reviewed_at)}`,
           ),
         );
@@ -6946,6 +8125,7 @@ function boot() {
         "success",
       );
       await loadGoverningLawSummary();
+      await loadIndemnitySummary();
     } catch (error) {
       handleFailure(error, authStatus);
     } finally {
@@ -6978,6 +8158,7 @@ function boot() {
     "click",
     exportGoverningLawMatrix,
   );
+  exportIndemnityMatrixButton.addEventListener("click", exportIndemnityMatrix);
   exportComparisonButton.addEventListener("click", exportComparison);
   detailDialog.addEventListener("click", (event) => {
     if (event.target === detailDialog) closeDialog(detailDialog);
@@ -7038,7 +8219,8 @@ function boot() {
     }
     const configured = LIABILITY_POSITION_FEATURES[positionFeatureInput.value];
     if (
-      configured && positionSignalInput.value &&
+      configured &&
+      positionSignalInput.value &&
       configured.signalKey !== positionSignalInput.value
     ) {
       positionFeatureInput.value = "";
@@ -7110,8 +8292,7 @@ function boot() {
     const signalLabel = assignmentSignalInput.selectedOptions[0]?.textContent ??
       "Any detected wording";
     const contextLabel =
-      assignmentContextInput.selectedOptions[0]?.textContent ??
-        "Any context";
+      assignmentContextInput.selectedOptions[0]?.textContent ?? "Any context";
     state.query = `Assignment library: ${signalLabel}; ${contextLabel}`;
     state.clauseParty = "";
     state.kind = state.assignmentKind;
@@ -7128,7 +8309,8 @@ function boot() {
     state.resultMode = "governing_law_positions";
     state.governingLawSignal = governingLawSignalInput.value;
     state.governingLawKind = governingLawKindInput.value;
-    state.governingLawSource = governingLawSourceInput.value.trim()
+    state.governingLawSource = governingLawSourceInput.value
+      .trim()
       .toLowerCase();
     const signalLabel =
       governingLawSignalInput.selectedOptions[0]?.textContent ??
@@ -7143,6 +8325,25 @@ function boot() {
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
+  indemnityForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearComparison();
+    state.resultMode = "indemnity_positions";
+    state.indemnitySignal = indemnitySignalInput.value;
+    state.indemnityKind = indemnityKindInput.value;
+    state.indemnitySource = indemnitySourceInput.value.trim().toLowerCase();
+    const signalLabel = indemnitySignalInput.selectedOptions[0]?.textContent ??
+      "Any detected wording";
+    state.query = `Indemnity library: ${signalLabel}`;
+    state.clauseParty = "";
+    state.kind = state.indemnityKind;
+    state.source = state.indemnitySource;
+    state.offset = 0;
+    syncGuideSelection("");
+    performIndemnityBrowse();
+    resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const query = queryInput.value.trim();
@@ -7150,9 +8351,13 @@ function boot() {
     const kind = kindInput.value;
     const source = sourceInput.value.trim().toLowerCase();
     if (
-      query !== state.query || clauseParty !== state.clauseParty ||
-      kind !== state.kind || source !== state.source
-    ) clearComparison();
+      query !== state.query ||
+      clauseParty !== state.clauseParty ||
+      kind !== state.kind ||
+      source !== state.source
+    ) {
+      clearComparison();
+    }
     state.query = query;
     state.clauseParty = clauseParty;
     state.kind = kind;
@@ -7171,6 +8376,8 @@ function boot() {
       performAssignmentBrowse();
     } else if (state.resultMode === "governing_law_positions") {
       performGoverningLawBrowse();
+    } else if (state.resultMode === "indemnity_positions") {
+      performIndemnityBrowse();
     } else performSearch();
   });
   next.addEventListener("click", () => {
@@ -7180,9 +8387,8 @@ function boot() {
           "termination_positions",
           "assignment_positions",
           "governing_law_positions",
-        ].includes(
-          state.resultMode,
-        )
+          "indemnity_positions",
+        ].includes(state.resultMode)
         ? 5_000
         : 1_000,
       state.offset + state.limit,
@@ -7194,6 +8400,8 @@ function boot() {
       performAssignmentBrowse();
     } else if (state.resultMode === "governing_law_positions") {
       performGoverningLawBrowse();
+    } else if (state.resultMode === "indemnity_positions") {
+      performIndemnityBrowse();
     } else performSearch();
   });
   for (const button of document.querySelectorAll("[data-query]")) {

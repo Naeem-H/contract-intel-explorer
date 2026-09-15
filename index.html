@@ -385,6 +385,54 @@
             aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
         </section>
 
+        <section class="search-panel"
+          aria-labelledby="indemnity-library-title">
+          <p class="eyebrow">Claims allocation library</p>
+          <h2
+            id="indemnity-library-title">Browse indemnity structure and procedure wording</h2>
+          <p
+            class="search-note">Filter generated wording signals within a bounded observed clause window centred on exact indemnity-theme support. Signals do not identify the indemnifying party, decide whether a loss is covered, resolve cap interaction, or determine enforceability.</p>
+          <form id="indemnity-form"
+            class="search-form indemnity-search-form">
+            <label for="indemnity-signal">Indemnity wording</label>
+            <label for="indemnity-kind">Document class</label>
+            <label for="indemnity-source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <select id="indemnity-signal" name="signal">
+              <option value="">Any detected wording</option>
+              <option value="operative_indemnity_obligation_language">Operative indemnity obligation</option>
+              <option value="hold_harmless_language">Hold harmless</option>
+              <option value="defence_obligation_language">Defence obligation</option>
+              <option value="third_party_claim_language">Third-party claims</option>
+              <option value="direct_claim_language">Direct or first-party claims</option>
+              <option value="breach_negligence_or_misconduct_trigger_language">Breach, negligence or misconduct trigger</option>
+              <option value="intellectual_property_claim_language">Intellectual-property claims</option>
+              <option value="tax_indemnity_language">Tax or VAT indemnity</option>
+              <option value="employment_transfer_indemnity_language">Employment or TUPE indemnity</option>
+              <option value="claim_notice_language">Claim notice</option>
+              <option value="defence_control_language">Control or conduct of defence</option>
+              <option value="settlement_consent_language">Settlement consent or approval</option>
+              <option value="cooperation_language">Claim or defence cooperation</option>
+              <option value="exclusive_remedy_language">Sole or exclusive remedy</option>
+              <option value="survival_or_claim_period_language">Survival or claims period</option>
+            </select>
+            <select id="indemnity-kind" name="kind">
+              <option value="">Contracts and amendments</option>
+              <option value="contract">Contracts</option>
+              <option value="amendment">Amendments</option>
+            </select>
+            <input id="indemnity-source" name="source" type="text"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              placeholder="e.g. sec_edgar">
+            <button id="indemnity-submit" class="button primary"
+              type="submit">Browse indemnity</button>
+          </form>
+          <div id="indemnity-facets" class="quick"
+            aria-label="Available indemnity-position evidence"><span>Available evidence:</span></div>
+          <p id="indemnity-status" class="muted" role="status"
+            aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
+        </section>
+
         <section class="search-panel" aria-labelledby="party-search-title">
           <p class="eyebrow">Vendor and counterparty trail</p>
           <h2 id="party-search-title">Find published agreements by party</h2>
@@ -572,6 +620,8 @@
             type="button" disabled>Download assignment CSV</button>
           <button id="export-governing-law-matrix" class="button secondary"
             type="button" disabled>Download governing-law CSV</button>
+          <button id="export-indemnity-matrix" class="button secondary"
+            type="button" disabled>Download indemnity CSV</button>
           <button id="export-comparison" class="button secondary" type="button"
             disabled>Download citation JSON</button>
           <button id="close-comparison" class="icon-button" type="button"
