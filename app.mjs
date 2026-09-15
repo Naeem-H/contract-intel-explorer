@@ -43,6 +43,10 @@ const LIABILITY_POSITION_SIGNAL_LABELS = Object.freeze({
   cap_carveout_language: "Carve-outs",
   express_unlimited_liability: "Express unlimited",
 });
+const LIABILITY_VALUE_CANDIDATE_SCHEMAS = new Set([
+  "esheria.liability-cap-value-candidates.v1",
+  "esheria.liability-cap-value-candidates.v2",
+]);
 
 export class ApiError extends Error {
   constructor(message, status = 0, code = "request_failed", requestId = null) {
@@ -496,6 +500,7 @@ export function commercialPositionEvidence(value) {
     ![
       "liability-position-signals-v1",
       "liability-position-signals-v2",
+      "liability-position-signals-v3",
     ].includes(position.api_version)
   ) return null;
   const signals = array(position.signals).slice(
@@ -528,7 +533,7 @@ export function commercialPositionEvidence(value) {
 
 function observedValueCandidateEntries(value) {
   const packet = record(value);
-  if (packet.schema !== "esheria.liability-cap-value-candidates.v1") return [];
+  if (!LIABILITY_VALUE_CANDIDATE_SCHEMAS.has(packet.schema)) return [];
   return LIABILITY_VALUE_CANDIDATE_CATEGORIES.map(([key, label]) => {
     const seen = new Set();
     const values = array(packet[key]).slice(0, 8).map((item) => {
@@ -810,14 +815,14 @@ function citationObservedValueCandidate(value) {
 
 function citationObservedValueCandidates(value) {
   const packet = record(value);
-  if (packet.schema !== "esheria.liability-cap-value-candidates.v1") {
+  if (!LIABILITY_VALUE_CANDIDATE_SCHEMAS.has(packet.schema)) {
     return null;
   }
   const window = record(packet.observed_window);
   const windowText = citationText(window.text, 1_000);
   const limits = record(packet.limits);
   const result = {
-    schema: "esheria.liability-cap-value-candidates.v1",
+    schema: packet.schema,
     value_extractor_version: typeof packet.value_extractor_version === "string"
       ? packet.value_extractor_version
       : null,
@@ -842,6 +847,12 @@ function citationObservedValueCandidates(value) {
       window_ends_after_matched_text_characters: citationInteger(
         limits.window_ends_after_matched_text_characters,
       ),
+      maximum_signal_context_after_characters: citationInteger(
+        limits.maximum_signal_context_after_characters,
+      ),
+      window_scope: typeof limits.window_scope === "string"
+        ? limits.window_scope
+        : null,
     },
   };
   for (const [key] of LIABILITY_VALUE_CANDIDATE_CATEGORIES) {
@@ -872,9 +883,11 @@ function citationCommercialPosition(value) {
     "wilful_or_willful_misconduct",
   ];
   return {
-    schema: position.apiVersion === "liability-position-signals-v2"
-      ? "esheria.liability-position-signals.v2"
-      : "esheria.liability-position-signals.v1",
+    schema: {
+      "liability-position-signals-v1": "esheria.liability-position-signals.v1",
+      "liability-position-signals-v2": "esheria.liability-position-signals.v2",
+      "liability-position-signals-v3": "esheria.liability-position-signals.v3",
+    }[position.apiVersion],
     applicable: position.applicable,
     reason: position.reason,
     detector_version: position.detectorVersion,
