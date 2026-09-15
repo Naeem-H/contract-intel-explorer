@@ -144,6 +144,51 @@
             aria-live="polite">Choose a starter or enter your own search below. Document and source filters still apply.</p>
         </section>
 
+        <section class="search-panel"
+          aria-labelledby="decision-brief-directory-title">
+          <p class="eyebrow">Cross-provision preparation</p>
+          <h2
+            id="decision-brief-directory-title">Find evidence-rich agreement briefs</h2>
+          <p
+            class="search-note">Start from agreements with positive deterministic matches across several commercial topics, then open the evidence-linked brief. Topic coverage controls navigation order only; it is not a risk score, market benchmark, or finding that unmatched language is absent.</p>
+          <form id="decision-brief-directory-form"
+            class="search-form brief-directory-form">
+            <label
+              for="decision-brief-minimum-topics">Minimum matched topics</label>
+            <label for="decision-brief-kind">Document class</label>
+            <label for="decision-brief-source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <select id="decision-brief-minimum-topics"
+              name="minimum_topics">
+              <option value="5">All five topics</option>
+              <option value="4">At least four topics</option>
+              <option value="3" selected>At least three topics</option>
+              <option value="2">At least two topics</option>
+              <option value="1">At least one topic</option>
+            </select>
+            <select id="decision-brief-kind" name="kind">
+              <option value="">Contracts + amendments</option>
+              <option value="contract">Contracts</option>
+              <option value="amendment">Amendments</option>
+            </select>
+            <input id="decision-brief-source" name="source" type="text"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              placeholder="e.g. uk_find_a_tender">
+            <button id="decision-brief-directory-submit"
+              class="button primary" type="submit">Find briefs</button>
+          </form>
+          <p id="decision-brief-directory-status" class="muted" role="status"
+            aria-live="polite">Find published contracts and amendments with evidence across three or more tracked topics.</p>
+          <div id="decision-brief-directory-results"
+            class="results brief-directory-results"></div>
+          <div class="pager">
+            <button id="decision-brief-directory-previous"
+              class="button secondary" type="button" disabled>Previous</button>
+            <button id="decision-brief-directory-next"
+              class="button secondary" type="button" disabled>Next</button>
+          </div>
+        </section>
+
         <section class="search-panel" aria-labelledby="family-proposals-title">
           <p class="eyebrow">Document lifecycle</p>
           <h2

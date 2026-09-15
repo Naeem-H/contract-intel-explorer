@@ -28,6 +28,8 @@ export const AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT = 3;
 export const AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX = 5;
 export const AGREEMENT_DECISION_BRIEF_SCHEMA =
   "esheria.agreement-decision-brief.v1";
+export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
+export const DECISION_BRIEF_DIRECTORY_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
 export const TERMINATION_POSITION_SIGNAL_MAX = 12;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
@@ -242,6 +244,42 @@ function isAllowedApiTarget(url) {
       offset !== null &&
       /^(0|[1-9]\d*)$/.test(offset) &&
       Number(offset) <= FAMILY_PROPOSAL_OFFSET_MAX
+    );
+  }
+  if (pathname === "/api/decision-briefs") {
+    const allowed = new Set([
+      "minimum_topics",
+      "kind",
+      "source",
+      "limit",
+      "offset",
+    ]);
+    if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
+      return false;
+    }
+    if (
+      ["minimum_topics", "kind", "source", "limit", "offset"].some(
+        (key) => url.searchParams.getAll(key).length > 1,
+      )
+    ) {
+      return false;
+    }
+    const minimumTopics = url.searchParams.get("minimum_topics");
+    const kind = url.searchParams.get("kind");
+    const source = url.searchParams.get("source");
+    const limit = url.searchParams.get("limit");
+    const offset = url.searchParams.get("offset");
+    return (
+      minimumTopics !== null &&
+      /^[1-5]$/.test(minimumTopics) &&
+      (kind === null || ["contract", "amendment"].includes(kind)) &&
+      (source === null || SOURCE_PATTERN.test(source)) &&
+      limit !== null &&
+      /^[1-9]\d*$/.test(limit) &&
+      Number(limit) <= DECISION_BRIEF_DIRECTORY_PAGE_MAX &&
+      offset !== null &&
+      /^(0|[1-9]\d*)$/.test(offset) &&
+      Number(offset) <= DECISION_BRIEF_DIRECTORY_OFFSET_MAX
     );
   }
   if (
@@ -796,6 +834,55 @@ export function buildAgreementDecisionBriefPath(
     examples_per_topic: String(examplesPerTopic),
   });
   return `/api/agreements/${agreementId}/decision-brief?${params.toString()}`;
+}
+
+export function buildDecisionBriefDirectoryPath({
+  minimumTopics = 3,
+  kind = "",
+  source = "",
+  limit = 12,
+  offset = 0,
+} = {}) {
+  if (
+    !Number.isInteger(minimumTopics) || minimumTopics < 1 || minimumTopics > 5
+  ) {
+    throw new TypeError("Minimum topic count is outside the allowed range");
+  }
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > DECISION_BRIEF_DIRECTORY_PAGE_MAX
+  ) {
+    throw new TypeError(
+      "Decision brief directory limit is outside the allowed range",
+    );
+  }
+  if (
+    !Number.isInteger(offset) ||
+    offset < 0 ||
+    offset > DECISION_BRIEF_DIRECTORY_OFFSET_MAX
+  ) {
+    throw new TypeError(
+      "Decision brief directory offset is outside the allowed range",
+    );
+  }
+  if (kind && !["contract", "amendment"].includes(kind)) {
+    throw new TypeError("Decision brief document class is not supported");
+  }
+  const normalizedSource = typeof source === "string"
+    ? source.trim().toLowerCase()
+    : "";
+  if (normalizedSource && !SOURCE_PATTERN.test(normalizedSource)) {
+    throw new TypeError("Source slug is invalid");
+  }
+  const params = new URLSearchParams({
+    minimum_topics: String(minimumTopics),
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (kind) params.set("kind", kind);
+  if (normalizedSource) params.set("source", normalizedSource);
+  return `/api/decision-briefs?${params.toString()}`;
 }
 
 export const AGREEMENT_DECISION_BRIEF_TOPICS = Object.freeze([
@@ -1605,6 +1692,256 @@ export function buildAgreementDecisionBriefExport(
       spreadsheet_import_warning:
         "JSON does not execute formula-like source text. If converting evidence to a spreadsheet, neutralize formula-leading cells before opening the file.",
     },
+  };
+}
+
+export function decisionBriefDirectoryEvidence(
+  value,
+  expectedMinimumTopics = 3,
+  expectedLimit = 12,
+  expectedOffset = 0,
+  expectedKind = "",
+  expectedSource = "",
+) {
+  if (
+    !Number.isInteger(expectedMinimumTopics) ||
+    expectedMinimumTopics < 1 ||
+    expectedMinimumTopics > 5 ||
+    !Number.isInteger(expectedLimit) ||
+    expectedLimit < 1 ||
+    expectedLimit > DECISION_BRIEF_DIRECTORY_PAGE_MAX ||
+    !Number.isInteger(expectedOffset) ||
+    expectedOffset < 0 ||
+    expectedOffset > DECISION_BRIEF_DIRECTORY_OFFSET_MAX ||
+    (expectedKind && !["contract", "amendment"].includes(expectedKind)) ||
+    (expectedSource && !SOURCE_PATTERN.test(expectedSource))
+  ) {
+    return null;
+  }
+
+  const root = record(value);
+  const page = record(root.page);
+  const filters = record(root.filters);
+  const limits = record(root.limits);
+  const returnedCount = decisionBriefInteger(page.returned_count);
+  const eligibleAgreements = decisionBriefInteger(page.eligible_agreements);
+  const expectedKinds = expectedKind ? [expectedKind] : [];
+  const expectedSources = expectedSource ? [expectedSource] : [];
+  if (
+    root.api_version !== "agreement-decision-brief-directory-v1" ||
+    !isValidFamilyTimestamp(root.generated_at) ||
+    decisionBriefInteger(page.limit) !== expectedLimit ||
+    decisionBriefInteger(page.offset) !== expectedOffset ||
+    returnedCount === null ||
+    eligibleAgreements === null ||
+    returnedCount > expectedLimit ||
+    returnedCount > eligibleAgreements ||
+    typeof page.has_more !== "boolean" ||
+    page.has_more !== (expectedOffset + returnedCount < eligibleAgreements) ||
+    (expectedOffset < eligibleAgreements &&
+      returnedCount !== Math.min(
+          expectedLimit,
+          eligibleAgreements - expectedOffset,
+        )) ||
+    (expectedOffset >= eligibleAgreements && returnedCount !== 0) ||
+    filters.minimum_topics !== expectedMinimumTopics ||
+    JSON.stringify(filters.document_kinds) !== JSON.stringify(expectedKinds) ||
+    JSON.stringify(filters.source_slugs) !== JSON.stringify(expectedSources) ||
+    limits.maximum_page_size !== DECISION_BRIEF_DIRECTORY_PAGE_MAX ||
+    limits.maximum_offset !== DECISION_BRIEF_DIRECTORY_OFFSET_MAX ||
+    limits.topic_count !== AGREEMENT_DECISION_BRIEF_TOPICS.length ||
+    limits.positive_matches_only !== true ||
+    limits.ranking_is_generated_navigation !== true ||
+    limits.full_evidence_revalidated_when_brief_opens !== true ||
+    limits.absence_is_not_evidence_of_absence !== true ||
+    limits.risk_score_provided !== false ||
+    limits.legal_effect_determined !== false ||
+    !Array.isArray(root.limitations) ||
+    root.limitations.length !== 4 ||
+    root.limitations.some(
+      (item) => typeof item !== "string" || !item || item.length > 500,
+    ) ||
+    !Array.isArray(root.items) ||
+    root.items.length !== returnedCount
+  ) {
+    return null;
+  }
+
+  const seenAgreementIds = new Set();
+  let previous = null;
+  const items = [];
+  for (const valueItem of root.items) {
+    const item = record(valueItem);
+    const source = record(item.source);
+    const agreementId = item.agreement_id;
+    const title = item.title;
+    const sourceUrl = safeExternalUrl(source.source_url);
+    const matchedTopicCount = decisionBriefInteger(item.matched_topic_count, 1);
+    const matchingClauseCount = decisionBriefInteger(
+      item.matching_clause_count,
+      1,
+    );
+    const signalCount = decisionBriefInteger(item.signal_count, 1);
+    if (
+      typeof agreementId !== "string" ||
+      !UUID_PATTERN.test(agreementId) ||
+      seenAgreementIds.has(agreementId) ||
+      !DECISION_BRIEF_DOCUMENT_KINDS.has(item.document_kind) ||
+      !DECISION_BRIEF_BASES.has(item.document_kind_basis) ||
+      item.text_basis !== "observed" ||
+      !(
+        title === null ||
+        (typeof title === "string" && title.trim() &&
+          Array.from(title).length <= 500)
+      ) ||
+      typeof item.title_truncated !== "boolean" ||
+      (item.title_truncated &&
+        (typeof title !== "string" || Array.from(title).length !== 500)) ||
+      !isDecisionBriefDate(item.observed_execution_date) ||
+      !isDecisionBriefDate(item.observed_effective_date) ||
+      !isDecisionBriefDate(item.observed_termination_date) ||
+      !isValidFamilyTimestamp(item.published_at) ||
+      decisionBriefString(item.extraction_version, 100) === undefined ||
+      decisionBriefString(source.slug, 63) === undefined ||
+      !SOURCE_PATTERN.test(source.slug) ||
+      decisionBriefString(source.name, 300) === undefined ||
+      !(
+        source.publisher === null ||
+        decisionBriefString(source.publisher, 300) !== undefined
+      ) ||
+      decisionBriefString(source.external_id, 1_000) === undefined ||
+      sourceUrl === null ||
+      !(
+        source.observed_published_at === null ||
+        isValidFamilyTimestamp(source.observed_published_at)
+      ) ||
+      matchedTopicCount === null ||
+      matchedTopicCount < expectedMinimumTopics ||
+      matchedTopicCount > AGREEMENT_DECISION_BRIEF_TOPICS.length ||
+      matchingClauseCount === null ||
+      signalCount === null ||
+      signalCount < matchingClauseCount ||
+      item.decision_brief_available !== true ||
+      !Array.isArray(item.topics) ||
+      item.topics.length !== AGREEMENT_DECISION_BRIEF_TOPICS.length ||
+      [
+        "artifact_sha256",
+        "extraction_id",
+        "observed_text",
+        "matched_text",
+        "storage_bucket",
+        "storage_object_path",
+      ].some((key) => Object.hasOwn(item, key))
+    ) {
+      return null;
+    }
+
+    let topicMatches = 0;
+    let clauseTotal = 0;
+    let signalTotal = 0;
+    const topics = [];
+    for (
+      let index = 0;
+      index < AGREEMENT_DECISION_BRIEF_TOPICS.length;
+      index += 1
+    ) {
+      const topic = record(item.topics[index]);
+      const expectedTopic = AGREEMENT_DECISION_BRIEF_TOPICS[index];
+      const clauseCount = decisionBriefInteger(
+        topic.exact_matching_clause_count,
+      );
+      const topicSignalCount = decisionBriefInteger(
+        topic.total_signal_matches,
+      );
+      if (
+        topic.topic_key !== expectedTopic.topicKey ||
+        topic.label !== expectedTopic.label ||
+        topic.detector_version !== expectedTopic.detectorVersion ||
+        typeof topic.has_matches !== "boolean" ||
+        clauseCount === null ||
+        topicSignalCount === null ||
+        topic.has_matches !== (clauseCount > 0) ||
+        (clauseCount === 0 && topicSignalCount !== 0) ||
+        (clauseCount > 0 && topicSignalCount < clauseCount)
+      ) {
+        return null;
+      }
+      if (topic.has_matches) topicMatches += 1;
+      clauseTotal += clauseCount;
+      signalTotal += topicSignalCount;
+      topics.push({
+        topicKey: topic.topic_key,
+        label: topic.label,
+        detectorVersion: topic.detector_version,
+        hasMatches: topic.has_matches,
+        matchingClauseCount: clauseCount,
+        signalCount: topicSignalCount,
+      });
+    }
+    if (
+      topicMatches !== matchedTopicCount ||
+      clauseTotal !== matchingClauseCount ||
+      signalTotal !== signalCount
+    ) {
+      return null;
+    }
+    if (
+      previous !== null &&
+      (matchedTopicCount > previous.matchedTopicCount ||
+        (matchedTopicCount === previous.matchedTopicCount &&
+          signalCount > previous.signalCount) ||
+        (matchedTopicCount === previous.matchedTopicCount &&
+          signalCount === previous.signalCount &&
+          matchingClauseCount > previous.matchingClauseCount) ||
+        (matchedTopicCount === previous.matchedTopicCount &&
+          signalCount === previous.signalCount &&
+          matchingClauseCount === previous.matchingClauseCount &&
+          agreementId <= previous.agreementId))
+    ) {
+      return null;
+    }
+
+    const projected = {
+      agreementId,
+      title,
+      titleTruncated: item.title_truncated,
+      documentKind: item.document_kind,
+      documentKindBasis: item.document_kind_basis,
+      observedExecutionDate: item.observed_execution_date,
+      observedEffectiveDate: item.observed_effective_date,
+      observedTerminationDate: item.observed_termination_date,
+      publishedAt: item.published_at,
+      extractionVersion: item.extraction_version,
+      textBasis: item.text_basis,
+      source: {
+        slug: source.slug,
+        name: source.name,
+        publisher: source.publisher,
+        externalId: source.external_id,
+        sourceUrl,
+        observedPublishedAt: source.observed_published_at,
+      },
+      matchedTopicCount,
+      matchingClauseCount,
+      signalCount,
+      topics,
+    };
+    items.push(projected);
+    seenAgreementIds.add(agreementId);
+    previous = projected;
+  }
+
+  return {
+    items,
+    page: {
+      limit: expectedLimit,
+      offset: expectedOffset,
+      returnedCount,
+      eligibleAgreements,
+      hasMore: page.has_more,
+    },
+    minimumTopics: expectedMinimumTopics,
+    limitations: [...root.limitations],
   };
 }
 
@@ -5489,6 +5826,13 @@ function boot() {
     familyProposalLimit: FAMILY_PROPOSAL_PAGE_MAX,
     familyProposalHasMore: false,
     familyProposalLoading: false,
+    decisionBriefDirectoryMinimumTopics: 3,
+    decisionBriefDirectoryKind: "",
+    decisionBriefDirectorySource: "",
+    decisionBriefDirectoryOffset: 0,
+    decisionBriefDirectoryLimit: 12,
+    decisionBriefDirectoryHasMore: false,
+    decisionBriefDirectoryLoading: false,
     decisionBrief: null,
     decisionBriefAgreementId: null,
     decisionBriefLoading: false,
@@ -5553,6 +5897,25 @@ function boot() {
   const familyProposalResults = byId("family-proposals-results");
   const familyProposalPrevious = byId("family-proposals-previous");
   const familyProposalNext = byId("family-proposals-next");
+  const decisionBriefDirectoryForm = byId("decision-brief-directory-form");
+  const decisionBriefMinimumTopicsInput = byId(
+    "decision-brief-minimum-topics",
+  );
+  const decisionBriefKindInput = byId("decision-brief-kind");
+  const decisionBriefSourceInput = byId("decision-brief-source");
+  const decisionBriefDirectoryButton = byId(
+    "decision-brief-directory-submit",
+  );
+  const decisionBriefDirectoryStatus = byId(
+    "decision-brief-directory-status",
+  );
+  const decisionBriefDirectoryResults = byId(
+    "decision-brief-directory-results",
+  );
+  const decisionBriefDirectoryPrevious = byId(
+    "decision-brief-directory-previous",
+  );
+  const decisionBriefDirectoryNext = byId("decision-brief-directory-next");
   const partySearchForm = byId("party-search-form");
   const partyQueryInput = byId("party-query");
   const partyKindInput = byId("party-kind");
@@ -5670,11 +6033,23 @@ function boot() {
     state.familyProposalOffset = 0;
     state.familyProposalHasMore = false;
     state.familyProposalLoading = false;
+    state.decisionBriefDirectoryMinimumTopics = 3;
+    state.decisionBriefDirectoryKind = "";
+    state.decisionBriefDirectorySource = "";
+    state.decisionBriefDirectoryOffset = 0;
+    state.decisionBriefDirectoryHasMore = false;
+    state.decisionBriefDirectoryLoading = false;
     state.decisionBrief = null;
     state.decisionBriefAgreementId = null;
     state.decisionBriefLoading = false;
     state.resultMode = "search";
     state.clauseParty = "";
+    decisionBriefDirectoryForm.reset();
+    decisionBriefDirectoryPrevious.disabled = true;
+    decisionBriefDirectoryNext.disabled = true;
+    decisionBriefDirectoryStatus.textContent =
+      "Find published contracts and amendments with evidence across three or more tracked topics.";
+    decisionBriefDirectoryResults.replaceChildren();
     positionForm.reset();
     positionFacets.replaceChildren(element("span", "", "Available evidence:"));
     positionStatus.textContent =
@@ -7926,6 +8301,191 @@ function boot() {
     append(actions, sourceLink(item.source_url));
     append(card, top, title, metadata, partyEvidence, partyList, actions);
     return card;
+  }
+
+  function decisionBriefDirectoryCard(item) {
+    const card = element("article", "result-card brief-directory-card");
+    const headingGroup = element("div");
+    append(
+      headingGroup,
+      element(
+        "span",
+        "badge basis-generated",
+        `${count(item.matchedTopicCount)} of 5 detected topics`,
+      ),
+      element("h3", "", displayText(item.title, "Untitled agreement")),
+    );
+    const top = element("div", "result-top");
+    append(
+      top,
+      headingGroup,
+      element(
+        "span",
+        "badge basis-observed",
+        "Observed source text available",
+      ),
+    );
+
+    const metadata = element("div", "meta");
+    append(
+      metadata,
+      element("span", "", displayText(item.source.name, "Unknown source")),
+      element("span", "", displayText(item.documentKind, "unclassified")),
+      item.observedEffectiveDate
+        ? element(
+          "span",
+          "",
+          `Recorded effective date ${item.observedEffectiveDate}`,
+        )
+        : null,
+      item.observedExecutionDate
+        ? element(
+          "span",
+          "",
+          `Recorded execution date ${item.observedExecutionDate}`,
+        )
+        : null,
+      element("span", "", `Source record ${item.source.externalId}`),
+    );
+
+    const topics = element("div", "brief-topic-grid");
+    for (const topic of item.topics) {
+      const chip = element(
+        "div",
+        `brief-topic-chip${topic.hasMatches ? "" : " topic-empty"}`,
+      );
+      append(
+        chip,
+        element("strong", "", topic.label),
+        element(
+          "span",
+          "",
+          topic.hasMatches
+            ? `${count(topic.matchingClauseCount)} clause(s) · ${
+              count(topic.signalCount)
+            } signal(s)`
+            : "No positive detector match",
+        ),
+      );
+      topics.append(chip);
+    }
+
+    const actions = element("div", "result-actions");
+    const openBrief = element(
+      "button",
+      "button primary",
+      "Open evidence-linked brief",
+    );
+    openBrief.type = "button";
+    openBrief.addEventListener("click", () => {
+      loadAgreementDecisionBrief(item.agreementId);
+    });
+    const inspect = element("button", "text-button", "Inspect agreement →");
+    inspect.type = "button";
+    inspect.addEventListener("click", () => {
+      loadAgreement(item.agreementId, null);
+    });
+    append(actions, openBrief, inspect);
+    const source = sourceLink(item.source.sourceUrl, "Open recorded source ↗");
+    if (source) actions.append(source);
+
+    append(
+      card,
+      top,
+      metadata,
+      topics,
+      element(
+        "p",
+        "focus-note",
+        `${count(item.matchingClauseCount)} matching clause(s) and ${
+          count(item.signalCount)
+        } positive generated signal(s). Coverage order is navigation, not a risk or quality score.`,
+      ),
+      actions,
+    );
+    return card;
+  }
+
+  function renderDecisionBriefDirectory(value) {
+    const response = decisionBriefDirectoryEvidence(
+      record(value).data,
+      state.decisionBriefDirectoryMinimumTopics,
+      state.decisionBriefDirectoryLimit,
+      state.decisionBriefDirectoryOffset,
+      state.decisionBriefDirectoryKind,
+      state.decisionBriefDirectorySource,
+    );
+    if (response === null) {
+      throw new ApiError(
+        "The decision brief directory response did not match its disclosure contract.",
+      );
+    }
+    state.decisionBriefDirectoryHasMore = response.page.hasMore;
+    decisionBriefDirectoryPrevious.disabled =
+      state.decisionBriefDirectoryOffset === 0;
+    decisionBriefDirectoryNext.disabled =
+      !state.decisionBriefDirectoryHasMore ||
+      state.decisionBriefDirectoryOffset + state.decisionBriefDirectoryLimit >
+        DECISION_BRIEF_DIRECTORY_OFFSET_MAX;
+    decisionBriefDirectoryResults.replaceChildren(
+      ...(response.items.length
+        ? response.items.map(decisionBriefDirectoryCard)
+        : [
+          element(
+            "p",
+            "empty",
+            "No agreement at this page meets the selected positive-detector coverage. This is not evidence that the clauses are absent.",
+          ),
+        ]),
+    );
+    const start = response.items.length
+      ? state.decisionBriefDirectoryOffset + 1
+      : 0;
+    const end = state.decisionBriefDirectoryOffset + response.items.length;
+    decisionBriefDirectoryStatus.textContent = response.items.length
+      ? `Showing agreements ${start}–${end} of ${
+        count(response.page.eligibleAgreements)
+      } with at least ${count(response.minimumTopics)} positive topic matches.`
+      : response.page.eligibleAgreements > 0
+      ? `No agreement appears at this offset; ${
+        count(response.page.eligibleAgreements)
+      } agreement(s) meet the selected detector threshold.`
+      : "No agreement meets the selected positive-detector threshold. This is not evidence that the provisions are absent.";
+  }
+
+  async function performDecisionBriefDirectoryBrowse() {
+    if (!state.token || state.decisionBriefDirectoryLoading) return;
+    state.decisionBriefDirectoryLoading = true;
+    state.decisionBriefDirectoryHasMore = false;
+    decisionBriefDirectoryButton.disabled = true;
+    decisionBriefDirectoryPrevious.disabled = true;
+    decisionBriefDirectoryNext.disabled = true;
+    statusMessage(
+      decisionBriefDirectoryStatus,
+      "Finding publication-gated agreements with validated topic evidence…",
+    );
+    try {
+      const path = buildDecisionBriefDirectoryPath({
+        minimumTopics: state.decisionBriefDirectoryMinimumTopics,
+        kind: state.decisionBriefDirectoryKind,
+        source: state.decisionBriefDirectorySource,
+        limit: state.decisionBriefDirectoryLimit,
+        offset: state.decisionBriefDirectoryOffset,
+      });
+      renderDecisionBriefDirectory(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, decisionBriefDirectoryStatus);
+    } finally {
+      state.decisionBriefDirectoryLoading = false;
+      decisionBriefDirectoryButton.disabled = false;
+      decisionBriefDirectoryPrevious.disabled =
+        state.decisionBriefDirectoryOffset === 0;
+      decisionBriefDirectoryNext.disabled =
+        !state.decisionBriefDirectoryHasMore ||
+        state.decisionBriefDirectoryOffset +
+              state.decisionBriefDirectoryLimit >
+          DECISION_BRIEF_DIRECTORY_OFFSET_MAX;
+    }
   }
 
   function familyProposalDocumentCard(document, ordinal, source) {
@@ -10482,6 +11042,37 @@ function boot() {
     }
     state.familyProposalOffset += state.familyProposalLimit;
     performFamilyProposalBrowse();
+  });
+
+  decisionBriefDirectoryForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.decisionBriefDirectoryMinimumTopics = Number(
+      decisionBriefMinimumTopicsInput.value,
+    );
+    state.decisionBriefDirectoryKind = decisionBriefKindInput.value;
+    state.decisionBriefDirectorySource = decisionBriefSourceInput.value.trim()
+      .toLowerCase();
+    state.decisionBriefDirectoryOffset = 0;
+    performDecisionBriefDirectoryBrowse();
+  });
+  decisionBriefDirectoryPrevious.addEventListener("click", () => {
+    state.decisionBriefDirectoryOffset = Math.max(
+      0,
+      state.decisionBriefDirectoryOffset - state.decisionBriefDirectoryLimit,
+    );
+    performDecisionBriefDirectoryBrowse();
+  });
+  decisionBriefDirectoryNext.addEventListener("click", () => {
+    if (
+      !state.decisionBriefDirectoryHasMore ||
+      state.decisionBriefDirectoryOffset +
+            state.decisionBriefDirectoryLimit >
+        DECISION_BRIEF_DIRECTORY_OFFSET_MAX
+    ) {
+      return;
+    }
+    state.decisionBriefDirectoryOffset += state.decisionBriefDirectoryLimit;
+    performDecisionBriefDirectoryBrowse();
   });
 
   partySearchForm.addEventListener("submit", (event) => {

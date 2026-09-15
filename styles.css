@@ -402,6 +402,9 @@ select:focus {
 .indemnity-search-form {
   grid-template-columns: minmax(260px, 1.2fr) 155px 155px auto;
 }
+.brief-directory-form {
+  grid-template-columns: minmax(190px, .8fr) 190px minmax(210px, 1fr) auto;
+}
 .search-note {
   margin: 11px 0 0;
   color: var(--muted);
@@ -490,6 +493,44 @@ select:focus {
 .family-proposal-card {
   display: grid;
   gap: 0.85rem;
+}
+
+.brief-directory-card {
+  display: grid;
+  gap: 0.75rem;
+  max-height: none;
+}
+
+.brief-topic-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.brief-topic-chip {
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-raised);
+}
+
+.brief-topic-chip strong,
+.brief-topic-chip span {
+  display: block;
+}
+
+.brief-topic-chip strong {
+  font-size: 11px;
+}
+
+.brief-topic-chip span {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.brief-topic-chip.topic-empty {
+  opacity: 0.55;
 }
 
 .family-documents {
@@ -1131,6 +1172,9 @@ noscript {
   }
   .metric-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .brief-topic-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .metric {
     border-bottom: 1px solid var(--line);
