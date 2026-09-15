@@ -1667,6 +1667,8 @@ function boot() {
     const sourceBreakdown = array(root.sources);
     const evidenceQuality = record(root.evidence_quality);
     const partySummary = record(root.party_summary);
+    const positionSummary = record(root.position_summary);
+    const positionCurrent = record(positionSummary.current);
 
     summaryCards.replaceChildren(
       metric(
@@ -1727,6 +1729,24 @@ function boot() {
       [
         "Low-specificity party names",
         count(partySummary.low_specificity_name_observations),
+      ],
+      [
+        "Liability position cache",
+        `${count(positionCurrent.cached_clauses)} / ${
+          count(positionCurrent.eligible_clauses)
+        } current clauses`,
+      ],
+      [
+        "Cached liability signals",
+        `${count(positionCurrent.signal_matches)} matches across ${
+          count(positionCurrent.clauses_with_matches)
+        } clauses`,
+      ],
+      [
+        "Liability cache repair backlog",
+        Number(positionCurrent.missing_clauses) === 0
+          ? "Complete"
+          : `${count(positionCurrent.missing_clauses)} missing`,
       ],
       [
         "Average extraction confidence",
@@ -1802,6 +1822,8 @@ function boot() {
       disclosure.observed_vs_generated,
       disclosure.legal_reliance,
       partySummary.measurement,
+      positionSummary.measurement,
+      positionSummary.absence_warning,
     ].filter((value) => typeof value === "string");
     corpusDisclosure.replaceChildren(
       ...disclosureLines.map((line) => element("p", "", line)),
