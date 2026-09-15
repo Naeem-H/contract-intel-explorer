@@ -24,6 +24,8 @@ export const TERMINATION_POSITION_SIGNAL_MAX = 12;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
 export const LIABILITY_POSITION_MATRIX_SCHEMA =
   "esheria.liability-position-matrix.v3";
+export const TERMINATION_POSITION_MATRIX_SCHEMA =
+  "esheria.termination-position-matrix.v1";
 
 const LIABILITY_VALUE_CANDIDATE_CATEGORIES = Object.freeze([
   ["currency_amounts", "Currency amounts"],
@@ -110,6 +112,8 @@ const TERMINATION_POSITION_SIGNALS = Object.freeze({
 });
 const TERMINATION_DURATION_CANDIDATE_SCHEMA =
   "esheria.termination-duration-candidates.v1";
+const LOCAL_TERMINATION_TERM_PATTERN =
+  /(?:^|[^A-Za-z0-9_])terminat(?:e|es|ed|ing|ion)(?=$|[^A-Za-z0-9_])/iu;
 
 export class ApiError extends Error {
   constructor(message, status = 0, code = "request_failed", requestId = null) {
@@ -701,6 +705,12 @@ export function terminationPositionEvidence(value) {
       typeof item === "string"
     ).slice(0, 10),
   };
+}
+
+export function terminationSignalHasLocalLinkage(value) {
+  const support = record(record(value).observed_support);
+  return typeof support.text === "string" &&
+    LOCAL_TERMINATION_TERM_PATTERN.test(support.text);
 }
 
 export function observedDurationEntries(value) {
@@ -1790,6 +1800,274 @@ export function buildLiabilityPositionMatrixCsv({
   }\r\n`;
 }
 
+const TERMINATION_POSITION_MATRIX_COLUMNS = Object.freeze([
+  "matrix_schema",
+  "generated_at",
+  "retrieval_query",
+  "document_kind_filter",
+  "source_filter",
+  "selected_count",
+  "citation_number",
+  "signal_row_number",
+  "retrieval_rank",
+  "observed_published_at",
+  "source_slug",
+  "source_name",
+  "source_publisher",
+  "source_external_id",
+  "source_url",
+  "source_terms_url",
+  "source_policy_assessment_status",
+  "source_human_review_required",
+  "agreement_id",
+  "agreement_title",
+  "agreement_document_kind",
+  "agreement_document_kind_basis",
+  "artifact_sha256",
+  "extraction_method",
+  "extraction_version",
+  "agreement_text_basis",
+  "clause_id",
+  "clause_sequence",
+  "clause_heading",
+  "clause_text_basis",
+  "clause_text_sha256",
+  "clause_location",
+  "clause_char_start",
+  "clause_char_end",
+  "observed_clause_text",
+  "observed_clause_text_truncated",
+  "generated_clause_type",
+  "position_schema",
+  "position_applicable",
+  "position_reason",
+  "detector_version",
+  "duration_extractor_version",
+  "detector_scope",
+  "matched_signal_count",
+  "supported_rule_count",
+  "eligibility_theme",
+  "eligibility_theme_basis",
+  "eligibility_taxonomy_version",
+  "eligibility_generated_by",
+  "detector_match",
+  "signal_key",
+  "signal_label",
+  "signal_basis",
+  "signal_confidence",
+  "signal_rule_id",
+  "duration_candidate_present",
+  "notice_language_present",
+  "facially_bilateral_language_present",
+  "same_support_explicit_termination_term",
+  "observed_support",
+  "support_text_truncated",
+  "support_text_basis",
+  "support_sha256",
+  "support_clause_char_start",
+  "support_clause_char_end",
+  "support_document_char_start",
+  "support_document_char_end",
+  "matched_text",
+  "matched_text_truncated",
+  "matched_text_sha256",
+  "matched_clause_char_start",
+  "matched_clause_char_end",
+  "support_is_bounded_excerpt",
+  "duration_candidate_schema",
+  "duration_candidate_extractor_version",
+  "duration_candidate_count",
+  "observed_duration_terms",
+  "observed_duration_candidate_hashes",
+  "observed_duration_candidates_json",
+  "anchor_clause_id",
+  "anchor_clause_sha256",
+  "absence_is_not_evidence_of_absence",
+  "signals_are_legal_conclusions",
+  "duration_candidates_are_normalized",
+  "position_limitations",
+  "export_limitations",
+]);
+
+export function buildTerminationPositionMatrixCsv({
+  query = "",
+  kind = "",
+  source = "",
+  entries = [],
+  generatedAt = new Date().toISOString(),
+} = {}) {
+  const manifest = buildCitationManifest({
+    query,
+    kind,
+    source,
+    entries,
+    generatedAt,
+  });
+  const scope = manifest.retrieval_scope;
+  const exportLimitations = [
+    ...manifest.limitations,
+    "Each row represents one generated termination signal; clauses with no supported signal produce one non-match row.",
+    "Same-support explicit-termination status is lexical proximity within bounded observed support, not causation, an operative right, or a legal conclusion.",
+  ];
+  const rows = manifest.citations.flatMap((citation) => {
+    const agreement = record(citation.agreement);
+    const clause = record(citation.matched_clause);
+    const clauseLocation = record(clause.location);
+    const interpretation = record(clause.generated_interpretation);
+    const sourceRecord = record(citation.source);
+    const retrieval = record(citation.retrieval);
+    const position = record(citation.termination_position);
+    const coverage = record(position.coverage);
+    const eligibility = record(position.eligibility);
+    const limits = record(position.limits);
+    const positionApplicable = typeof position.applicable === "boolean"
+      ? position.applicable
+      : null;
+    const signals = array(position.signals).slice(
+      0,
+      TERMINATION_POSITION_SIGNAL_MAX,
+    );
+    const signalRows = signals.length ? signals : [null];
+
+    return signalRows.map((signalValue, signalIndex) => {
+      const signal = record(signalValue);
+      const attributes = record(signal.generated_attributes);
+      const support = record(signal.observed_support);
+      const durationPacket = record(signal.observed_duration_candidates);
+      const durationTerms = array(durationPacket.duration_terms).slice(0, 4);
+      const hasSignal = typeof signal.signal_key === "string";
+      return {
+        matrix_schema: TERMINATION_POSITION_MATRIX_SCHEMA,
+        generated_at: manifest.generated_at,
+        retrieval_query: scope.query,
+        document_kind_filter: scope.document_kind,
+        source_filter: scope.source,
+        selected_count: scope.selected_count,
+        citation_number: citation.citation_number,
+        signal_row_number: hasSignal ? signalIndex + 1 : null,
+        retrieval_rank: retrieval.rank,
+        observed_published_at: retrieval.observed_published_at,
+        source_slug: sourceRecord.slug,
+        source_name: sourceRecord.name,
+        source_publisher: sourceRecord.publisher,
+        source_external_id: sourceRecord.external_id,
+        source_url: sourceRecord.canonical_url,
+        source_terms_url: sourceRecord.terms_url,
+        source_policy_assessment_status: sourceRecord.policy_assessment_status,
+        source_human_review_required: matrixBoolean(
+          sourceRecord.human_review_required,
+        ),
+        agreement_id: agreement.id,
+        agreement_title: agreement.title,
+        agreement_document_kind: agreement.document_kind,
+        agreement_document_kind_basis: agreement.document_kind_basis,
+        artifact_sha256: agreement.artifact_sha256,
+        extraction_method: agreement.extraction_method,
+        extraction_version: agreement.extraction_version,
+        agreement_text_basis: agreement.text_basis,
+        clause_id: clause.id,
+        clause_sequence: clause.sequence,
+        clause_heading: clause.heading,
+        clause_text_basis: clause.text_basis,
+        clause_text_sha256: clause.observed_text_sha256,
+        clause_location: clauseLocation.display,
+        clause_char_start: clauseLocation.char_start,
+        clause_char_end: clauseLocation.char_end,
+        observed_clause_text: clause.observed_text,
+        observed_clause_text_truncated: matrixBoolean(
+          clause.observed_text_truncated,
+        ),
+        generated_clause_type: interpretation.clause_type,
+        position_schema: position.schema,
+        position_applicable: matrixBoolean(positionApplicable),
+        position_reason: position.reason,
+        detector_version: position.detector_version,
+        duration_extractor_version: position.duration_extractor_version,
+        detector_scope: position.scope,
+        matched_signal_count: coverage.matched_signal_count,
+        supported_rule_count: coverage.supported_rule_count,
+        eligibility_theme: eligibility.theme,
+        eligibility_theme_basis: eligibility.theme_basis,
+        eligibility_taxonomy_version: eligibility.taxonomy_version,
+        eligibility_generated_by: eligibility.generated_by,
+        detector_match: hasSignal
+          ? "TRUE"
+          : positionApplicable === true
+          ? "FALSE"
+          : "",
+        signal_key: signal.signal_key,
+        signal_label: signal.label,
+        signal_basis: signal.signal_basis,
+        signal_confidence: signal.confidence,
+        signal_rule_id: signal.rule_id,
+        duration_candidate_present: matrixBoolean(
+          attributes.duration_candidate_present,
+        ),
+        notice_language_present: matrixBoolean(
+          attributes.notice_language_present,
+        ),
+        facially_bilateral_language_present: matrixBoolean(
+          attributes.facially_bilateral_language_present,
+        ),
+        same_support_explicit_termination_term: hasSignal
+          ? matrixBoolean(terminationSignalHasLocalLinkage(signal))
+          : "",
+        observed_support: support.text,
+        support_text_truncated: matrixBoolean(support.text_truncated),
+        support_text_basis: support.text_basis,
+        support_sha256: support.sha256,
+        support_clause_char_start: support.clause_char_start,
+        support_clause_char_end: support.clause_char_end,
+        support_document_char_start: support.document_char_start,
+        support_document_char_end: support.document_char_end,
+        matched_text: support.matched_text,
+        matched_text_truncated: matrixBoolean(support.matched_text_truncated),
+        matched_text_sha256: support.matched_text_sha256,
+        matched_clause_char_start: support.matched_clause_char_start,
+        matched_clause_char_end: support.matched_clause_char_end,
+        support_is_bounded_excerpt: matrixBoolean(support.bounded_excerpt),
+        duration_candidate_schema: durationPacket.schema,
+        duration_candidate_extractor_version:
+          durationPacket.value_extractor_version,
+        duration_candidate_count: durationTerms.length,
+        observed_duration_terms: durationTerms.map((value) =>
+          record(value).observed_text
+        ).filter((value) => typeof value === "string").join(" | "),
+        observed_duration_candidate_hashes: durationTerms.map((value) =>
+          record(value).sha256
+        ).filter((value) => typeof value === "string").join(" | "),
+        observed_duration_candidates_json: hasSignal
+          ? JSON.stringify(signal.observed_duration_candidates ?? null)
+          : null,
+        anchor_clause_id: signal.anchor_clause_id,
+        anchor_clause_sha256: signal.anchor_clause_sha256,
+        absence_is_not_evidence_of_absence: matrixBoolean(
+          limits.absence_is_not_evidence_of_absence,
+        ),
+        signals_are_legal_conclusions: matrixBoolean(
+          limits.signals_are_legal_conclusions,
+        ),
+        duration_candidates_are_normalized: matrixBoolean(
+          limits.duration_candidates_are_normalized,
+        ),
+        position_limitations: array(position.limitations).join(" | "),
+        export_limitations: exportLimitations.join(" | "),
+      };
+    });
+  });
+
+  return `\uFEFF${
+    [
+      TERMINATION_POSITION_MATRIX_COLUMNS.map(csvCell).join(","),
+      ...rows.map((row) =>
+        TERMINATION_POSITION_MATRIX_COLUMNS.map((column) =>
+          csvCell(row[column])
+        ).join(",")
+      ),
+    ].join("\r\n")
+  }\r\n`;
+}
+
 async function readBoundedJson(response) {
   const declared = response.headers.get("content-length");
   if (declared && Number(declared) > MAX_RESPONSE_BYTES) {
@@ -2169,6 +2447,7 @@ function boot() {
   const clearComparisonButton = byId("clear-comparison");
   const openComparisonButton = byId("open-comparison");
   const exportPositionMatrixButton = byId("export-position-matrix");
+  const exportTerminationMatrixButton = byId("export-termination-matrix");
   const exportComparisonButton = byId("export-comparison");
   const exportStatus = byId("comparison-export-status");
   const detailDialog = byId("detail-dialog");
@@ -2707,6 +2986,8 @@ function boot() {
     exportComparisonButton.disabled = state.comparing ||
       state.comparisonEvidence.length === 0;
     exportPositionMatrixButton.disabled = state.comparing ||
+      state.comparisonEvidence.length === 0;
+    exportTerminationMatrixButton.disabled = state.comparing ||
       state.comparisonEvidence.length === 0;
     comparisonStatus.className = kind === "error" ? "status error" : "muted";
     comparisonStatus.textContent = message ??
@@ -3453,7 +3734,7 @@ function boot() {
     exportStatus.textContent = loadedEntries.length
       ? `${loadedEntries.length} evidence citation${
         loadedEntries.length === 1 ? "" : "s"
-      } ready for JSON and CSV export.`
+      } ready for JSON and position-matrix CSV export.`
       : "No evidence was loaded, so no export file is available.";
     state.comparing = false;
     updateComparisonControls();
@@ -3520,6 +3801,38 @@ function boot() {
       exportStatus.textContent = error instanceof Error
         ? error.message
         : "Position CSV could not be created.";
+    }
+  }
+
+  function exportTerminationMatrix() {
+    if (!state.comparisonEvidence.length) return;
+    try {
+      const generatedAt = new Date().toISOString();
+      const csv = buildTerminationPositionMatrixCsv({
+        query: state.query,
+        kind: state.kind,
+        source: state.source,
+        entries: state.comparisonEvidence,
+        generatedAt,
+      });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = element("a");
+      link.href = objectUrl;
+      link.download = `esheria-termination-position-matrix-${
+        generatedAt.slice(0, 10)
+      }.csv`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      exportStatus.textContent =
+        "Termination CSV downloaded. Each row is one generated signal; same-support linkage is lexical proximity, not a legal conclusion.";
+    } catch (error) {
+      exportStatus.textContent = error instanceof Error
+        ? error.message
+        : "Termination CSV could not be created.";
     }
   }
 
@@ -4963,6 +5276,10 @@ function boot() {
   clearComparisonButton.addEventListener("click", clearComparison);
   openComparisonButton.addEventListener("click", compareSelected);
   exportPositionMatrixButton.addEventListener("click", exportPositionMatrix);
+  exportTerminationMatrixButton.addEventListener(
+    "click",
+    exportTerminationMatrix,
+  );
   exportComparisonButton.addEventListener("click", exportComparison);
   detailDialog.addEventListener("click", (event) => {
     if (event.target === detailDialog) closeDialog(detailDialog);
