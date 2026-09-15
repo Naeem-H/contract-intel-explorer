@@ -22,7 +22,15 @@ export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
 export const LIABILITY_POSITION_MATRIX_SCHEMA =
-  "esheria.liability-position-matrix.v1";
+  "esheria.liability-position-matrix.v2";
+
+const LIABILITY_VALUE_CANDIDATE_CATEGORIES = Object.freeze([
+  ["currency_amounts", "Currency amounts"],
+  ["percentages", "Percentages"],
+  ["cap_basis_terms", "Cap bases"],
+  ["comparison_formulas", "Comparison formulas"],
+  ["period_terms", "Periods"],
+]);
 
 export class ApiError extends Error {
   constructor(message, status = 0, code = "request_failed", requestId = null) {
@@ -407,17 +415,26 @@ export function comparisonConnectedContext(value) {
 
 export function commercialPositionEvidence(value) {
   const position = record(value);
-  if (position.api_version !== "liability-position-signals-v1") return null;
+  if (
+    ![
+      "liability-position-signals-v1",
+      "liability-position-signals-v2",
+    ].includes(position.api_version)
+  ) return null;
   const signals = array(position.signals).slice(
     0,
     COMMERCIAL_POSITION_SIGNAL_MAX,
   ).map(record);
   const coverage = record(position.coverage);
   return {
+    apiVersion: position.api_version,
     applicable: position.applicable === true,
     reason: typeof position.reason === "string" ? position.reason : null,
     detectorVersion: typeof position.detector_version === "string"
       ? position.detector_version
+      : null,
+    valueExtractorVersion: typeof position.value_extractor_version === "string"
+      ? position.value_extractor_version
       : null,
     scope: typeof position.scope === "string" ? position.scope : null,
     eligibility: record(position.eligibility),
@@ -430,6 +447,21 @@ export function commercialPositionEvidence(value) {
       typeof item === "string"
     ).slice(0, 10),
   };
+}
+
+function observedValueCandidateEntries(value) {
+  const packet = record(value);
+  if (packet.schema !== "esheria.liability-cap-value-candidates.v1") return [];
+  return LIABILITY_VALUE_CANDIDATE_CATEGORIES.map(([key, label]) => ({
+    key,
+    label,
+    values: array(packet[key]).slice(0, 8).map((item) => {
+      const candidate = record(item);
+      return typeof candidate.observed_text === "string"
+        ? candidate.observed_text
+        : null;
+    }).filter(Boolean),
+  })).filter((entry) => entry.values.length);
 }
 
 export function safeExternalUrl(value) {
@@ -678,6 +710,65 @@ function citationAnchorContext(value) {
   };
 }
 
+function citationObservedValueCandidate(value) {
+  const candidate = record(value);
+  const observed = citationText(candidate.observed_text, 500);
+  return {
+    observed_text: observed.text,
+    observed_text_truncated: observed.truncated,
+    text_basis: candidate.text_basis === "observed" ? "observed" : null,
+    sha256: typeof candidate.sha256 === "string" ? candidate.sha256 : null,
+    clause_char_start: citationInteger(candidate.clause_char_start),
+    clause_char_end: citationInteger(candidate.clause_char_end),
+    document_char_start: citationInteger(candidate.document_char_start),
+    document_char_end: citationInteger(candidate.document_char_end),
+  };
+}
+
+function citationObservedValueCandidates(value) {
+  const packet = record(value);
+  if (packet.schema !== "esheria.liability-cap-value-candidates.v1") {
+    return null;
+  }
+  const window = record(packet.observed_window);
+  const windowText = citationText(window.text, 1_000);
+  const limits = record(packet.limits);
+  const result = {
+    schema: "esheria.liability-cap-value-candidates.v1",
+    value_extractor_version: typeof packet.value_extractor_version === "string"
+      ? packet.value_extractor_version
+      : null,
+    observed_window: window.text === undefined || window.text === null
+      ? null
+      : {
+        text: windowText.text,
+        text_truncated: windowText.truncated,
+        text_basis: window.text_basis === "observed" ? "observed" : null,
+        sha256: typeof window.sha256 === "string" ? window.sha256 : null,
+        clause_char_start: citationInteger(window.clause_char_start),
+        clause_char_end: citationInteger(window.clause_char_end),
+        document_char_start: citationInteger(window.document_char_start),
+        document_char_end: citationInteger(window.document_char_end),
+      },
+    limits: {
+      maximum_candidates_per_category: citationInteger(
+        limits.maximum_candidates_per_category,
+      ),
+      candidate_values_are_legal_conclusions:
+        limits.candidate_values_are_legal_conclusions === true,
+      window_ends_after_matched_text_characters: citationInteger(
+        limits.window_ends_after_matched_text_characters,
+      ),
+    },
+  };
+  for (const [key] of LIABILITY_VALUE_CANDIDATE_CATEGORIES) {
+    result[key] = array(packet[key]).slice(0, 8).map(
+      citationObservedValueCandidate,
+    );
+  }
+  return result;
+}
+
 function citationCommercialPosition(value) {
   const position = commercialPositionEvidence(value);
   if (!position) return null;
@@ -698,10 +789,13 @@ function citationCommercialPosition(value) {
     "wilful_or_willful_misconduct",
   ];
   return {
-    schema: "esheria.liability-position-signals.v1",
+    schema: position.apiVersion === "liability-position-signals-v2"
+      ? "esheria.liability-position-signals.v2"
+      : "esheria.liability-position-signals.v1",
     applicable: position.applicable,
     reason: position.reason,
     detector_version: position.detectorVersion,
+    value_extractor_version: position.valueExtractorVersion,
     scope: position.scope,
     eligibility: {
       theme: typeof position.eligibility.theme === "string"
@@ -768,6 +862,9 @@ function citationCommercialPosition(value) {
           ),
           bounded_excerpt: support.bounded_excerpt === true,
         },
+        observed_value_candidates: citationObservedValueCandidates(
+          signal.observed_value_candidates,
+        ),
         anchor_clause_id: typeof signal.anchor_clause_id === "string" &&
             UUID_PATTERN.test(signal.anchor_clause_id)
           ? signal.anchor_clause_id
@@ -930,7 +1027,7 @@ export function buildCitationManifest({
   });
 
   return {
-    schema: "esheria.contract-citations.v3",
+    schema: "esheria.contract-citations.v4",
     generated_at: timestamp.toISOString(),
     retrieval_scope: {
       query: normalizedQuery || null,
@@ -943,6 +1040,7 @@ export function buildCitationManifest({
       "Observed wording is evidence. Generated classifications, themes, summaries and date types are interpretations, not source facts.",
       "Definition-use matching and target resolution are generated navigation aids; unresolved references are preserved rather than guessed.",
       "Commercial position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
+      "Cap-value candidates are exact lexical tokens from bounded observed support, not normalized amounts or interpreted liability caps.",
       "Verify the recorded source, completeness, amendments and governing law before legal or commercial reliance.",
     ],
     citations,
@@ -1030,24 +1128,40 @@ const LIABILITY_POSITION_MATRIX_BASE_COLUMNS = Object.freeze([
   "position_applicable",
   "position_reason",
   "detector_version",
+  "value_extractor_version",
   "detector_scope",
   "matched_signal_count",
   "supported_rule_count",
 ]);
 
 const LIABILITY_POSITION_MATRIX_SIGNAL_COLUMNS = Object.freeze(
-  LIABILITY_POSITION_MATRIX_SIGNALS.flatMap(({ prefix, attributes }) => [
-    `${prefix}_detector_match`,
-    `${prefix}_signal_basis`,
-    `${prefix}_confidence`,
-    `${prefix}_rule_id`,
-    ...attributes.map((attribute) => `${prefix}_${attribute}`),
-    `${prefix}_observed_support`,
-    `${prefix}_support_text_basis`,
-    `${prefix}_support_sha256`,
-    `${prefix}_matched_text`,
-    `${prefix}_matched_text_sha256`,
-  ]),
+  LIABILITY_POSITION_MATRIX_SIGNALS.flatMap(({ key, prefix, attributes }) => {
+    const columns = [
+      `${prefix}_detector_match`,
+      `${prefix}_signal_basis`,
+      `${prefix}_confidence`,
+      `${prefix}_rule_id`,
+      ...attributes.map((attribute) => `${prefix}_${attribute}`),
+      `${prefix}_observed_support`,
+      `${prefix}_support_text_basis`,
+      `${prefix}_support_sha256`,
+      `${prefix}_matched_text`,
+      `${prefix}_matched_text_sha256`,
+    ];
+    if (key === "explicit_liability_limit_formula") {
+      columns.push(
+        `${prefix}_observed_value_window`,
+        `${prefix}_observed_value_window_sha256`,
+        `${prefix}_observed_currency_amounts`,
+        `${prefix}_observed_percentages`,
+        `${prefix}_observed_cap_basis_terms`,
+        `${prefix}_observed_comparison_formulas`,
+        `${prefix}_observed_period_terms`,
+        `${prefix}_observed_value_candidates_json`,
+      );
+    }
+    return columns;
+  }),
 );
 
 const LIABILITY_POSITION_MATRIX_COLUMNS = Object.freeze([
@@ -1154,6 +1268,7 @@ export function buildLiabilityPositionMatrixCsv({
       position_applicable: matrixBoolean(positionApplicable),
       position_reason: position.reason,
       detector_version: position.detector_version,
+      value_extractor_version: position.value_extractor_version,
       detector_scope: position.scope,
       matched_signal_count: coverage.matched_signal_count,
       supported_rule_count: coverage.supported_rule_count,
@@ -1184,6 +1299,23 @@ export function buildLiabilityPositionMatrixCsv({
       row[`${prefix}_matched_text`] = support.matched_text ?? null;
       row[`${prefix}_matched_text_sha256`] = support.matched_text_sha256 ??
         null;
+      if (key === "explicit_liability_limit_formula") {
+        const candidates = record(signal?.observed_value_candidates);
+        const observedWindow = record(candidates.observed_window);
+        row[`${prefix}_observed_value_window`] = observedWindow.text ?? null;
+        row[`${prefix}_observed_value_window_sha256`] = observedWindow.sha256 ??
+          null;
+        for (const [category] of LIABILITY_VALUE_CANDIDATE_CATEGORIES) {
+          row[`${prefix}_observed_${category}`] = array(candidates[category])
+            .map((value) => record(value).observed_text)
+            .filter((value) => typeof value === "string")
+            .join(" | ");
+        }
+        row[`${prefix}_observed_value_candidates_json`] = signal
+            ?.observed_value_candidates
+          ? JSON.stringify(signal.observed_value_candidates)
+          : null;
+      }
     }
 
     row.support_is_bounded_excerpt = matrixBoolean(
@@ -1991,6 +2123,26 @@ function boot() {
         ),
       );
       if (attributes.length) card.append(dataList(attributes));
+      const valueEntries = observedValueCandidateEntries(
+        signal.observed_value_candidates,
+      );
+      if (valueEntries.length) {
+        const values = element("div", "position-values");
+        append(
+          values,
+          element("span", "badge observed", "Observed cap-value candidates"),
+          dataList(valueEntries.map((entry) => [
+            entry.label,
+            entry.values.join(" · "),
+          ])),
+          element(
+            "p",
+            "muted",
+            "Exact lexical tokens from the bounded support window; values are not normalized or interpreted as the operative cap.",
+          ),
+        );
+        card.append(values);
+      }
       const evidence = element("div", "position-support");
       append(
         evidence,
@@ -2982,6 +3134,11 @@ function boot() {
       const signalLabels = position.signals.map((signal) =>
         displayText(record(signal).label, record(signal).signal_key)
       );
+      const observedValues = position.signals.flatMap((signal) =>
+        observedValueCandidateEntries(
+          record(signal).observed_value_candidates,
+        ).flatMap((entry) => entry.values)
+      ).slice(0, 6);
       append(
         positionSummary,
         element("span", "badge generated", "Generated liability position"),
@@ -2994,6 +3151,13 @@ function boot() {
             ? "Position cache unavailable; inspect the clause for live analysis."
             : "No supported position rule matched this clause.",
         ),
+        observedValues.length
+          ? element(
+            "p",
+            "",
+            `Observed cap-value candidates: ${observedValues.join(" · ")}`,
+          )
+          : null,
         element(
           "p",
           "muted",
