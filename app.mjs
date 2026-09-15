@@ -22,7 +22,7 @@ export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
 export const LIABILITY_POSITION_MATRIX_SCHEMA =
-  "esheria.liability-position-matrix.v2";
+  "esheria.liability-position-matrix.v3";
 
 const LIABILITY_VALUE_CANDIDATE_CATEGORIES = Object.freeze([
   ["currency_amounts", "Currency amounts"],
@@ -555,6 +555,7 @@ export function commercialPositionEvidence(value) {
       "liability-position-signals-v1",
       "liability-position-signals-v2",
       "liability-position-signals-v3",
+      "liability-position-signals-v4",
     ].includes(position.api_version)
   ) return null;
   const signals = array(position.signals).slice(
@@ -572,6 +573,10 @@ export function commercialPositionEvidence(value) {
     valueExtractorVersion: typeof position.value_extractor_version === "string"
       ? position.value_extractor_version
       : null,
+    attributeProjectionVersion:
+      typeof position.attribute_projection_version === "string"
+        ? position.attribute_projection_version
+        : null,
     scope: typeof position.scope === "string" ? position.scope : null,
     eligibility: record(position.eligibility),
     signals,
@@ -941,11 +946,13 @@ function citationCommercialPosition(value) {
       "liability-position-signals-v1": "esheria.liability-position-signals.v1",
       "liability-position-signals-v2": "esheria.liability-position-signals.v2",
       "liability-position-signals-v3": "esheria.liability-position-signals.v3",
+      "liability-position-signals-v4": "esheria.liability-position-signals.v4",
     }[position.apiVersion],
     applicable: position.applicable,
     reason: position.reason,
     detector_version: position.detectorVersion,
     value_extractor_version: position.valueExtractorVersion,
+    attribute_projection_version: position.attributeProjectionVersion,
     scope: position.scope,
     eligibility: {
       theme: typeof position.eligibility.theme === "string"
@@ -1177,7 +1184,7 @@ export function buildCitationManifest({
   });
 
   return {
-    schema: "esheria.contract-citations.v4",
+    schema: "esheria.contract-citations.v5",
     generated_at: timestamp.toISOString(),
     retrieval_scope: {
       query: normalizedQuery || null,
@@ -1279,6 +1286,7 @@ const LIABILITY_POSITION_MATRIX_BASE_COLUMNS = Object.freeze([
   "position_reason",
   "detector_version",
   "value_extractor_version",
+  "attribute_projection_version",
   "detector_scope",
   "matched_signal_count",
   "supported_rule_count",
@@ -1419,6 +1427,7 @@ export function buildLiabilityPositionMatrixCsv({
       position_reason: position.reason,
       detector_version: position.detector_version,
       value_extractor_version: position.value_extractor_version,
+      attribute_projection_version: position.attribute_projection_version,
       detector_scope: position.scope,
       matched_signal_count: coverage.matched_signal_count,
       supported_rule_count: coverage.supported_rule_count,
@@ -1634,10 +1643,10 @@ function referenceResolutionProvenance(value) {
 }
 
 const POSITION_ATTRIBUTE_LABELS = Object.freeze({
-  currency_amount_present: "Currency amount appears",
-  percentage_present: "Percentage appears",
-  fees_or_charges_basis_present: "Fees or charges basis appears",
-  greater_or_lesser_formula_present: "Greater/lesser-of formula appears",
+  currency_amount_present: "Observed currency candidate appears",
+  percentage_present: "Observed percentage candidate appears",
+  fees_or_charges_basis_present: "Observed cap-basis candidate appears",
+  greater_or_lesser_formula_present: "Observed comparison candidate appears",
   facially_bilateral_language_present: "Facially bilateral wording appears",
   indirect: "Indirect loss named",
   consequential: "Consequential loss named",
