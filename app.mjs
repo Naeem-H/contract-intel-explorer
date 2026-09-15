@@ -27,7 +27,7 @@ export const FAMILY_PROPOSAL_OFFSET_MAX = 500;
 export const AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT = 3;
 export const AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX = 5;
 export const AGREEMENT_DECISION_BRIEF_SCHEMA =
-  "esheria.agreement-decision-brief.v1";
+  "esheria.agreement-decision-brief.v2";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
 export const DECISION_BRIEF_DIRECTORY_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
@@ -918,6 +918,7 @@ const AGREEMENT_DECISION_BRIEF_LIMITATIONS = Object.freeze([
   "Zero matches do not establish that a provision or commercial position is absent.",
   "Generated signals and attributes are navigation aids, not risk scores, legal conclusions or determinations of legal effect.",
   "Read the complete agreement, definitions, exceptions, amendments and related documents before relying on any example.",
+  "Representative examples are selected from the first five document-order positive matches per topic, prioritizing more matched signals and then longer exact support; this is not a legal importance ranking.",
 ]);
 const DECISION_BRIEF_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const DECISION_BRIEF_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -1018,6 +1019,8 @@ const DECISION_BRIEF_EXACT_KEYS = Object.freeze({
   ],
   limits: [
     "examples_per_topic",
+    "example_candidate_window_per_topic",
+    "example_selection_basis",
     "topics_returned",
     "positive_matches_only",
     "absence_is_not_evidence_of_absence",
@@ -1510,7 +1513,7 @@ export function agreementDecisionBriefEvidence(
   );
   if (
     !hasExactKeys(root, DECISION_BRIEF_EXACT_KEYS.root) ||
-    root.api_version !== "agreement-decision-brief-v1" ||
+    root.api_version !== "agreement-decision-brief-v2" ||
     !hasExactKeys(agreement, DECISION_BRIEF_EXACT_KEYS.agreement) ||
     agreement.agreement_id !== expectedAgreementId ||
     familyKey === undefined ||
@@ -1554,6 +1557,9 @@ export function agreementDecisionBriefEvidence(
     source.redistribution_allowed !== true ||
     !hasExactKeys(limits, DECISION_BRIEF_EXACT_KEYS.limits) ||
     limits.examples_per_topic !== expectedExamplesPerTopic ||
+    limits.example_candidate_window_per_topic !== 5 ||
+    limits.example_selection_basis !==
+      "validated_positive_signal_count_then_excerpt_length_v1" ||
     limits.topics_returned !== AGREEMENT_DECISION_BRIEF_TOPICS.length ||
     limits.positive_matches_only !== true ||
     limits.absence_is_not_evidence_of_absence !== true ||
@@ -1617,13 +1623,34 @@ export function agreementDecisionBriefEvidence(
       )
     );
     if (examples.some((example) => example === null)) return null;
-    let previousKey = null;
+    let previousExample = null;
     for (const example of examples) {
-      const key = `${
-        String(example.clause_ordinal).padStart(12, "0")
-      }:${example.clause_id}`;
-      if (previousKey !== null && key <= previousKey) return null;
-      previousKey = key;
+      if (previousExample !== null) {
+        const previousLength = Array.from(
+          previousExample.observed_evidence.excerpt,
+        ).length;
+        const currentLength = Array.from(
+          example.observed_evidence.excerpt,
+        ).length;
+        if (
+          previousExample.matched_signal_count < example.matched_signal_count ||
+          (previousExample.matched_signal_count ===
+              example.matched_signal_count &&
+            previousLength < currentLength) ||
+          (previousExample.matched_signal_count ===
+              example.matched_signal_count &&
+            previousLength === currentLength &&
+            previousExample.clause_ordinal > example.clause_ordinal) ||
+          (previousExample.matched_signal_count ===
+              example.matched_signal_count &&
+            previousLength === currentLength &&
+            previousExample.clause_ordinal === example.clause_ordinal &&
+            previousExample.clause_id >= example.clause_id)
+        ) {
+          return null;
+        }
+      }
+      previousExample = example;
     }
     const returnedSignalMatches = examples.reduce(
       (sum, example) => sum + example.matched_signal_count,
