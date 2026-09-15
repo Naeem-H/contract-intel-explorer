@@ -24,6 +24,10 @@ export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
 export const FAMILY_CONTEXT_ITEM_MAX = 10;
 export const FAMILY_PROPOSAL_PAGE_MAX = 20;
 export const FAMILY_PROPOSAL_OFFSET_MAX = 500;
+export const AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT = 3;
+export const AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX = 5;
+export const AGREEMENT_DECISION_BRIEF_SCHEMA =
+  "esheria.agreement-decision-brief.v1";
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
 export const TERMINATION_POSITION_SIGNAL_MAX = 12;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
@@ -201,6 +205,23 @@ export function normalizeToken(value) {
 
 function isAllowedApiTarget(url) {
   const pathname = url.pathname;
+  const decisionBriefMatch = pathname.match(
+    /^\/api\/agreements\/([^/]+)\/decision-brief$/,
+  );
+  if (decisionBriefMatch) {
+    if (!UUID_PATTERN.test(decisionBriefMatch[1])) return false;
+    const allowed = new Set(["examples_per_topic"]);
+    if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
+      return false;
+    }
+    if (url.searchParams.getAll("examples_per_topic").length > 1) {
+      return false;
+    }
+    const examples = url.searchParams.get("examples_per_topic");
+    return examples === null ||
+      (/^[1-5]$/.test(examples) &&
+        Number(examples) <= AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX);
+  }
   if (pathname === "/api/family-proposals") {
     const allowed = new Set(["limit", "offset"]);
     if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
@@ -685,10 +706,12 @@ export function buildFamilyProposalPath({ limit = 20, offset = 0 } = {}) {
   ) {
     throw new TypeError("Family proposal offset is outside the allowed range");
   }
-  return `/api/family-proposals?${new URLSearchParams({
-    limit: String(limit),
-    offset: String(offset),
-  }).toString()}`;
+  return `/api/family-proposals?${
+    new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    }).toString()
+  }`;
 }
 
 export function buildPartyClauseSearchPath({ party, ...input }) {
@@ -753,6 +776,836 @@ export function buildAgreementPath(
   const params = new URLSearchParams({ clauses: String(clauseLimit) });
   if (anchorClauseId) params.set("clause", anchorClauseId);
   return `/api/agreements/${agreementId}?${params.toString()}`;
+}
+
+export function buildAgreementDecisionBriefPath(
+  agreementId,
+  examplesPerTopic = AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+) {
+  if (typeof agreementId !== "string" || !UUID_PATTERN.test(agreementId)) {
+    throw new TypeError("Agreement identifier is invalid");
+  }
+  if (
+    !Number.isInteger(examplesPerTopic) ||
+    examplesPerTopic < 1 ||
+    examplesPerTopic > AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX
+  ) {
+    throw new TypeError("Examples per topic is outside the allowed range");
+  }
+  const params = new URLSearchParams({
+    examples_per_topic: String(examplesPerTopic),
+  });
+  return `/api/agreements/${agreementId}/decision-brief?${params.toString()}`;
+}
+
+export const AGREEMENT_DECISION_BRIEF_TOPICS = Object.freeze([
+  Object.freeze({
+    topicKey: "liability",
+    label: "Limitation of liability",
+    detectorVersion: "liability_position_rules_v1",
+  }),
+  Object.freeze({
+    topicKey: "indemnity",
+    label: "Indemnity",
+    detectorVersion: "indemnity_position_rules_v1",
+  }),
+  Object.freeze({
+    topicKey: "termination",
+    label: "Termination",
+    detectorVersion: "termination_position_rules_v2",
+  }),
+  Object.freeze({
+    topicKey: "governing_law",
+    label: "Governing law and forum",
+    detectorVersion: "governing_law_position_rules_v1",
+  }),
+  Object.freeze({
+    topicKey: "assignment",
+    label: "Assignment and change of control",
+    detectorVersion: "assignment_position_rules_v1",
+  }),
+]);
+
+const AGREEMENT_DECISION_BRIEF_LIMITATIONS = Object.freeze([
+  "This brief reports only positive deterministic wording matches from current versioned caches over the current observed extraction.",
+  "Zero matches do not establish that a provision or commercial position is absent.",
+  "Generated signals and attributes are navigation aids, not risk scores, legal conclusions or determinations of legal effect.",
+  "Read the complete agreement, definitions, exceptions, amendments and related documents before relying on any example.",
+]);
+const DECISION_BRIEF_HASH_PATTERN = /^[0-9a-f]{64}$/;
+const DECISION_BRIEF_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DECISION_BRIEF_BASES = new Set(["observed", "reviewed", "generated"]);
+const DECISION_BRIEF_DOCUMENT_KINDS = new Set(["contract", "amendment"]);
+const DECISION_BRIEF_EXACT_KEYS = Object.freeze({
+  root: [
+    "api_version",
+    "agreement",
+    "source",
+    "topics",
+    "limits",
+    "limitations",
+  ],
+  agreement: [
+    "agreement_id",
+    "family_key",
+    "document_kind",
+    "document_kind_basis",
+    "title",
+    "observed_execution_date",
+    "observed_effective_date",
+    "observed_termination_date",
+    "agreement_date_selections",
+    "published_at",
+    "artifact_sha256",
+    "extraction_id",
+    "extraction_method",
+    "extraction_version",
+    "extraction_confidence",
+    "extracted_text_sha256",
+    "text_basis",
+    "clause_count",
+  ],
+  source: [
+    "slug",
+    "name",
+    "publisher",
+    "source_url",
+    "external_id",
+    "observed_published_at",
+    "observed_terms_url",
+    "active",
+    "publication_permitted",
+    "redistribution_allowed",
+  ],
+  topic: [
+    "topic_key",
+    "label",
+    "detector_version",
+    "exact_matching_clause_count",
+    "total_matches",
+    "total_signal_matches",
+    "returned_examples",
+    "examples_truncated",
+    "examples",
+  ],
+  example: [
+    "clause_id",
+    "clause_ordinal",
+    "clause_heading",
+    "page_start",
+    "page_end",
+    "clause_char_start",
+    "clause_char_end",
+    "source_url",
+    "artifact_sha256",
+    "extraction_sha256",
+    "matched_signal_count",
+    "signal_keys",
+    "observed_evidence",
+    "generated_signal",
+  ],
+  observedEvidence: [
+    "excerpt",
+    "sha256",
+    "text_basis",
+    "clause_char_start",
+    "clause_char_end",
+    "document_char_start",
+    "document_char_end",
+    "matched_text",
+    "matched_text_sha256",
+    "matched_clause_char_start",
+    "matched_clause_char_end",
+    "bounded_excerpt",
+    "observed_duration_candidates",
+    "observed_value_candidates",
+  ],
+  generatedSignal: [
+    "signal_key",
+    "label",
+    "basis",
+    "confidence",
+    "detector_version",
+    "rule_id",
+    "attributes",
+  ],
+  limits: [
+    "examples_per_topic",
+    "topics_returned",
+    "positive_matches_only",
+    "absence_is_not_evidence_of_absence",
+    "risk_score_provided",
+    "legal_effect_determined",
+  ],
+  dateSelection: [
+    "basis",
+    "observed_date",
+    "evidence_id",
+    "extraction_id",
+    "rule_id",
+  ],
+});
+const DECISION_BRIEF_SIGNAL_KEYS = Object.freeze({
+  liability: new Set(LIABILITY_POSITION_SIGNAL_KEYS),
+  indemnity: new Set(Object.keys(INDEMNITY_POSITION_SIGNALS)),
+  termination: new Set(Object.keys(TERMINATION_POSITION_SIGNALS)),
+  governing_law: new Set(Object.keys(GOVERNING_LAW_POSITION_SIGNALS)),
+  assignment: new Set(Object.keys(ASSIGNMENT_POSITION_SIGNALS)),
+});
+const DECISION_BRIEF_ATTRIBUTE_KEYS = Object.freeze({
+  liability: new Set([
+    "currency_amount_present",
+    "percentage_present",
+    "fees_or_charges_basis_present",
+    "greater_or_lesser_formula_present",
+    "facially_bilateral_language_present",
+    "indirect",
+    "consequential",
+    "special",
+    "incidental",
+    "exemplary",
+    "punitive",
+    "death_or_personal_injury",
+    "fraud",
+    "wilful_or_willful_misconduct",
+  ]),
+  indemnity: new Set([
+    "facially_bilateral_language_present",
+    "on_demand_language_present",
+    "losses_language_present",
+    "liability_cap_reference_present",
+    "insurance_language_present",
+    "negligence_or_misconduct_language_present",
+  ]),
+  termination: new Set([
+    "duration_candidate_present",
+    "notice_language_present",
+    "facially_bilateral_language_present",
+  ]),
+  governing_law: new Set([
+    "exclusive_jurisdiction_language_present",
+    "nonexclusive_jurisdiction_language_present",
+    "conflict_of_laws_language_present",
+    "venue_objection_waiver_language_present",
+    "service_of_process_language_present",
+    "arbitration_language_present",
+  ]),
+  assignment: new Set([
+    "consent_language_present",
+    "notice_language_present",
+    "termination_language_present",
+    "facially_bilateral_language_present",
+    "finance_context_present",
+    "change_of_control_language_present",
+  ]),
+});
+
+function hasExactKeys(value, expectedKeys) {
+  if (!isRecord(value)) return false;
+  const actualKeys = Object.keys(value);
+  return actualKeys.length === expectedKeys.length &&
+    expectedKeys.every((key) => Object.hasOwn(value, key));
+}
+
+function decisionBriefInteger(value, minimum = 0) {
+  return Number.isSafeInteger(value) && value >= minimum ? value : null;
+}
+
+function decisionBriefString(value, maximum, nullable = false) {
+  if (nullable && value === null) return null;
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    Array.from(value).length > maximum
+  ) {
+    return undefined;
+  }
+  return value;
+}
+
+function isDecisionBriefDate(value) {
+  if (value === null) return true;
+  if (typeof value !== "string") return false;
+  const match = DECISION_BRIEF_DATE_PATTERN.exec(value);
+  if (!match) return false;
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  return month >= 1 && month <= 12 && day >= 1 &&
+    day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function decisionBriefDateSelections(value, agreement) {
+  if (!isRecord(value)) return null;
+  const allowedTypes = ["execution", "effective", "termination"];
+  if (Object.keys(value).some((key) => !allowedTypes.includes(key))) {
+    return null;
+  }
+  const selections = {};
+  for (const dateType of allowedTypes) {
+    const dateValue = agreement[`observed_${dateType}_date`];
+    const hasSelection = Object.hasOwn(value, dateType);
+    if (dateValue === null) {
+      if (hasSelection) return null;
+      continue;
+    }
+    if (!hasSelection) continue;
+    const selection = record(value[dateType]);
+    if (
+      !hasExactKeys(selection, DECISION_BRIEF_EXACT_KEYS.dateSelection) ||
+      selection.basis !== "generated" ||
+      selection.observed_date !== dateValue ||
+      typeof selection.evidence_id !== "string" ||
+      !UUID_PATTERN.test(selection.evidence_id) ||
+      selection.extraction_id !== agreement.extraction_id ||
+      decisionBriefString(selection.rule_id, 300) === undefined
+    ) {
+      return null;
+    }
+    selections[dateType] = { ...selection };
+  }
+  return selections;
+}
+
+function decisionBriefSpan(
+  start,
+  end,
+  { minimum = 0, allowEqual = false } = {},
+) {
+  if (start === null && end === null) return true;
+  return Number.isSafeInteger(start) && Number.isSafeInteger(end) &&
+    start >= minimum && (allowEqual ? end >= start : end > start);
+}
+
+function decisionBriefObservedCandidate(value) {
+  const candidate = record(value);
+  const keys = [
+    "observed_text",
+    "text_basis",
+    "sha256",
+    "clause_char_start",
+    "clause_char_end",
+    "document_char_start",
+    "document_char_end",
+  ];
+  if (
+    !hasExactKeys(candidate, keys) ||
+    decisionBriefString(candidate.observed_text, 2_000) === undefined ||
+    candidate.text_basis !== "observed" ||
+    !DECISION_BRIEF_HASH_PATTERN.test(candidate.sha256) ||
+    !decisionBriefSpan(
+      candidate.clause_char_start,
+      candidate.clause_char_end,
+    ) ||
+    !decisionBriefSpan(
+      candidate.document_char_start,
+      candidate.document_char_end,
+    ) ||
+    Array.from(candidate.observed_text).length !==
+      candidate.clause_char_end - candidate.clause_char_start
+  ) {
+    return null;
+  }
+  return { ...candidate };
+}
+
+function decisionBriefObservedWindow(value, maximumText = 12_000) {
+  if (value === null) return null;
+  const window = record(value);
+  const keys = [
+    "text",
+    "text_basis",
+    "sha256",
+    "clause_char_start",
+    "clause_char_end",
+    "document_char_start",
+    "document_char_end",
+  ];
+  if (
+    !hasExactKeys(window, keys) ||
+    decisionBriefString(window.text, maximumText) === undefined ||
+    window.text_basis !== "observed" ||
+    !DECISION_BRIEF_HASH_PATTERN.test(window.sha256) ||
+    !decisionBriefSpan(window.clause_char_start, window.clause_char_end) ||
+    !decisionBriefSpan(window.document_char_start, window.document_char_end) ||
+    Array.from(window.text).length !==
+      window.clause_char_end - window.clause_char_start
+  ) {
+    return undefined;
+  }
+  return { ...window };
+}
+
+function decisionBriefDurationCandidates(value, topicKey) {
+  if (value === null) return null;
+  if (topicKey !== "termination") return undefined;
+  const packet = record(value);
+  const keys = [
+    "schema",
+    "value_extractor_version",
+    "observed_window",
+    "duration_terms",
+    "limits",
+  ];
+  const limits = record(packet.limits);
+  if (
+    !hasExactKeys(packet, keys) ||
+    packet.schema !== "esheria.termination-duration-candidates.v1" ||
+    packet.value_extractor_version !== "termination_duration_candidates_v1" ||
+    !hasExactKeys(limits, [
+      "maximum_candidates",
+      "candidate_values_are_legal_conclusions",
+      "window_scope",
+    ]) ||
+    limits.maximum_candidates !== 4 ||
+    limits.candidate_values_are_legal_conclusions !== false ||
+    limits.window_scope !== "bounded_signal_support" ||
+    !Array.isArray(packet.duration_terms) ||
+    packet.duration_terms.length > 4
+  ) {
+    return undefined;
+  }
+  const observedWindow = decisionBriefObservedWindow(packet.observed_window);
+  if (observedWindow === undefined || observedWindow === null) return undefined;
+  const durationTerms = packet.duration_terms.map(
+    decisionBriefObservedCandidate,
+  );
+  if (durationTerms.some((candidate) => candidate === null)) return undefined;
+  return {
+    schema: packet.schema,
+    value_extractor_version: packet.value_extractor_version,
+    observed_window: observedWindow,
+    duration_terms: durationTerms,
+    limits: { ...limits },
+  };
+}
+
+function decisionBriefValueCandidates(value, topicKey, signalKey) {
+  if (value === null) return null;
+  if (
+    topicKey !== "liability" ||
+    signalKey !== "explicit_liability_limit_formula"
+  ) {
+    return undefined;
+  }
+  const packet = record(value);
+  const categories = LIABILITY_VALUE_CANDIDATE_CATEGORIES.map(([key]) => key);
+  const keys = [
+    "schema",
+    "value_extractor_version",
+    "observed_window",
+    ...categories,
+    "limits",
+  ];
+  const limits = record(packet.limits);
+  if (
+    !hasExactKeys(packet, keys) ||
+    packet.schema !== "esheria.liability-cap-value-candidates.v2" ||
+    packet.value_extractor_version !== "liability_cap_value_candidates_v2" ||
+    !hasExactKeys(limits, [
+      "maximum_candidates_per_category",
+      "candidate_values_are_legal_conclusions",
+      "window_scope",
+      "maximum_signal_context_after_characters",
+    ]) ||
+    limits.maximum_candidates_per_category !== 8 ||
+    limits.candidate_values_are_legal_conclusions !== false ||
+    limits.window_scope !==
+      "from_detected_formula_through_complete_bounded_signal_support" ||
+    limits.maximum_signal_context_after_characters !== 300
+  ) {
+    return undefined;
+  }
+  const observedWindow = decisionBriefObservedWindow(packet.observed_window);
+  if (observedWindow === undefined || observedWindow === null) return undefined;
+  const projected = {};
+  for (const category of categories) {
+    if (!Array.isArray(packet[category]) || packet[category].length > 8) {
+      return undefined;
+    }
+    const candidates = packet[category].map(decisionBriefObservedCandidate);
+    if (candidates.some((candidate) => candidate === null)) return undefined;
+    projected[category] = candidates;
+  }
+  return {
+    schema: packet.schema,
+    value_extractor_version: packet.value_extractor_version,
+    observed_window: observedWindow,
+    ...projected,
+    limits: { ...limits },
+  };
+}
+
+function decisionBriefAttributes(value, topicKey) {
+  const attributes = record(value);
+  const allowedKeys = DECISION_BRIEF_ATTRIBUTE_KEYS[topicKey];
+  const keys = Object.keys(attributes);
+  if (
+    !allowedKeys ||
+    keys.length > allowedKeys.size ||
+    keys.some((key) => !allowedKeys.has(key)) ||
+    keys.some((key) => typeof attributes[key] !== "boolean")
+  ) {
+    return null;
+  }
+  return Object.fromEntries(keys.sort().map((key) => [key, attributes[key]]));
+}
+
+function decisionBriefExample(
+  value,
+  topic,
+  agreement,
+  sourceUrl,
+) {
+  const example = record(value);
+  const observed = record(example.observed_evidence);
+  const generated = record(example.generated_signal);
+  const allowedSignalKeys = DECISION_BRIEF_SIGNAL_KEYS[topic.topicKey];
+  const matchedSignalCount = decisionBriefInteger(
+    example.matched_signal_count,
+    1,
+  );
+  const attributes = decisionBriefAttributes(
+    generated.attributes,
+    topic.topicKey,
+  );
+  const durationCandidates = decisionBriefDurationCandidates(
+    observed.observed_duration_candidates,
+    topic.topicKey,
+  );
+  const valueCandidates = decisionBriefValueCandidates(
+    observed.observed_value_candidates,
+    topic.topicKey,
+    generated.signal_key,
+  );
+  const exampleSourceUrl = safeExternalUrl(example.source_url);
+  const heading = decisionBriefString(example.clause_heading, 2_000, true);
+  const excerpt = decisionBriefString(observed.excerpt, 12_000);
+  const matchedText = decisionBriefString(observed.matched_text, 4_000);
+  if (
+    !hasExactKeys(example, DECISION_BRIEF_EXACT_KEYS.example) ||
+    !hasExactKeys(observed, DECISION_BRIEF_EXACT_KEYS.observedEvidence) ||
+    !hasExactKeys(generated, DECISION_BRIEF_EXACT_KEYS.generatedSignal) ||
+    typeof example.clause_id !== "string" ||
+    !UUID_PATTERN.test(example.clause_id) ||
+    decisionBriefInteger(example.clause_ordinal, 1) === null ||
+    heading === undefined ||
+    !decisionBriefSpan(example.page_start, example.page_end, {
+      minimum: 1,
+      allowEqual: true,
+    }) ||
+    !decisionBriefSpan(example.clause_char_start, example.clause_char_end) ||
+    exampleSourceUrl === null ||
+    exampleSourceUrl !== sourceUrl ||
+    example.artifact_sha256 !== agreement.artifact_sha256 ||
+    example.extraction_sha256 !== agreement.extracted_text_sha256 ||
+    matchedSignalCount === null ||
+    !Array.isArray(example.signal_keys) ||
+    example.signal_keys.length !== matchedSignalCount ||
+    new Set(example.signal_keys).size !== example.signal_keys.length ||
+    example.signal_keys.some((key) => !allowedSignalKeys.has(key)) ||
+    excerpt === undefined ||
+    observed.text_basis !== "observed" ||
+    !DECISION_BRIEF_HASH_PATTERN.test(observed.sha256) ||
+    !decisionBriefSpan(observed.clause_char_start, observed.clause_char_end) ||
+    !decisionBriefSpan(
+      observed.document_char_start,
+      observed.document_char_end,
+    ) ||
+    matchedText === undefined ||
+    !DECISION_BRIEF_HASH_PATTERN.test(observed.matched_text_sha256) ||
+    !decisionBriefSpan(
+      observed.matched_clause_char_start,
+      observed.matched_clause_char_end,
+    ) ||
+    observed.bounded_excerpt !== true ||
+    Array.from(observed.excerpt).length !==
+      observed.clause_char_end - observed.clause_char_start ||
+    Array.from(observed.matched_text).length !==
+      observed.matched_clause_char_end - observed.matched_clause_char_start ||
+    observed.matched_clause_char_start < observed.clause_char_start ||
+    observed.matched_clause_char_end > observed.clause_char_end ||
+    (example.clause_char_start === null
+      ? observed.document_char_start !== null ||
+        observed.document_char_end !== null
+      : observed.clause_char_end >
+          example.clause_char_end - example.clause_char_start ||
+        observed.document_char_start !==
+          example.clause_char_start + observed.clause_char_start ||
+        observed.document_char_end !==
+          example.clause_char_start + observed.clause_char_end) ||
+    generated.basis !== "generated" ||
+    !allowedSignalKeys.has(generated.signal_key) ||
+    !example.signal_keys.includes(generated.signal_key) ||
+    decisionBriefString(generated.label, 300) === undefined ||
+    typeof generated.confidence !== "number" ||
+    !Number.isFinite(generated.confidence) ||
+    generated.confidence < 0 ||
+    generated.confidence > 1 ||
+    generated.detector_version !== topic.detectorVersion ||
+    decisionBriefString(generated.rule_id, 300) === undefined ||
+    attributes === null ||
+    durationCandidates === undefined ||
+    valueCandidates === undefined
+  ) {
+    return null;
+  }
+  return {
+    clause_id: example.clause_id,
+    clause_ordinal: example.clause_ordinal,
+    clause_heading: heading,
+    page_start: example.page_start,
+    page_end: example.page_end,
+    clause_char_start: example.clause_char_start,
+    clause_char_end: example.clause_char_end,
+    source_url: exampleSourceUrl,
+    artifact_sha256: example.artifact_sha256,
+    extraction_sha256: example.extraction_sha256,
+    matched_signal_count: matchedSignalCount,
+    signal_keys: [...example.signal_keys],
+    observed_evidence: {
+      excerpt,
+      sha256: observed.sha256,
+      text_basis: observed.text_basis,
+      clause_char_start: observed.clause_char_start,
+      clause_char_end: observed.clause_char_end,
+      document_char_start: observed.document_char_start,
+      document_char_end: observed.document_char_end,
+      matched_text: matchedText,
+      matched_text_sha256: observed.matched_text_sha256,
+      matched_clause_char_start: observed.matched_clause_char_start,
+      matched_clause_char_end: observed.matched_clause_char_end,
+      bounded_excerpt: true,
+      observed_duration_candidates: durationCandidates,
+      observed_value_candidates: valueCandidates,
+    },
+    generated_signal: {
+      signal_key: generated.signal_key,
+      label: generated.label,
+      basis: generated.basis,
+      confidence: generated.confidence,
+      detector_version: generated.detector_version,
+      rule_id: generated.rule_id,
+      attributes,
+    },
+  };
+}
+
+export function agreementDecisionBriefEvidence(
+  value,
+  expectedAgreementId,
+  expectedExamplesPerTopic = AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+) {
+  if (
+    typeof expectedAgreementId !== "string" ||
+    !UUID_PATTERN.test(expectedAgreementId) ||
+    !Number.isInteger(expectedExamplesPerTopic) ||
+    expectedExamplesPerTopic < 1 ||
+    expectedExamplesPerTopic > AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX
+  ) {
+    return null;
+  }
+  const root = record(value);
+  const agreement = record(root.agreement);
+  const source = record(root.source);
+  const limits = record(root.limits);
+  const sourceUrl = safeExternalUrl(source.source_url);
+  const termsUrl = source.observed_terms_url === null
+    ? null
+    : safeExternalUrl(source.observed_terms_url);
+  const familyKey = decisionBriefString(agreement.family_key, 300, true);
+  const title = decisionBriefString(agreement.title, 2_000, true);
+  const publisher = decisionBriefString(source.publisher, 300, true);
+  const dateSelections = decisionBriefDateSelections(
+    agreement.agreement_date_selections,
+    agreement,
+  );
+  if (
+    !hasExactKeys(root, DECISION_BRIEF_EXACT_KEYS.root) ||
+    root.api_version !== "agreement-decision-brief-v1" ||
+    !hasExactKeys(agreement, DECISION_BRIEF_EXACT_KEYS.agreement) ||
+    agreement.agreement_id !== expectedAgreementId ||
+    familyKey === undefined ||
+    !DECISION_BRIEF_DOCUMENT_KINDS.has(agreement.document_kind) ||
+    !DECISION_BRIEF_BASES.has(agreement.document_kind_basis) ||
+    title === undefined ||
+    !isDecisionBriefDate(agreement.observed_execution_date) ||
+    !isDecisionBriefDate(agreement.observed_effective_date) ||
+    !isDecisionBriefDate(agreement.observed_termination_date) ||
+    dateSelections === null ||
+    !isValidFamilyTimestamp(agreement.published_at) ||
+    !DECISION_BRIEF_HASH_PATTERN.test(agreement.artifact_sha256) ||
+    typeof agreement.extraction_id !== "string" ||
+    !UUID_PATTERN.test(agreement.extraction_id) ||
+    decisionBriefString(agreement.extraction_method, 100) === undefined ||
+    decisionBriefString(agreement.extraction_version, 100) === undefined ||
+    !(
+      agreement.extraction_confidence === null ||
+      (typeof agreement.extraction_confidence === "number" &&
+        Number.isFinite(agreement.extraction_confidence) &&
+        agreement.extraction_confidence >= 0 &&
+        agreement.extraction_confidence <= 1)
+    ) ||
+    !DECISION_BRIEF_HASH_PATTERN.test(agreement.extracted_text_sha256) ||
+    agreement.text_basis !== "observed" ||
+    decisionBriefInteger(agreement.clause_count) === null ||
+    !hasExactKeys(source, DECISION_BRIEF_EXACT_KEYS.source) ||
+    typeof source.slug !== "string" ||
+    !SOURCE_PATTERN.test(source.slug) ||
+    decisionBriefString(source.name, 300) === undefined ||
+    publisher === undefined ||
+    sourceUrl === null ||
+    decisionBriefString(source.external_id, 1_000) === undefined ||
+    !(
+      source.observed_published_at === null ||
+      isValidFamilyTimestamp(source.observed_published_at)
+    ) ||
+    (source.observed_terms_url !== null && termsUrl === null) ||
+    source.active !== true ||
+    source.publication_permitted !== true ||
+    source.redistribution_allowed !== true ||
+    !hasExactKeys(limits, DECISION_BRIEF_EXACT_KEYS.limits) ||
+    limits.examples_per_topic !== expectedExamplesPerTopic ||
+    limits.topics_returned !== AGREEMENT_DECISION_BRIEF_TOPICS.length ||
+    limits.positive_matches_only !== true ||
+    limits.absence_is_not_evidence_of_absence !== true ||
+    limits.risk_score_provided !== false ||
+    limits.legal_effect_determined !== false ||
+    !Array.isArray(root.limitations) ||
+    root.limitations.length !== AGREEMENT_DECISION_BRIEF_LIMITATIONS.length ||
+    root.limitations.some(
+      (limitation, index) =>
+        limitation !== AGREEMENT_DECISION_BRIEF_LIMITATIONS[index],
+    ) ||
+    !Array.isArray(root.topics) ||
+    root.topics.length !== AGREEMENT_DECISION_BRIEF_TOPICS.length
+  ) {
+    return null;
+  }
+
+  const projectedAgreement = {
+    ...agreement,
+    family_key: familyKey,
+    title,
+    agreement_date_selections: dateSelections,
+  };
+  const topics = [];
+  for (
+    let index = 0;
+    index < AGREEMENT_DECISION_BRIEF_TOPICS.length;
+    index += 1
+  ) {
+    const expectedTopic = AGREEMENT_DECISION_BRIEF_TOPICS[index];
+    const topic = record(root.topics[index]);
+    const exactCount = decisionBriefInteger(topic.exact_matching_clause_count);
+    const totalMatches = decisionBriefInteger(topic.total_matches);
+    const totalSignalMatches = decisionBriefInteger(topic.total_signal_matches);
+    const returnedExamples = decisionBriefInteger(topic.returned_examples);
+    if (
+      !hasExactKeys(topic, DECISION_BRIEF_EXACT_KEYS.topic) ||
+      topic.topic_key !== expectedTopic.topicKey ||
+      topic.label !== expectedTopic.label ||
+      topic.detector_version !== expectedTopic.detectorVersion ||
+      exactCount === null ||
+      totalMatches === null ||
+      totalSignalMatches === null ||
+      returnedExamples === null ||
+      exactCount !== totalMatches ||
+      totalSignalMatches < totalMatches ||
+      (totalMatches === 0 && totalSignalMatches !== 0) ||
+      returnedExamples !== Math.min(totalMatches, expectedExamplesPerTopic) ||
+      topic.examples_truncated !== (totalMatches > expectedExamplesPerTopic) ||
+      !Array.isArray(topic.examples) ||
+      topic.examples.length !== returnedExamples
+    ) {
+      return null;
+    }
+    const examples = topic.examples.map((example) =>
+      decisionBriefExample(
+        example,
+        expectedTopic,
+        projectedAgreement,
+        sourceUrl,
+      )
+    );
+    if (examples.some((example) => example === null)) return null;
+    let previousKey = null;
+    for (const example of examples) {
+      const key = `${
+        String(example.clause_ordinal).padStart(12, "0")
+      }:${example.clause_id}`;
+      if (previousKey !== null && key <= previousKey) return null;
+      previousKey = key;
+    }
+    const returnedSignalMatches = examples.reduce(
+      (sum, example) => sum + example.matched_signal_count,
+      0,
+    );
+    if (
+      returnedSignalMatches > totalSignalMatches ||
+      (!topic.examples_truncated &&
+        returnedSignalMatches !== totalSignalMatches)
+    ) {
+      return null;
+    }
+    topics.push({
+      topic_key: topic.topic_key,
+      label: topic.label,
+      detector_version: topic.detector_version,
+      exact_matching_clause_count: exactCount,
+      total_matches: totalMatches,
+      total_signal_matches: totalSignalMatches,
+      returned_examples: returnedExamples,
+      examples_truncated: topic.examples_truncated,
+      examples,
+    });
+  }
+
+  return {
+    api_version: root.api_version,
+    agreement: projectedAgreement,
+    source: {
+      ...source,
+      publisher,
+      source_url: sourceUrl,
+      observed_terms_url: termsUrl,
+    },
+    topics,
+    limits: { ...limits },
+    limitations: [...root.limitations],
+  };
+}
+
+export function buildAgreementDecisionBriefExport(
+  value,
+  generatedAt = new Date().toISOString(),
+) {
+  const input = record(value);
+  const agreementId = record(input.agreement).agreement_id;
+  const examplesPerTopic = record(input.limits).examples_per_topic;
+  const brief = agreementDecisionBriefEvidence(
+    input,
+    agreementId,
+    examplesPerTopic,
+  );
+  if (brief === null || !isValidFamilyTimestamp(generatedAt)) {
+    throw new TypeError("Agreement decision brief export is invalid");
+  }
+  return {
+    schema: AGREEMENT_DECISION_BRIEF_SCHEMA,
+    generated_at: generatedAt,
+    decision_brief: brief,
+    export_safety: {
+      format: "application/json",
+      observed_text_preserved_verbatim: true,
+      spreadsheet_formula_execution: false,
+      private_storage_paths_included: false,
+      bearer_token_included: false,
+      spreadsheet_import_warning:
+        "JSON does not execute formula-like source text. If converting evidence to a spreadsheet, neutralize formula-leading cells before opening the file.",
+    },
+  };
 }
 
 export function comparisonSelectionKey(value) {
@@ -1133,7 +1986,7 @@ export function observedDurationEntries(value) {
       if (!normalized || seen.has(normalized)) return false;
       seen.add(normalized);
       return true;
-  });
+    });
 }
 
 function observedValueCandidateEntries(value) {
@@ -1155,7 +2008,7 @@ function observedValueCandidateEntries(value) {
         if (!normalized || seen.has(normalized)) return false;
         seen.add(normalized);
         return true;
-    });
+      });
     return { key, label, values };
   }).filter((entry) => entry.values.length);
 }
@@ -1576,9 +2429,9 @@ export function familyProposalSearchEvidence(
       (expectedOffset + returnedCount < eligibleDistinctPairs) ||
     (expectedOffset < eligibleDistinctPairs &&
       returnedCount !== Math.min(
-        expectedLimit,
-        eligibleDistinctPairs - expectedOffset,
-      )) ||
+          expectedLimit,
+          eligibleDistinctPairs - expectedOffset,
+        )) ||
     (expectedOffset >= eligibleDistinctPairs && returnedCount !== 0) ||
     familyInteger(limits.maximum_page_size) !== FAMILY_PROPOSAL_PAGE_MAX ||
     familyInteger(limits.maximum_offset) !== FAMILY_PROPOSAL_OFFSET_MAX ||
@@ -4559,6 +5412,7 @@ function highlightedExcerpt(value) {
 }
 
 function openDialog(dialog) {
+  if (dialog.open || dialog.hasAttribute("open")) return;
   if (typeof dialog.showModal === "function") dialog.showModal();
   else dialog.setAttribute("open", "");
 }
@@ -4635,6 +5489,9 @@ function boot() {
     familyProposalLimit: FAMILY_PROPOSAL_PAGE_MAX,
     familyProposalHasMore: false,
     familyProposalLoading: false,
+    decisionBrief: null,
+    decisionBriefAgreementId: null,
+    decisionBriefLoading: false,
   };
 
   const authView = byId("auth-view");
@@ -4733,6 +5590,10 @@ function boot() {
   const exportStatus = byId("comparison-export-status");
   const detailDialog = byId("detail-dialog");
   const detailBody = byId("detail-body");
+  const decisionBriefDialog = byId("decision-brief-dialog");
+  const decisionBriefBody = byId("decision-brief-body");
+  const decisionBriefStatus = byId("decision-brief-status");
+  const downloadDecisionBriefButton = byId("download-decision-brief");
   const comparisonDialog = byId("comparison-dialog");
   const comparisonBody = byId("comparison-body");
   const guideButtons = [
@@ -4809,6 +5670,9 @@ function boot() {
     state.familyProposalOffset = 0;
     state.familyProposalHasMore = false;
     state.familyProposalLoading = false;
+    state.decisionBrief = null;
+    state.decisionBriefAgreementId = null;
+    state.decisionBriefLoading = false;
     state.resultMode = "search";
     state.clauseParty = "";
     positionForm.reset();
@@ -4856,9 +5720,13 @@ function boot() {
     partyDossierSummary.replaceChildren();
     partyDossierThemes.replaceChildren();
     detailBody.replaceChildren();
+    decisionBriefBody.replaceChildren();
+    decisionBriefStatus.textContent = "";
+    downloadDecisionBriefButton.disabled = true;
     comparisonBody.replaceChildren();
     exportStatus.textContent = "";
     closeDialog(detailDialog);
+    closeDialog(decisionBriefDialog);
     closeDialog(comparisonDialog);
     updateComparisonControls();
     workspace.hidden = true;
@@ -5005,9 +5873,9 @@ function boot() {
         [
           "Distinct observed party names",
           count(partySummary.distinct_observed_names),
-      ],
-      [
-        "Low-specificity party names",
+        ],
+        [
+          "Low-specificity party names",
           count(partySummary.low_specificity_name_observations),
         ],
         [
@@ -5037,7 +5905,7 @@ function boot() {
         [
           "Liability cache repair backlog",
           Number(positionCurrent.missing_clauses) === 0
-          ? "Complete"
+            ? "Complete"
             : `${count(positionCurrent.missing_clauses)} missing`,
         ],
         [
@@ -5067,7 +5935,7 @@ function boot() {
         [
           "Termination cache repair backlog",
           Number(terminationCurrent.missing_clauses) === 0
-          ? "Complete"
+            ? "Complete"
             : `${count(terminationCurrent.missing_clauses)} missing`,
         ],
         [
@@ -5132,19 +6000,19 @@ function boot() {
         ["Last successful run", date(acquisition.last_successful_run_at)],
         [
           "Failed/dead-letter (30 days)",
-        count(failures.total_failed_or_dead_letter),
-      ],
-      [
-        "Top failure class",
-        failureGroups.length
-          ? `${displayText(record(failureGroups[0]).source_slug)} · ${
-            displayText(
-              record(failureGroups[0]).failure_class ||
-                record(failureGroups[0]).error_code,
-            )
-          } (${count(record(failureGroups[0]).count)})`
-          : "None",
-      ],
+          count(failures.total_failed_or_dead_letter),
+        ],
+        [
+          "Top failure class",
+          failureGroups.length
+            ? `${displayText(record(failureGroups[0]).source_slug)} · ${
+              displayText(
+                record(failureGroups[0]).failure_class ||
+                  record(failureGroups[0]).error_code,
+              )
+            } (${count(record(failureGroups[0]).count)})`
+            : "None",
+        ],
         ...sourceBreakdown.slice(0, 10).map((sourceValue) => {
           const source = record(sourceValue);
           return [
@@ -7014,7 +7882,7 @@ function boot() {
           element("strong", "", "Observed party evidence"),
           element("p", "", boundedText(item.party_evidence_quote, 500)),
         )
-      : null;
+        : null;
 
     const actions = element("div", "result-actions");
     const agreementId = typeof item.agreement_id === "string"
@@ -7162,14 +8030,16 @@ function boot() {
       element(
         "p",
         "muted",
-        `${count(item.currentDecisionCount)} current review response(s). Aggregate responses can be pseudonymous in a small review cohort and do not determine direction or legal effect.`,
+        `${
+          count(item.currentDecisionCount)
+        } current review response(s). Aggregate responses can be pseudonymous in a small review cohort and do not determine direction or legal effect.`,
       ),
       element(
         "p",
         "muted",
-        `Candidate generated ${date(item.generatedAt)} from a corpus snapshot recorded ${
-          date(item.corpusSnapshottedAt)
-        }.`,
+        `Candidate generated ${
+          date(item.generatedAt)
+        } from a corpus snapshot recorded ${date(item.corpusSnapshottedAt)}.`,
       ),
     );
     return card;
@@ -7192,15 +8062,13 @@ function boot() {
       state.familyProposalOffset + state.familyProposalLimit >
         FAMILY_PROPOSAL_OFFSET_MAX;
     familyProposalResults.replaceChildren(
-      ...(response.items.length
-        ? response.items.map(familyProposalCard)
-        : [
-          element(
-            "p",
-            "empty",
-            "No current publication-eligible family proposal was returned for this page.",
-          ),
-        ]),
+      ...(response.items.length ? response.items.map(familyProposalCard) : [
+        element(
+          "p",
+          "empty",
+          "No current publication-eligible family proposal was returned for this page.",
+        ),
+      ]),
     );
     const start = response.items.length ? state.familyProposalOffset + 1 : 0;
     const end = state.familyProposalOffset + response.items.length;
@@ -8205,6 +9073,491 @@ function boot() {
     }
   }
 
+  function decisionBriefAttributeLabel(key) {
+    return key.replaceAll("_", " ").replace(
+      /^./u,
+      (character) => character.toUpperCase(),
+    );
+  }
+
+  function decisionBriefObservedCandidates(example) {
+    const evidence = example.observed_evidence;
+    const values = observedValueCandidateEntries(
+      evidence.observed_value_candidates,
+    );
+    const durations = observedDurationEntries(
+      evidence.observed_duration_candidates,
+    );
+    if (!values.length && !durations.length) return null;
+    const container = element("div", "position-values");
+    append(
+      container,
+      element(
+        "strong",
+        "",
+        values.length
+          ? "Observed lexical value candidates"
+          : "Observed duration candidates",
+      ),
+      element(
+        "p",
+        "muted",
+        "Exact tokens from the bounded support; they are not normalized amounts, deadlines, interpreted caps, or legal conclusions.",
+      ),
+    );
+    if (values.length) {
+      container.append(
+        dataList(
+          values.map((entry) => [entry.label, entry.values.join(" · ")]),
+        ),
+      );
+    }
+    if (durations.length) {
+      container.append(
+        dataList([["Duration wording", durations.join(" · ")]]),
+      );
+    }
+    return container;
+  }
+
+  function decisionBriefDateRows(agreement) {
+    const labels = {
+      execution: "execution",
+      effective: "effective",
+      termination: "termination",
+    };
+    const rows = [];
+    for (const [dateType, label] of Object.entries(labels)) {
+      const value = agreement[`observed_${dateType}_date`];
+      if (value === null) {
+        rows.push([
+          `${label[0].toUpperCase()}${label.slice(1)} date`,
+          "Not stated",
+        ]);
+        continue;
+      }
+      const presentation = agreementDatePresentation(
+        agreement,
+        dateType,
+        `${label} date`,
+      );
+      const selection = agreement.agreement_date_selections[dateType];
+      if (!selection) {
+        rows.push([presentation.label, presentation.value]);
+        continue;
+      }
+      rows.push(
+        [presentation.label, presentation.value],
+        [
+          `Generated ${label}-date provenance`,
+          `Selected from observed text · rule ${selection.rule_id} · evidence ${selection.evidence_id}`,
+        ],
+      );
+    }
+    return rows;
+  }
+
+  function decisionBriefExampleCard(example, agreementId) {
+    const evidence = example.observed_evidence;
+    const generated = example.generated_signal;
+    const card = element("article", "decision-brief-example");
+    append(
+      card,
+      element("span", "badge basis-observed", "Observed source text"),
+      element(
+        "h4",
+        "",
+        example.clause_heading
+          ? `Clause ${example.clause_ordinal} · ${example.clause_heading}`
+          : `Clause ${example.clause_ordinal}`,
+      ),
+      element(
+        "p",
+        "muted",
+        formatEvidenceLocation({
+          page_start: example.page_start,
+          page_end: example.page_end,
+          char_start: example.clause_char_start,
+          char_end: example.clause_char_end,
+        }),
+      ),
+    );
+
+    const observedPanel = element("section", "decision-brief-evidence");
+    append(
+      observedPanel,
+      element("strong", "", "Bounded observed support excerpt"),
+      element("p", "observed-text", evidence.excerpt),
+      dataList([
+        ["Exact detector match", evidence.matched_text],
+        [
+          "Support offsets in clause",
+          `${evidence.clause_char_start}–${evidence.clause_char_end}`,
+        ],
+        [
+          "Match offsets in clause",
+          `${evidence.matched_clause_char_start}–${evidence.matched_clause_char_end}`,
+        ],
+        [
+          "Support SHA-256",
+          evidence.sha256,
+        ],
+        ["Matched-text SHA-256", evidence.matched_text_sha256],
+      ]),
+    );
+    const candidates = decisionBriefObservedCandidates(example);
+    if (candidates) observedPanel.append(candidates);
+    const source = sourceLink(example.source_url, "Open recorded source ↗");
+    if (source) observedPanel.append(source);
+    const inspect = element(
+      "button",
+      "text-button",
+      "Inspect clause in agreement context →",
+    );
+    inspect.type = "button";
+    inspect.addEventListener("click", () => {
+      closeDialog(decisionBriefDialog);
+      loadAgreement(agreementId, example.clause_id);
+    });
+    observedPanel.append(inspect);
+    card.append(observedPanel);
+
+    const signalPanel = element("section", "decision-brief-signal");
+    append(
+      signalPanel,
+      element(
+        "span",
+        "badge basis-generated",
+        "Generated detector signal · not source wording",
+      ),
+      element("h4", "", generated.label),
+      element(
+        "p",
+        "muted",
+        `Representative rule ${generated.rule_id} · confidence ${
+          Math.round(generated.confidence * 100)
+        }% · detector ${generated.detector_version}`,
+      ),
+      element(
+        "p",
+        "muted",
+        `${example.matched_signal_count} generated signal(s) matched this clause: ${
+          example.signal_keys.join(" · ")
+        }. Only one representative signal is expanded here.`,
+      ),
+    );
+    const attributes = Object.entries(generated.attributes);
+    if (attributes.length) {
+      const attributeList = element(
+        "div",
+        "decision-brief-attributes",
+      );
+      for (const [key, detected] of attributes) {
+        attributeList.append(
+          element(
+            "span",
+            "decision-brief-attribute",
+            `${decisionBriefAttributeLabel(key)}: ${
+              detected ? "detected" : "not detected in this support"
+            }`,
+          ),
+        );
+      }
+      signalPanel.append(attributeList);
+    }
+    signalPanel.append(
+      element(
+        "p",
+        "muted",
+        "Generated attributes describe this bounded support only. They do not determine a party’s rights, risk, enforceability, or legal effect.",
+      ),
+    );
+    card.append(signalPanel);
+    return card;
+  }
+
+  function renderAgreementDecisionBrief(brief) {
+    const agreement = brief.agreement;
+    const source = brief.source;
+    const fragment = document.createDocumentFragment();
+    fragment.append(
+      element(
+        "p",
+        "decision-brief-boundary",
+        "Decision boundary: this brief reports positive deterministic wording matches only. Zero matches are not evidence that a position is absent. It provides no risk score, does not infer party rights, and does not determine legal effect. Read the complete agreement, definitions, exceptions, amendments, and related documents before reliance.",
+      ),
+    );
+
+    const overview = element("div", "decision-brief-overview");
+    const agreementPanel = element("section");
+    append(
+      agreementPanel,
+      element("span", "badge", "Agreement and extraction provenance"),
+      element(
+        "span",
+        "badge basis-observed",
+        "Observed title · date-selection basis shown below",
+      ),
+      element(
+        "h2",
+        "",
+        displayText(agreement.title, "Untitled agreement"),
+      ),
+      dataList([
+        ["Agreement ID", agreement.agreement_id],
+        ["Recorded family key", displayText(agreement.family_key, "Not set")],
+        ...decisionBriefDateRows(agreement),
+        ["Published", date(agreement.published_at)],
+        ["Current observed clauses", count(agreement.clause_count)],
+        ["Current extraction ID", agreement.extraction_id],
+        [
+          "Extraction",
+          `${agreement.extraction_method} · ${agreement.extraction_version} · confidence ${
+            displayText(agreement.extraction_confidence, "not stated")
+          }`,
+        ],
+        ["Extraction text basis", "Observed source text"],
+        ["Artifact SHA-256", agreement.artifact_sha256],
+        ["Extracted-text SHA-256", agreement.extracted_text_sha256],
+      ]),
+    );
+    if (Object.keys(agreement.agreement_date_selections).length) {
+      agreementPanel.append(
+        element(
+          "p",
+          "generated",
+          "Generated date candidates were selected deterministically from observed text evidence. They are not independently verified date facts; inspect the complete agreement before relying on them.",
+        ),
+      );
+    }
+    const classification = element(
+      "section",
+      agreement.document_kind_basis === "generated" ? "generated" : "",
+    );
+    append(
+      classification,
+      element(
+        "span",
+        `badge ${
+          agreement.document_kind_basis === "generated"
+            ? "basis-generated"
+            : agreement.document_kind_basis === "reviewed"
+            ? "basis-reviewed"
+            : "basis-observed"
+        }`,
+        documentKindBasisLabel(agreement.document_kind_basis),
+      ),
+      element(
+        "p",
+        "",
+        `Recorded document class: ${agreement.document_kind}. Classification metadata is not contract wording or a determination of legal effect.`,
+      ),
+    );
+    agreementPanel.append(classification);
+    const sourcePanel = element("section");
+    append(
+      sourcePanel,
+      element("span", "badge basis-observed", "Recorded public source"),
+      element(
+        "span",
+        "badge basis-generated",
+        "Configured publication and redistribution gates passed",
+      ),
+      element("h3", "", source.name),
+      dataList([
+        ["Publisher", displayText(source.publisher, "Not stated")],
+        ["Source slug", source.slug],
+        ["External ID", source.external_id],
+        [
+          "Observed publication time",
+          source.observed_published_at
+            ? date(source.observed_published_at)
+            : "Not stated",
+        ],
+        ["Publication gate", "Passed"],
+        ["Redistribution gate", "Passed"],
+      ]),
+      element(
+        "p",
+        "muted",
+        "These are configured operational gates, not human review, legal clearance, or a source-licence opinion.",
+      ),
+    );
+    append(
+      sourcePanel,
+      sourceLink(source.source_url, "Open recorded source ↗"),
+      sourceLink(source.observed_terms_url, "Open recorded source-use terms ↗"),
+    );
+    overview.append(agreementPanel, sourcePanel);
+    fragment.append(overview);
+
+    const topics = element("section", "decision-brief-topics");
+    topics.setAttribute("aria-label", "Five contract wording topics");
+    for (const topic of brief.topics) {
+      const topicCard = element("article", "decision-brief-topic");
+      const header = element("div", "decision-brief-topic-header");
+      const heading = element("div");
+      append(
+        heading,
+        element("span", "badge basis-generated", "Generated topic detector"),
+        element("h3", "", topic.label),
+        element("p", "muted", `Version ${topic.detector_version}`),
+      );
+      const counts = element("div", "decision-brief-counts");
+      append(
+        counts,
+        element("strong", "", count(topic.exact_matching_clause_count)),
+        element("span", "", "exact matching clauses"),
+      );
+      header.append(heading, counts);
+      append(
+        topicCard,
+        header,
+        element(
+          "p",
+          "muted",
+          `${
+            count(topic.total_signal_matches)
+          } total generated signal match(es) across ${
+            count(topic.total_matches)
+          } matching clause(s); showing ${
+            count(topic.returned_examples)
+          } bounded example(s)${
+            topic.examples_truncated ? " from a truncated example set" : ""
+          }.`,
+        ),
+      );
+      if (!topic.examples.length) {
+        topicCard.append(
+          element(
+            "p",
+            "focus-note",
+            "No positive deterministic match was returned for this topic. This does not establish that the agreement lacks the provision, position, exception, or consequence.",
+          ),
+        );
+      } else {
+        for (const example of topic.examples) {
+          topicCard.append(
+            decisionBriefExampleCard(example, agreement.agreement_id),
+          );
+        }
+      }
+      topics.append(topicCard);
+    }
+    fragment.append(topics);
+
+    const limitations = element("section", "decision-brief-limitations");
+    append(limitations, element("h3", "", "Limits to this brief"));
+    const list = element("ul");
+    for (const limitation of brief.limitations) {
+      list.append(element("li", "", limitation));
+    }
+    limitations.append(list);
+    fragment.append(limitations);
+    decisionBriefBody.replaceChildren(fragment);
+    decisionBriefStatus.textContent =
+      "Brief loaded from the current publication-gated observed extraction.";
+    downloadDecisionBriefButton.disabled = false;
+  }
+
+  async function loadAgreementDecisionBrief(agreementId) {
+    if (
+      !state.token ||
+      state.decisionBriefLoading ||
+      !UUID_PATTERN.test(agreementId)
+    ) {
+      return;
+    }
+    const token = state.token;
+    state.decisionBriefLoading = true;
+    state.decisionBrief = null;
+    state.decisionBriefAgreementId = agreementId;
+    downloadDecisionBriefButton.disabled = true;
+    decisionBriefStatus.textContent = "Loading bounded decision evidence…";
+    decisionBriefDialog.setAttribute("aria-busy", "true");
+    const loading = element(
+      "p",
+      "muted",
+      "Loading five publication-gated wording topics…",
+    );
+    loading.setAttribute("role", "status");
+    decisionBriefBody.replaceChildren(loading);
+    openDialog(decisionBriefDialog);
+    try {
+      const payload = await requestJson(
+        buildAgreementDecisionBriefPath(
+          agreementId,
+          AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+        ),
+        token,
+      );
+      if (
+        state.token !== token ||
+        state.decisionBriefAgreementId !== agreementId
+      ) {
+        return;
+      }
+      const brief = agreementDecisionBriefEvidence(
+        record(payload).data,
+        agreementId,
+        AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+      );
+      if (brief === null) {
+        throw new ApiError(
+          "The decision brief did not match its evidence disclosure contract.",
+        );
+      }
+      state.decisionBrief = brief;
+      renderAgreementDecisionBrief(brief);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        signOut(
+          "The token was not accepted or has changed. Enter the current explorer token.",
+        );
+        return;
+      }
+      decisionBriefStatus.textContent = "Decision brief unavailable.";
+      decisionBriefBody.replaceChildren(
+        element(
+          "p",
+          "status error",
+          error instanceof Error
+            ? error.message
+            : "The agreement decision brief could not be loaded.",
+        ),
+      );
+    } finally {
+      if (state.token === token) state.decisionBriefLoading = false;
+      decisionBriefDialog.setAttribute("aria-busy", "false");
+    }
+  }
+
+  function downloadAgreementDecisionBrief() {
+    if (!state.decisionBrief) return;
+    try {
+      const output = buildAgreementDecisionBriefExport(state.decisionBrief);
+      const blob = new Blob([`${JSON.stringify(output, null, 2)}\n`], {
+        type: "application/json;charset=utf-8",
+      });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = element("a");
+      link.href = objectUrl;
+      link.download =
+        `esheria-agreement-decision-brief-${state.decisionBrief.agreement.agreement_id}.json`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      decisionBriefStatus.textContent =
+        "Sanitized JSON downloaded. It contains no bearer token or private storage path; formula-like source text remains inert JSON data.";
+    } catch (error) {
+      decisionBriefStatus.textContent = error instanceof Error
+        ? error.message
+        : "The sanitized JSON export could not be created.";
+    }
+  }
+
   function renderAgreement(payload) {
     const data = record(record(payload).data);
     const agreement = record(data.agreement);
@@ -8259,6 +9612,33 @@ function boot() {
         ["Clauses", count(data.clause_count)],
       ]),
     );
+    if (
+      typeof agreement.id === "string" &&
+      UUID_PATTERN.test(agreement.id) &&
+      ["contract", "amendment"].includes(agreement.document_kind)
+    ) {
+      const launch = element("section", "decision-brief-launch");
+      const openBrief = element(
+        "button",
+        "button primary",
+        "Open five-topic decision brief",
+      );
+      openBrief.type = "button";
+      openBrief.setAttribute("aria-haspopup", "dialog");
+      openBrief.addEventListener("click", () => {
+        loadAgreementDecisionBrief(agreement.id);
+      });
+      append(
+        launch,
+        element(
+          "p",
+          "",
+          "Review exact positive wording matches across liability, indemnity, termination, governing law, and assignment. Generated signals remain separate from observed support.",
+        ),
+        openBrief,
+      );
+      fragment.append(launch);
+    }
     const sourceUrl = sourceLink(
       source.observed_canonical_url,
       "Open recorded source ↗",
@@ -9042,6 +10422,10 @@ function boot() {
     "click",
     () => closeDialog(detailDialog),
   );
+  byId("close-decision-brief").addEventListener(
+    "click",
+    () => closeDialog(decisionBriefDialog),
+  );
   byId("close-comparison").addEventListener(
     "click",
     () => closeDialog(comparisonDialog),
@@ -9063,8 +10447,15 @@ function boot() {
   );
   exportIndemnityMatrixButton.addEventListener("click", exportIndemnityMatrix);
   exportComparisonButton.addEventListener("click", exportComparison);
+  downloadDecisionBriefButton.addEventListener(
+    "click",
+    downloadAgreementDecisionBrief,
+  );
   detailDialog.addEventListener("click", (event) => {
     if (event.target === detailDialog) closeDialog(detailDialog);
+  });
+  decisionBriefDialog.addEventListener("click", (event) => {
+    if (event.target === decisionBriefDialog) closeDialog(decisionBriefDialog);
   });
   comparisonDialog.addEventListener("click", (event) => {
     if (event.target === comparisonDialog) closeDialog(comparisonDialog);

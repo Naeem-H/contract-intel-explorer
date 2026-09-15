@@ -746,6 +746,9 @@ dialog {
 .comparison-dialog {
   width: min(1240px, calc(100% - 28px));
 }
+.decision-brief-dialog {
+  width: min(1100px, calc(100% - 28px));
+}
 dialog::backdrop {
   background: rgb(2 7 5 / 78%);
   backdrop-filter: blur(4px);
@@ -919,6 +922,132 @@ dialog::backdrop {
   padding-top: 18px;
   border-top: 1px solid var(--line);
 }
+.decision-brief-launch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 4px;
+  padding: 13px;
+  border: 1px solid #3f725a;
+  border-radius: 10px;
+  background: rgb(20 44 33 / 45%);
+}
+.decision-brief-launch p {
+  flex: 1 1 360px;
+  margin: 0;
+  color: #d0c9b7;
+  font-size: 12px;
+}
+.decision-brief-boundary {
+  margin: 0 0 16px;
+  padding: 13px 15px;
+  border: 1px solid #6b5730;
+  border-left: 3px solid var(--gold);
+  border-radius: 9px;
+  color: #ead49c;
+  background: rgb(67 50 18 / 38%);
+}
+.decision-brief-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+  gap: 14px;
+}
+.decision-brief-overview > section {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.decision-brief-overview h2,
+.decision-brief-overview h3 {
+  margin: 5px 0 10px;
+}
+.decision-brief-topics {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+.decision-brief-topic {
+  padding: 15px;
+  border: 1px solid #334a3e;
+  border-radius: 11px;
+  background: var(--panel);
+}
+.decision-brief-topic-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.decision-brief-topic-header h3 {
+  margin: 3px 0 4px;
+  font: 500 21px/1.2 ui-serif, Georgia, serif;
+}
+.decision-brief-counts {
+  flex: 0 0 auto;
+  text-align: right;
+}
+.decision-brief-counts strong {
+  display: block;
+  color: var(--green);
+  font-size: 22px;
+}
+.decision-brief-counts span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+.decision-brief-example {
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #293b32;
+  border-radius: 9px;
+  background: #0a1410;
+}
+.decision-brief-example h4 {
+  margin: 7px 0 5px;
+}
+.decision-brief-evidence {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #3f725a;
+  border-left: 3px solid var(--green);
+  border-radius: 8px;
+  background: #08130e;
+}
+.decision-brief-signal {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #4a3c20;
+  border-left: 3px solid var(--gold);
+  border-radius: 8px;
+  background: rgb(52 41 20 / 38%);
+}
+.decision-brief-attributes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.decision-brief-attribute {
+  padding: 4px 7px;
+  border: 1px solid #4d442f;
+  border-radius: 999px;
+  color: #d8ceb5;
+  font-size: 10px;
+}
+.decision-brief-limitations {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.decision-brief-limitations li + li {
+  margin-top: 5px;
+}
 .clause,
 .party,
 .relationship,
@@ -979,7 +1108,8 @@ noscript {
   .hero,
   .guided-heading,
   .snapshot-grid,
-  .dossier-examples {
+  .dossier-examples,
+  .decision-brief-overview {
     grid-template-columns: 1fr;
   }
   .guide-steps {
@@ -1042,7 +1172,8 @@ noscript {
     grid-template-columns: 1fr;
   }
   .section-heading,
-  .result-top {
+  .result-top,
+  .decision-brief-topic-header {
     align-items: start;
     flex-direction: column;
   }
