@@ -31,6 +31,12 @@ const LIABILITY_VALUE_CANDIDATE_CATEGORIES = Object.freeze([
   ["comparison_formulas", "Comparison formulas"],
   ["period_terms", "Periods"],
 ]);
+const LIABILITY_POSITION_SIGNAL_KEYS = Object.freeze([
+  "explicit_liability_limit_formula",
+  "excluded_loss_language",
+  "cap_carveout_language",
+  "express_unlimited_liability",
+]);
 
 export class ApiError extends Error {
   constructor(message, status = 0, code = "request_failed", requestId = null) {
@@ -68,12 +74,15 @@ function isAllowedApiTarget(url) {
     pathname === "/api/metrics"
   ) return url.search === "";
   if (
-    pathname === "/api/search" || pathname === "/api/parties" ||
+    pathname === "/api/search" || pathname === "/api/positions" ||
+    pathname === "/api/parties" ||
     pathname === "/api/party-clauses"
   ) {
     const allowed = new Set([
       "q",
       "party",
+      "signal",
+      "value",
       "limit",
       "offset",
       "kind",
@@ -82,6 +91,13 @@ function isAllowedApiTarget(url) {
     if (
       pathname !== "/api/party-clauses" && url.searchParams.has("party")
     ) return false;
+    if (
+      pathname !== "/api/positions" &&
+      (url.searchParams.has("signal") || url.searchParams.has("value"))
+    ) return false;
+    if (pathname === "/api/positions" && url.searchParams.has("q")) {
+      return false;
+    }
     return [...url.searchParams.keys()].every((key) => allowed.has(key));
   }
   if (pathname === "/api/party-dossier") {
@@ -165,6 +181,61 @@ export function buildSearchPath({
 
 export function buildPartySearchPath(input) {
   return buildSearchPath(input).replace(/^\/api\/search\?/, "/api/parties?");
+}
+
+export function buildLiabilityPositionPath({
+  signalKeys = [],
+  valueCategories = [],
+  kind = "",
+  source = "",
+  limit = 20,
+  offset = 0,
+} = {}) {
+  const signals = [...new Set(array(signalKeys))];
+  const values = [...new Set(array(valueCategories))];
+  if (
+    signals.length > LIABILITY_POSITION_SIGNAL_KEYS.length ||
+    signals.some((key) => !LIABILITY_POSITION_SIGNAL_KEYS.includes(key))
+  ) throw new TypeError("Position signal filter is invalid");
+  if (
+    values.length > LIABILITY_VALUE_CANDIDATE_CATEGORIES.length ||
+    values.some((key) =>
+      !LIABILITY_VALUE_CANDIDATE_CATEGORIES.some(([allowed]) => allowed === key)
+    )
+  ) throw new TypeError("Cap-value category filter is invalid");
+  if (
+    values.length && signals.length &&
+    !signals.includes("explicit_liability_limit_formula")
+  ) {
+    throw new TypeError(
+      "Cap-value filters require the explicit liability limit signal",
+    );
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new TypeError("Position limit is outside the allowed range");
+  }
+  if (!Number.isInteger(offset) || offset < 0 || offset > 1_000) {
+    throw new TypeError("Position offset is outside the allowed range");
+  }
+  if (kind && !DOCUMENT_KINDS.has(kind)) {
+    throw new TypeError("Document class is not supported");
+  }
+  const normalizedSource = typeof source === "string"
+    ? source.trim().toLowerCase()
+    : "";
+  if (normalizedSource && !SOURCE_PATTERN.test(normalizedSource)) {
+    throw new TypeError("Source slug is invalid");
+  }
+
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  for (const signal of signals) params.append("signal", signal);
+  for (const value of values) params.append("value", value);
+  if (kind) params.set("kind", kind);
+  if (normalizedSource) params.set("source", normalizedSource);
+  return `/api/positions?${params.toString()}`;
 }
 
 export function buildPartyClauseSearchPath({ party, ...input }) {
@@ -1631,6 +1702,7 @@ function boot() {
     source: "",
     offset: 0,
     limit: 20,
+    resultMode: "search",
     hasMore: false,
     searching: false,
     comparing: false,
@@ -1644,6 +1716,11 @@ function boot() {
     partyHasMore: false,
     partySearching: false,
     partyDossierLoading: false,
+    positionSignal: "",
+    positionValue: "",
+    positionKind: "",
+    positionSource: "",
+    positionLoading: false,
   };
 
   const authView = byId("auth-view");
@@ -1660,6 +1737,13 @@ function boot() {
   const summaryFreshness = byId("summary-freshness");
   const corpusDisclosure = byId("corpus-disclosure");
   const guideStatus = byId("guide-status");
+  const positionForm = byId("position-form");
+  const positionSignalInput = byId("position-signal");
+  const positionValueInput = byId("position-value");
+  const positionKindInput = byId("position-kind");
+  const positionSourceInput = byId("position-source");
+  const positionButton = byId("position-submit");
+  const positionStatus = byId("position-status");
   const partySearchForm = byId("party-search-form");
   const partyQueryInput = byId("party-query");
   const partyKindInput = byId("party-kind");
@@ -1681,6 +1765,7 @@ function boot() {
   const sourceInput = byId("source");
   const searchButton = byId("search-submit");
   const searchStatus = byId("search-status");
+  const resultsSection = byId("results-section");
   const results = byId("results");
   const previous = byId("previous");
   const next = byId("next");
@@ -1740,7 +1825,16 @@ function boot() {
     state.partyHasMore = false;
     state.partySearching = false;
     state.partyDossierLoading = false;
+    state.positionSignal = "";
+    state.positionValue = "";
+    state.positionKind = "";
+    state.positionSource = "";
+    state.positionLoading = false;
+    state.resultMode = "search";
     state.clauseParty = "";
+    positionForm.reset();
+    positionStatus.textContent =
+      "Browse supported signals across published, nonduplicate evidence.";
     partyPrevious.disabled = true;
     partyNext.disabled = true;
     partySearchStatus.textContent =
@@ -3224,26 +3318,40 @@ function boot() {
         element(
           "p",
           "empty",
-          "No published clause evidence matched this query.",
+          state.resultMode === "positions"
+            ? "No published liability-position evidence matched these filters."
+            : "No published clause evidence matched this query.",
         ),
       ]),
     );
     const start = rows.length ? state.offset + 1 : 0;
     const end = state.offset + rows.length;
-    searchStatus.textContent = rows.length
-      ? `Showing results ${start}–${end}${
-        state.clauseParty
-          ? ` within agreements matching observed party “${state.clauseParty}”`
-          : ""
-      }. Search is evidence retrieval, not entity resolution or a completeness guarantee.`
-      : "No results returned. Clause, party and corpus coverage may be incomplete.";
+    if (state.resultMode === "positions") {
+      searchStatus.textContent = rows.length
+        ? `Showing position evidence ${start}–${end}. Generated matches are not market prevalence or legal conclusions.`
+        : "No position evidence returned. Detector and corpus coverage may be incomplete.";
+      positionStatus.textContent = rows.length
+        ? `${rows.length} bounded position result${
+          rows.length === 1 ? "" : "s"
+        } loaded below.`
+        : "No position evidence matched these filters.";
+    } else {
+      searchStatus.textContent = rows.length
+        ? `Showing results ${start}–${end}${
+          state.clauseParty
+            ? ` within agreements matching observed party “${state.clauseParty}”`
+            : ""
+        }. Search is evidence retrieval, not entity resolution or a completeness guarantee.`
+        : "No results returned. Clause, party and corpus coverage may be incomplete.";
+    }
     updateComparisonControls();
   }
 
   async function performSearch() {
-    if (!state.token || state.searching) return;
+    if (!state.token || state.searching || state.positionLoading) return;
     state.searching = true;
     searchButton.disabled = true;
+    positionButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Searching published clause evidence…";
@@ -3261,6 +3369,35 @@ function boot() {
     } finally {
       state.searching = false;
       searchButton.disabled = false;
+      positionButton.disabled = false;
+    }
+  }
+
+  async function performPositionBrowse() {
+    if (!state.token || state.searching || state.positionLoading) return;
+    state.positionLoading = true;
+    searchButton.disabled = true;
+    positionButton.disabled = true;
+    previous.disabled = true;
+    next.disabled = true;
+    searchStatus.textContent = "Loading published liability positions…";
+    positionStatus.textContent = "Applying evidence filters…";
+    try {
+      const path = buildLiabilityPositionPath({
+        signalKeys: state.positionSignal ? [state.positionSignal] : [],
+        valueCategories: state.positionValue ? [state.positionValue] : [],
+        kind: state.positionKind,
+        source: state.positionSource,
+        limit: state.limit,
+        offset: state.offset,
+      });
+      renderSearch(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, positionStatus);
+    } finally {
+      state.positionLoading = false;
+      searchButton.disabled = false;
+      positionButton.disabled = false;
     }
   }
 
@@ -4031,6 +4168,41 @@ function boot() {
     partyDossierThemes.replaceChildren();
   });
 
+  positionValueInput.addEventListener("change", () => {
+    if (positionValueInput.value) {
+      positionSignalInput.value = "explicit_liability_limit_formula";
+    }
+  });
+  positionSignalInput.addEventListener("change", () => {
+    if (
+      positionSignalInput.value &&
+      positionSignalInput.value !== "explicit_liability_limit_formula"
+    ) {
+      positionValueInput.value = "";
+    }
+  });
+  positionForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearComparison();
+    state.resultMode = "positions";
+    state.positionSignal = positionSignalInput.value;
+    state.positionValue = positionValueInput.value;
+    state.positionKind = positionKindInput.value;
+    state.positionSource = positionSourceInput.value.trim().toLowerCase();
+    const signalLabel = positionSignalInput.selectedOptions[0]?.textContent ??
+      "Any detected position";
+    const valueLabel = positionValueInput.selectedOptions[0]?.textContent ??
+      "Any value evidence";
+    state.query = `Position library: ${signalLabel}; ${valueLabel}`;
+    state.clauseParty = "";
+    state.kind = state.positionKind;
+    state.source = state.positionSource;
+    state.offset = 0;
+    syncGuideSelection("");
+    performPositionBrowse();
+    resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const query = queryInput.value.trim();
@@ -4046,17 +4218,20 @@ function boot() {
     state.kind = kind;
     state.source = source;
     state.offset = 0;
+    state.resultMode = "search";
     syncGuideSelection(query);
     performSearch();
   });
   previous.addEventListener("click", () => {
     state.offset = Math.max(0, state.offset - state.limit);
-    performSearch();
+    if (state.resultMode === "positions") performPositionBrowse();
+    else performSearch();
   });
   next.addEventListener("click", () => {
     if (!state.hasMore) return;
     state.offset = Math.min(1_000, state.offset + state.limit);
-    performSearch();
+    if (state.resultMode === "positions") performPositionBrowse();
+    else performSearch();
   });
   for (const button of document.querySelectorAll("[data-query]")) {
     button.addEventListener("click", () => {

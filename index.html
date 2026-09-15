@@ -101,6 +101,46 @@
         <p id="guide-status" class="muted guide-status" role="status" aria-live="polite">Choose a starter or enter your own search below. Document and source filters still apply.</p>
       </section>
 
+      <section class="search-panel" aria-labelledby="position-library-title">
+        <p class="eyebrow">Negotiation position library</p>
+        <h2 id="position-library-title">Browse detected liability positions</h2>
+        <p class="search-note">Filter generated clause-level signals and exact observed cap-value candidates without guessing search terms. Counts and results reflect this acquired corpus, not market prevalence or legal conclusions.</p>
+        <form id="position-form" class="search-form position-search-form">
+          <label for="position-signal">Position signal</label>
+          <label for="position-value">Observed value evidence</label>
+          <label for="position-kind">Document class</label>
+          <label for="position-source">Source slug</label>
+          <span aria-hidden="true"></span>
+          <select id="position-signal" name="signal">
+            <option value="">Any detected position</option>
+            <option value="explicit_liability_limit_formula">Explicit liability limit</option>
+            <option value="excluded_loss_language">Excluded loss language</option>
+            <option value="cap_carveout_language">Cap / exclusion carve-out</option>
+            <option value="express_unlimited_liability">Express unlimited liability</option>
+          </select>
+          <select id="position-value" name="value">
+            <option value="">Any value evidence</option>
+            <option value="currency_amounts">Currency amount</option>
+            <option value="percentages">Percentage</option>
+            <option value="cap_basis_terms">Cap basis</option>
+            <option value="comparison_formulas">Greater / lesser formula</option>
+            <option value="period_terms">Period term</option>
+          </select>
+          <select id="position-kind" name="kind">
+            <option value="">All classes</option>
+            <option value="contract">Contracts</option>
+            <option value="amendment">Amendments</option>
+            <option value="notice">Notices</option>
+            <option value="template">Templates</option>
+            <option value="metadata">Metadata</option>
+            <option value="other">Other</option>
+          </select>
+          <input id="position-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="e.g. uk_find_a_tender">
+          <button id="position-submit" class="button primary" type="submit">Browse positions</button>
+        </form>
+        <p id="position-status" class="muted" role="status" aria-live="polite">Browse supported signals across published, nonduplicate evidence.</p>
+      </section>
+
       <section class="search-panel" aria-labelledby="party-search-title">
         <p class="eyebrow">Vendor and counterparty trail</p>
         <h2 id="party-search-title">Find published agreements by party</h2>
