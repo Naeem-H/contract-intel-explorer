@@ -110,6 +110,21 @@ const TERMINATION_POSITION_SIGNALS = Object.freeze({
   force_majeure_language: "Force majeure",
   data_return_or_deletion_language: "Data return / deletion",
 });
+const ASSIGNMENT_POSITION_SIGNALS = Object.freeze({
+  assignment_prohibition_language: "Assignment / transfer prohibition",
+  prior_consent_language: "Consent / approval requirement",
+  qualified_consent_standard_language: "Consent reasonableness standard",
+  express_assignment_permission_language: "Express transfer permission",
+  affiliate_transfer_language: "Affiliate / group transfer",
+  successor_transaction_language: "Merger / successor transfer",
+  change_of_control_consequence_language: "Change-of-control consequence",
+  change_of_control_definition_language: "Change-of-control definition",
+  unauthorized_transfer_invalidity_language: "Unauthorized transfer invalidity",
+  assignor_continuing_obligation_language: "Assignor remains responsible",
+  finance_transfer_context: "Finance-transfer context",
+  contract_transfer_language: "Contractual rights / obligations transfer",
+});
+export const ASSIGNMENT_POSITION_SIGNAL_MAX = 12;
 const TERMINATION_DURATION_CANDIDATE_SCHEMA =
   "esheria.termination-duration-candidates.v1";
 const LOCAL_TERMINATION_TERM_PATTERN =
@@ -153,6 +168,7 @@ function isAllowedApiTarget(url) {
   if (
     pathname === "/api/search" || pathname === "/api/positions" ||
     pathname === "/api/termination-positions" ||
+    pathname === "/api/assignment-positions" ||
     pathname === "/api/parties" ||
     pathname === "/api/party-clauses"
   ) {
@@ -163,6 +179,7 @@ function isAllowedApiTarget(url) {
       "value",
       "feature",
       "duration",
+      "linkage",
       "limit",
       "offset",
       "kind",
@@ -174,14 +191,18 @@ function isAllowedApiTarget(url) {
     if (
       pathname !== "/api/positions" &&
       pathname !== "/api/termination-positions" &&
-      (url.searchParams.has("signal") || url.searchParams.has("value"))
+      pathname !== "/api/assignment-positions" &&
+      url.searchParams.has("signal")
     ) return false;
+    if (pathname !== "/api/positions" && url.searchParams.has("value")) {
+      return false;
+    }
     if (
       pathname !== "/api/positions" && url.searchParams.has("feature")
     ) return false;
     if (
       pathname !== "/api/termination-positions" &&
-      url.searchParams.has("duration")
+      (url.searchParams.has("duration") || url.searchParams.has("linkage"))
     ) return false;
     if (pathname === "/api/positions" && url.searchParams.has("q")) {
       return false;
@@ -190,6 +211,12 @@ function isAllowedApiTarget(url) {
       pathname === "/api/termination-positions" &&
       (url.searchParams.has("q") || url.searchParams.has("value") ||
         url.searchParams.has("feature"))
+    ) return false;
+    if (
+      pathname === "/api/assignment-positions" &&
+      (url.searchParams.has("q") || url.searchParams.has("value") ||
+        url.searchParams.has("feature") || url.searchParams.has("duration") ||
+        url.searchParams.has("linkage"))
     ) return false;
     return [...url.searchParams.keys()].every((key) => allowed.has(key));
   }
@@ -384,6 +411,44 @@ export function buildTerminationPositionPath({
   if (kind) params.set("kind", kind);
   if (normalizedSource) params.set("source", normalizedSource);
   return `/api/termination-positions?${params.toString()}`;
+}
+
+export function buildAssignmentPositionPath({
+  signalKeys = [],
+  kind = "",
+  source = "",
+  limit = 20,
+  offset = 0,
+} = {}) {
+  const signals = [...new Set(array(signalKeys))];
+  if (
+    signals.length > ASSIGNMENT_POSITION_SIGNAL_MAX ||
+    signals.some((key) => !Object.hasOwn(ASSIGNMENT_POSITION_SIGNALS, key))
+  ) throw new TypeError("Assignment signal filter is invalid");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new TypeError("Position limit is outside the allowed range");
+  }
+  if (!Number.isInteger(offset) || offset < 0 || offset > 5_000) {
+    throw new TypeError("Position offset is outside the allowed range");
+  }
+  if (kind && !["contract", "amendment"].includes(kind)) {
+    throw new TypeError("Assignment document class is not supported");
+  }
+  const normalizedSource = typeof source === "string"
+    ? source.trim().toLowerCase()
+    : "";
+  if (normalizedSource && !SOURCE_PATTERN.test(normalizedSource)) {
+    throw new TypeError("Source slug is invalid");
+  }
+
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  for (const signal of signals) params.append("signal", signal);
+  if (kind) params.set("kind", kind);
+  if (normalizedSource) params.set("source", normalizedSource);
+  return `/api/assignment-positions?${params.toString()}`;
 }
 
 export function buildPartyClauseSearchPath({ party, ...input }) {
@@ -711,6 +776,34 @@ export function terminationSignalHasLocalLinkage(value) {
   const support = record(record(value).observed_support);
   return typeof support.text === "string" &&
     LOCAL_TERMINATION_TERM_PATTERN.test(support.text);
+}
+
+export function assignmentPositionEvidence(value) {
+  const position = record(value);
+  if (position.api_version !== "assignment-position-signals-v1") return null;
+  const signals = array(position.signals).slice(
+    0,
+    ASSIGNMENT_POSITION_SIGNAL_MAX,
+  ).map(record);
+  const coverage = record(position.coverage);
+  return {
+    apiVersion: position.api_version,
+    applicable: position.applicable === true,
+    reason: typeof position.reason === "string" ? position.reason : null,
+    detectorVersion: typeof position.detector_version === "string"
+      ? position.detector_version
+      : null,
+    scope: typeof position.scope === "string" ? position.scope : null,
+    eligibility: record(position.eligibility),
+    signals,
+    matchedSignalCount: citationInteger(coverage.matched_signal_count) ??
+      signals.length,
+    supportedRuleCount: citationInteger(coverage.supported_rule_count),
+    limits: record(position.limits),
+    limitations: array(position.limitations).filter((item) =>
+      typeof item === "string"
+    ).slice(0, 10),
+  };
 }
 
 export function observedDurationEntries(value) {
@@ -2226,6 +2319,15 @@ const TERMINATION_ATTRIBUTE_LABELS = Object.freeze({
   facially_bilateral_language_present: "Facially bilateral wording appears",
 });
 
+const ASSIGNMENT_ATTRIBUTE_LABELS = Object.freeze({
+  consent_language_present: "Consent / approval wording appears",
+  notice_language_present: "Notice wording appears",
+  termination_language_present: "Termination wording appears",
+  facially_bilateral_language_present: "Facially bilateral wording appears",
+  finance_context_present: "Finance-transfer context appears",
+  change_of_control_language_present: "Change-of-control wording appears",
+});
+
 function positionAttributeEntries(value) {
   const attributes = record(value);
   return Object.entries(POSITION_ATTRIBUTE_LABELS)
@@ -2236,6 +2338,13 @@ function positionAttributeEntries(value) {
 function terminationAttributeEntries(value) {
   const attributes = record(value);
   return Object.entries(TERMINATION_ATTRIBUTE_LABELS)
+    .filter(([key]) => typeof attributes[key] === "boolean")
+    .map(([key, label]) => [label, attributes[key] ? "Yes" : "No"]);
+}
+
+function assignmentAttributeEntries(value) {
+  const attributes = record(value);
+  return Object.entries(ASSIGNMENT_ATTRIBUTE_LABELS)
     .filter(([key]) => typeof attributes[key] === "boolean")
     .map(([key, label]) => [label, attributes[key] ? "Yes" : "No"]);
 }
@@ -2384,6 +2493,10 @@ function boot() {
     terminationKind: "",
     terminationSource: "",
     terminationLoading: false,
+    assignmentSignal: "",
+    assignmentKind: "",
+    assignmentSource: "",
+    assignmentLoading: false,
   };
 
   const authView = byId("auth-view");
@@ -2418,6 +2531,13 @@ function boot() {
   const terminationButton = byId("termination-submit");
   const terminationFacets = byId("termination-facets");
   const terminationStatus = byId("termination-status");
+  const assignmentForm = byId("assignment-form");
+  const assignmentSignalInput = byId("assignment-signal");
+  const assignmentKindInput = byId("assignment-kind");
+  const assignmentSourceInput = byId("assignment-source");
+  const assignmentButton = byId("assignment-submit");
+  const assignmentFacets = byId("assignment-facets");
+  const assignmentStatus = byId("assignment-status");
   const partySearchForm = byId("party-search-form");
   const partyQueryInput = byId("party-query");
   const partyKindInput = byId("party-kind");
@@ -2512,6 +2632,10 @@ function boot() {
     state.terminationKind = "";
     state.terminationSource = "";
     state.terminationLoading = false;
+    state.assignmentSignal = "";
+    state.assignmentKind = "";
+    state.assignmentSource = "";
+    state.assignmentLoading = false;
     state.resultMode = "search";
     state.clauseParty = "";
     positionForm.reset();
@@ -2525,6 +2649,12 @@ function boot() {
       element("span", "", "Available evidence:"),
     );
     terminationStatus.textContent =
+      "Browse positive wording matches across published, nonduplicate contracts and amendments.";
+    assignmentForm.reset();
+    assignmentFacets.replaceChildren(
+      element("span", "", "Available evidence:"),
+    );
+    assignmentStatus.textContent =
       "Browse positive wording matches across published, nonduplicate contracts and amendments.";
     partyPrevious.disabled = true;
     partyNext.disabled = true;
@@ -2622,6 +2752,14 @@ function boot() {
     );
     const terminationLocalLinkageFacet = record(
       terminationSummary.published_local_termination_linkage_facet,
+    );
+    const assignmentSummary = record(root.assignment_summary);
+    const assignmentSurface = record(assignmentSummary.eligible_theme_surface);
+    const assignmentLibrary = record(
+      assignmentSummary.published_position_library,
+    );
+    const assignmentSignalFacets = array(
+      assignmentSummary.published_signal_facets,
     );
 
     summaryCards.replaceChildren(
@@ -2731,6 +2869,18 @@ function boot() {
         Number(terminationCurrent.missing_clauses) === 0
           ? "Complete"
           : `${count(terminationCurrent.missing_clauses)} missing`,
+      ],
+      [
+        "Published assignment library",
+        `${count(assignmentLibrary.matched_clauses)} clauses across ${
+          count(assignmentLibrary.distinct_agreements)
+        } agreements`,
+      ],
+      [
+        "Assignment support coverage",
+        `${count(assignmentSurface.clauses_with_exact_detector_support)} / ${
+          count(assignmentSurface.clauses)
+        } theme clauses`,
       ],
       [
         "Average extraction confidence",
@@ -2950,6 +3100,44 @@ function boot() {
         sourceCoverage ? ` · ${sourceCoverage}` : ""
       }; generated wording coverage, not legal conclusions.`;
     }
+    assignmentFacets.replaceChildren(
+      element("span", "", "Available evidence:"),
+    );
+    for (const facetValue of assignmentSignalFacets) {
+      const facet = record(facetValue);
+      const signalKey = displayText(facet.signal_key);
+      const label = ASSIGNMENT_POSITION_SIGNALS[signalKey];
+      if (!label || facet.signal_basis !== "generated") continue;
+      const button = element(
+        "button",
+        "",
+        `${label} · ${count(facet.clauses)} clauses / ${
+          count(facet.distinct_agreements)
+        } agreements`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        assignmentSignalInput.value = signalKey;
+        assignmentForm.requestSubmit();
+      });
+      assignmentFacets.append(button);
+    }
+    if (Number(assignmentLibrary.matched_clauses) > 0) {
+      const sourceCoverage = array(assignmentLibrary.by_source)
+        .slice(0, 10)
+        .map((sourceValue) => {
+          const source = record(sourceValue);
+          return `${displayText(source.source_slug)} ${count(source.clauses)}`;
+        })
+        .join(" · ");
+      assignmentStatus.textContent = `${
+        count(assignmentLibrary.matched_clauses)
+      } detected clauses across ${
+        count(assignmentLibrary.distinct_agreements)
+      } useful agreements${
+        sourceCoverage ? ` · ${sourceCoverage}` : ""
+      }; generated wording coverage, not party entitlement or a legal conclusion.`;
+    }
     const disclosure = record(summary.disclosure);
     const disclosureLines = [
       disclosure.coverage,
@@ -2960,6 +3148,9 @@ function boot() {
       positionSummary.absence_warning,
       terminationSummary.measurement,
       terminationSummary.absence_warning,
+      assignmentSummary.measurement,
+      assignmentSummary.absence_warning,
+      assignmentSummary.context_warning,
     ].filter((value) => typeof value === "string");
     corpusDisclosure.replaceChildren(
       ...disclosureLines.map((line) => element("p", "", line)),
@@ -4348,6 +4539,51 @@ function boot() {
         ),
       );
     }
+    const assignmentPosition = assignmentPositionEvidence(
+      item.assignment_position,
+    );
+    const assignmentSummary = assignmentPosition?.applicable
+      ? element("div", "result-position-summary")
+      : null;
+    if (assignmentSummary) {
+      const signalLabels = assignmentPosition.signals.map((signal) => {
+        const item = record(signal);
+        return displayText(
+          ASSIGNMENT_POSITION_SIGNALS[item.signal_key],
+          item.label ?? item.signal_key,
+        );
+      });
+      const presentAttributes = assignmentAttributeEntries(
+        record(assignmentPosition.signals[0]).generated_attributes,
+      ).filter((entry) => entry[1] === "Yes").map((entry) => entry[0]);
+      append(
+        assignmentSummary,
+        element(
+          "span",
+          "badge generated",
+          "Generated assignment / control wording",
+        ),
+        element(
+          "p",
+          "",
+          signalLabels.length
+            ? `Matched: ${signalLabels.join(" · ")}`
+            : "No supported assignment wording matched this clause.",
+        ),
+        presentAttributes.length
+          ? element(
+            "p",
+            "",
+            `Same support also contains: ${presentAttributes.join(" · ")}`,
+          )
+          : null,
+        element(
+          "p",
+          "muted",
+          "Detector-support navigation signal; not a determination of party entitlement, consent effectiveness, transaction consequence, or legal effect.",
+        ),
+      );
+    }
     const agreementId = typeof item.agreement_id === "string"
       ? item.agreement_id
       : "";
@@ -4380,6 +4616,7 @@ function boot() {
       highlightedExcerpt(item.evidence_excerpt),
       positionSummary,
       terminationSummary,
+      assignmentSummary,
       actions,
     );
     return card;
@@ -4401,6 +4638,8 @@ function boot() {
             ? "No published liability-position evidence matched these filters."
             : state.resultMode === "termination_positions"
             ? "No published termination-position evidence matched these filters."
+            : state.resultMode === "assignment_positions"
+            ? "No published assignment/change-of-control evidence matched these filters."
             : "No published clause evidence matched this query.",
         ),
       ]),
@@ -4425,6 +4664,15 @@ function boot() {
           rows.length === 1 ? "" : "s"
         } loaded below.`
         : "No termination wording matched these filters.";
+    } else if (state.resultMode === "assignment_positions") {
+      searchStatus.textContent = rows.length
+        ? `Showing assignment/change-of-control evidence ${start}–${end}. Generated wording matches do not determine party entitlement, consent effectiveness, or legal effect.`
+        : "No assignment/change-of-control evidence returned. Detector and corpus coverage may be incomplete.";
+      assignmentStatus.textContent = rows.length
+        ? `${rows.length} bounded assignment result${
+          rows.length === 1 ? "" : "s"
+        } loaded below.`
+        : "No assignment/change-of-control wording matched these filters.";
     } else {
       searchStatus.textContent = rows.length
         ? `Showing results ${start}–${end}${
@@ -4440,12 +4688,13 @@ function boot() {
   async function performSearch() {
     if (
       !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading
+      state.terminationLoading || state.assignmentLoading
     ) return;
     state.searching = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
+    assignmentButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Searching published clause evidence…";
@@ -4465,18 +4714,20 @@ function boot() {
       searchButton.disabled = false;
       positionButton.disabled = false;
       terminationButton.disabled = false;
+      assignmentButton.disabled = false;
     }
   }
 
   async function performPositionBrowse() {
     if (
       !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading
+      state.terminationLoading || state.assignmentLoading
     ) return;
     state.positionLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
+    assignmentButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published liability positions…";
@@ -4499,18 +4750,20 @@ function boot() {
       searchButton.disabled = false;
       positionButton.disabled = false;
       terminationButton.disabled = false;
+      assignmentButton.disabled = false;
     }
   }
 
   async function performTerminationBrowse() {
     if (
       !state.token || state.searching || state.positionLoading ||
-      state.terminationLoading
+      state.terminationLoading || state.assignmentLoading
     ) return;
     state.terminationLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
     terminationButton.disabled = true;
+    assignmentButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published termination wording…";
@@ -4533,6 +4786,42 @@ function boot() {
       searchButton.disabled = false;
       positionButton.disabled = false;
       terminationButton.disabled = false;
+      assignmentButton.disabled = false;
+    }
+  }
+
+  async function performAssignmentBrowse() {
+    if (
+      !state.token || state.searching || state.positionLoading ||
+      state.terminationLoading || state.assignmentLoading
+    ) return;
+    state.assignmentLoading = true;
+    searchButton.disabled = true;
+    positionButton.disabled = true;
+    terminationButton.disabled = true;
+    assignmentButton.disabled = true;
+    previous.disabled = true;
+    next.disabled = true;
+    searchStatus.textContent =
+      "Loading published assignment/change-of-control wording…";
+    assignmentStatus.textContent = "Applying evidence filters…";
+    try {
+      const path = buildAssignmentPositionPath({
+        signalKeys: state.assignmentSignal ? [state.assignmentSignal] : [],
+        kind: state.assignmentKind,
+        source: state.assignmentSource,
+        limit: state.limit,
+        offset: state.offset,
+      });
+      renderSearch(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, assignmentStatus);
+    } finally {
+      state.assignmentLoading = false;
+      searchButton.disabled = false;
+      positionButton.disabled = false;
+      terminationButton.disabled = false;
+      assignmentButton.disabled = false;
     }
   }
 
@@ -5401,6 +5690,25 @@ function boot() {
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
+  assignmentForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearComparison();
+    state.resultMode = "assignment_positions";
+    state.assignmentSignal = assignmentSignalInput.value;
+    state.assignmentKind = assignmentKindInput.value;
+    state.assignmentSource = assignmentSourceInput.value.trim().toLowerCase();
+    const signalLabel = assignmentSignalInput.selectedOptions[0]?.textContent ??
+      "Any detected wording";
+    state.query = `Assignment library: ${signalLabel}`;
+    state.clauseParty = "";
+    state.kind = state.assignmentKind;
+    state.source = state.assignmentSource;
+    state.offset = 0;
+    syncGuideSelection("");
+    performAssignmentBrowse();
+    resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const query = queryInput.value.trim();
@@ -5425,17 +5733,25 @@ function boot() {
     if (state.resultMode === "positions") performPositionBrowse();
     else if (state.resultMode === "termination_positions") {
       performTerminationBrowse();
+    } else if (state.resultMode === "assignment_positions") {
+      performAssignmentBrowse();
     } else performSearch();
   });
   next.addEventListener("click", () => {
     if (!state.hasMore) return;
     state.offset = Math.min(
-      state.resultMode === "termination_positions" ? 5_000 : 1_000,
+      ["termination_positions", "assignment_positions"].includes(
+          state.resultMode,
+        )
+        ? 5_000
+        : 1_000,
       state.offset + state.limit,
     );
     if (state.resultMode === "positions") performPositionBrowse();
     else if (state.resultMode === "termination_positions") {
       performTerminationBrowse();
+    } else if (state.resultMode === "assignment_positions") {
+      performAssignmentBrowse();
     } else performSearch();
   });
   for (const button of document.querySelectorAll("[data-query]")) {

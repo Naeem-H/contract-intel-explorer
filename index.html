@@ -209,6 +209,42 @@
         <p id="termination-status" class="muted" role="status" aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
       </section>
 
+      <section class="search-panel" aria-labelledby="assignment-library-title">
+        <p class="eyebrow">Transfer and ownership-change library</p>
+        <h2 id="assignment-library-title">Browse assignment and change-of-control wording</h2>
+        <p class="search-note">Filter positive generated wording signals anchored to one exact detector-selected source span. Finance-transfer context is labelled separately. Signals do not determine which party holds a right, whether consent is effective, or whether an exception applies.</p>
+        <form id="assignment-form" class="search-form assignment-search-form">
+          <label for="assignment-signal">Assignment wording</label>
+          <label for="assignment-kind">Document class</label>
+          <label for="assignment-source">Source slug</label>
+          <span aria-hidden="true"></span>
+          <select id="assignment-signal" name="signal">
+            <option value="">Any detected wording</option>
+            <option value="assignment_prohibition_language">Assignment / transfer prohibition</option>
+            <option value="prior_consent_language">Consent / approval requirement</option>
+            <option value="qualified_consent_standard_language">Consent reasonableness standard</option>
+            <option value="express_assignment_permission_language">Express transfer permission</option>
+            <option value="affiliate_transfer_language">Affiliate / group transfer</option>
+            <option value="successor_transaction_language">Merger / successor transfer</option>
+            <option value="change_of_control_consequence_language">Change-of-control consequence</option>
+            <option value="change_of_control_definition_language">Change-of-control definition</option>
+            <option value="unauthorized_transfer_invalidity_language">Unauthorized transfer invalidity</option>
+            <option value="assignor_continuing_obligation_language">Assignor remains responsible</option>
+            <option value="finance_transfer_context">Finance-transfer context</option>
+            <option value="contract_transfer_language">Contractual rights / obligations transfer</option>
+          </select>
+          <select id="assignment-kind" name="kind">
+            <option value="">Contracts and amendments</option>
+            <option value="contract">Contracts</option>
+            <option value="amendment">Amendments</option>
+          </select>
+          <input id="assignment-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="e.g. sec_edgar">
+          <button id="assignment-submit" class="button primary" type="submit">Browse assignment</button>
+        </form>
+        <div id="assignment-facets" class="quick" aria-label="Available assignment-position evidence"><span>Available evidence:</span></div>
+        <p id="assignment-status" class="muted" role="status" aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
+      </section>
+
       <section class="search-panel" aria-labelledby="party-search-title">
         <p class="eyebrow">Vendor and counterparty trail</p>
         <h2 id="party-search-title">Find published agreements by party</h2>
