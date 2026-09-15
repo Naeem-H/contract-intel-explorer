@@ -91,6 +91,12 @@
             <p><strong>Decision prompt:</strong> Can prices or fees change, which index or formula applies, and when does an adjustment take effect?</p>
             <button class="button secondary starter-action" type="button" data-guide="Pricing and indexation" data-query="indexation OR &quot;price adjustment&quot; OR &quot;consumer price index&quot;" aria-pressed="false">Search pricing wording</button>
           </article>
+          <article class="starter-card">
+            <span class="starter-topic">Exit risk</span>
+            <h3>Termination rights</h3>
+            <p><strong>Decision prompt:</strong> Which triggers, notice or cure periods, fees, and transition duties appear in the acquired agreements?</p>
+            <button class="button secondary starter-action" type="button" data-guide="Termination rights" data-query="termination OR terminate" aria-pressed="false">Search termination wording</button>
+          </article>
         </div>
 
         <div class="guide-legend" aria-label="Evidence labels">
@@ -155,6 +161,47 @@
         </form>
         <div id="position-facets" class="quick" aria-label="Available liability-position evidence"><span>Available evidence:</span></div>
         <p id="position-status" class="muted" role="status" aria-live="polite">Browse supported signals across published, nonduplicate evidence.</p>
+      </section>
+
+      <section class="search-panel" aria-labelledby="termination-library-title">
+        <p class="eyebrow">Exit and trigger library</p>
+        <h2 id="termination-library-title">Browse detected termination wording</h2>
+        <p class="search-note">Filter positive generated wording signals and inspect exact support and lexical duration candidates. Signals identify words in a termination-labelled clause; they do not determine who holds a right, whether a trigger is satisfied, or legal effect.</p>
+        <form id="termination-form" class="search-form termination-search-form">
+          <label for="termination-signal">Termination wording</label>
+          <label for="termination-duration">Observed duration evidence</label>
+          <label for="termination-kind">Document class</label>
+          <label for="termination-source">Source slug</label>
+          <span aria-hidden="true"></span>
+          <select id="termination-signal" name="signal">
+            <option value="">Any detected wording</option>
+            <option value="convenience_termination_language">Convenience termination</option>
+            <option value="material_breach_language">Material breach</option>
+            <option value="cure_or_remedy_language">Cure / remedy</option>
+            <option value="insolvency_language">Insolvency</option>
+            <option value="change_of_control_language">Change of control</option>
+            <option value="nonpayment_language">Non-payment</option>
+            <option value="immediate_termination_language">Immediate termination</option>
+            <option value="termination_fee_language">Termination fee</option>
+            <option value="exit_assistance_language">Exit / transition assistance</option>
+            <option value="post_termination_obligation_language">Post-termination obligations</option>
+            <option value="force_majeure_language">Force majeure</option>
+            <option value="data_return_or_deletion_language">Data return / deletion</option>
+          </select>
+          <select id="termination-duration" name="duration">
+            <option value="">Any duration evidence</option>
+            <option value="present">Exact duration candidate present</option>
+          </select>
+          <select id="termination-kind" name="kind">
+            <option value="">Contracts and amendments</option>
+            <option value="contract">Contracts</option>
+            <option value="amendment">Amendments</option>
+          </select>
+          <input id="termination-source" name="source" type="text" maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="e.g. uk_find_a_tender">
+          <button id="termination-submit" class="button primary" type="submit">Browse termination</button>
+        </form>
+        <div id="termination-facets" class="quick" aria-label="Available termination-position evidence"><span>Available evidence:</span></div>
+        <p id="termination-status" class="muted" role="status" aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
       </section>
 
       <section class="search-panel" aria-labelledby="party-search-title">

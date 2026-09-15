@@ -20,6 +20,7 @@ export const COMPARISON_MAX_ITEMS = 4;
 export const COMPARISON_CONTEXT_CLAUSES = 5;
 export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
+export const TERMINATION_POSITION_SIGNAL_MAX = 12;
 export const CITATION_TEXT_MAX_CHARS = 100_000;
 export const LIABILITY_POSITION_MATRIX_SCHEMA =
   "esheria.liability-position-matrix.v3";
@@ -93,6 +94,22 @@ const LIABILITY_VALUE_CANDIDATE_SCHEMAS = new Set([
   "esheria.liability-cap-value-candidates.v1",
   "esheria.liability-cap-value-candidates.v2",
 ]);
+const TERMINATION_POSITION_SIGNALS = Object.freeze({
+  convenience_termination_language: "Convenience termination",
+  material_breach_language: "Material breach",
+  cure_or_remedy_language: "Cure / remedy",
+  insolvency_language: "Insolvency",
+  change_of_control_language: "Change of control",
+  nonpayment_language: "Non-payment",
+  immediate_termination_language: "Immediate termination",
+  termination_fee_language: "Termination fee",
+  exit_assistance_language: "Exit / transition assistance",
+  post_termination_obligation_language: "Post-termination obligations",
+  force_majeure_language: "Force majeure",
+  data_return_or_deletion_language: "Data return / deletion",
+});
+const TERMINATION_DURATION_CANDIDATE_SCHEMA =
+  "esheria.termination-duration-candidates.v1";
 
 export class ApiError extends Error {
   constructor(message, status = 0, code = "request_failed", requestId = null) {
@@ -131,6 +148,7 @@ function isAllowedApiTarget(url) {
   ) return url.search === "";
   if (
     pathname === "/api/search" || pathname === "/api/positions" ||
+    pathname === "/api/termination-positions" ||
     pathname === "/api/parties" ||
     pathname === "/api/party-clauses"
   ) {
@@ -140,6 +158,7 @@ function isAllowedApiTarget(url) {
       "signal",
       "value",
       "feature",
+      "duration",
       "limit",
       "offset",
       "kind",
@@ -150,11 +169,24 @@ function isAllowedApiTarget(url) {
     ) return false;
     if (
       pathname !== "/api/positions" &&
+      pathname !== "/api/termination-positions" &&
       (url.searchParams.has("signal") || url.searchParams.has("value"))
+    ) return false;
+    if (
+      pathname !== "/api/positions" && url.searchParams.has("feature")
+    ) return false;
+    if (
+      pathname !== "/api/termination-positions" &&
+      url.searchParams.has("duration")
     ) return false;
     if (pathname === "/api/positions" && url.searchParams.has("q")) {
       return false;
     }
+    if (
+      pathname === "/api/termination-positions" &&
+      (url.searchParams.has("q") || url.searchParams.has("value") ||
+        url.searchParams.has("feature"))
+    ) return false;
     return [...url.searchParams.keys()].every((key) => allowed.has(key));
   }
   if (pathname === "/api/party-dossier") {
@@ -300,6 +332,49 @@ export function buildLiabilityPositionPath({
   if (kind) params.set("kind", kind);
   if (normalizedSource) params.set("source", normalizedSource);
   return `/api/positions?${params.toString()}`;
+}
+
+export function buildTerminationPositionPath({
+  signalKeys = [],
+  hasDuration = false,
+  kind = "",
+  source = "",
+  limit = 20,
+  offset = 0,
+} = {}) {
+  const signals = [...new Set(array(signalKeys))];
+  if (
+    signals.length > Object.keys(TERMINATION_POSITION_SIGNALS).length ||
+    signals.some((key) => !Object.hasOwn(TERMINATION_POSITION_SIGNALS, key))
+  ) throw new TypeError("Termination signal filter is invalid");
+  if (typeof hasDuration !== "boolean") {
+    throw new TypeError("Duration filter is invalid");
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new TypeError("Position limit is outside the allowed range");
+  }
+  if (!Number.isInteger(offset) || offset < 0 || offset > 5_000) {
+    throw new TypeError("Position offset is outside the allowed range");
+  }
+  if (kind && !["contract", "amendment"].includes(kind)) {
+    throw new TypeError("Termination document class is not supported");
+  }
+  const normalizedSource = typeof source === "string"
+    ? source.trim().toLowerCase()
+    : "";
+  if (normalizedSource && !SOURCE_PATTERN.test(normalizedSource)) {
+    throw new TypeError("Source slug is invalid");
+  }
+
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  for (const signal of signals) params.append("signal", signal);
+  if (hasDuration) params.set("duration", "present");
+  if (kind) params.set("kind", kind);
+  if (normalizedSource) params.set("source", normalizedSource);
+  return `/api/termination-positions?${params.toString()}`;
 }
 
 export function buildPartyClauseSearchPath({ party, ...input }) {
@@ -508,6 +583,7 @@ export function comparisonEvidence(payload, expectedClauseId) {
       .map(record),
     anchorContext: record(data.anchor_context),
     commercialPosition: record(data.commercial_position),
+    terminationPosition: record(data.termination_position),
     truncated: data.truncated === true,
   };
 }
@@ -588,6 +664,56 @@ export function commercialPositionEvidence(value) {
       typeof item === "string"
     ).slice(0, 10),
   };
+}
+
+export function terminationPositionEvidence(value) {
+  const position = record(value);
+  if (position.api_version !== "termination-position-signals-v1") return null;
+  const signals = array(position.signals).slice(
+    0,
+    TERMINATION_POSITION_SIGNAL_MAX,
+  ).map(record);
+  const coverage = record(position.coverage);
+  return {
+    apiVersion: position.api_version,
+    applicable: position.applicable === true,
+    reason: typeof position.reason === "string" ? position.reason : null,
+    detectorVersion: typeof position.detector_version === "string"
+      ? position.detector_version
+      : null,
+    durationExtractorVersion:
+      typeof position.duration_extractor_version === "string"
+        ? position.duration_extractor_version
+        : null,
+    scope: typeof position.scope === "string" ? position.scope : null,
+    eligibility: record(position.eligibility),
+    signals,
+    matchedSignalCount: citationInteger(coverage.matched_signal_count) ??
+      signals.length,
+    supportedRuleCount: citationInteger(coverage.supported_rule_count),
+    limits: record(position.limits),
+    limitations: array(position.limitations).filter((item) =>
+      typeof item === "string"
+    ).slice(0, 10),
+  };
+}
+
+export function observedDurationEntries(value) {
+  const packet = record(value);
+  if (packet.schema !== TERMINATION_DURATION_CANDIDATE_SCHEMA) return [];
+  const seen = new Set();
+  return array(packet.duration_terms).slice(0, 4).map((item) => {
+    const candidate = record(item);
+    return typeof candidate.observed_text === "string"
+      ? candidate.observed_text
+      : null;
+  }).filter((candidate) => {
+    if (!candidate) return false;
+    const normalized = candidate.replace(/\s+/gu, " ").trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
 }
 
 function observedValueCandidateEntries(value) {
@@ -1048,6 +1174,155 @@ function citationCommercialPosition(value) {
   };
 }
 
+function citationObservedDurationCandidates(value) {
+  const packet = record(value);
+  if (packet.schema !== TERMINATION_DURATION_CANDIDATE_SCHEMA) return null;
+  const window = record(packet.observed_window);
+  const windowText = citationText(window.text, 1_000);
+  const limits = record(packet.limits);
+  return {
+    schema: packet.schema,
+    value_extractor_version: typeof packet.value_extractor_version === "string"
+      ? packet.value_extractor_version
+      : null,
+    observed_window: window.text === undefined || window.text === null
+      ? null
+      : {
+        text: windowText.text,
+        text_truncated: windowText.truncated,
+        text_basis: window.text_basis === "observed" ? "observed" : null,
+        sha256: typeof window.sha256 === "string" ? window.sha256 : null,
+        clause_char_start: citationInteger(window.clause_char_start),
+        clause_char_end: citationInteger(window.clause_char_end),
+        document_char_start: citationInteger(window.document_char_start),
+        document_char_end: citationInteger(window.document_char_end),
+      },
+    duration_terms: array(packet.duration_terms).slice(0, 4).map(
+      citationObservedValueCandidate,
+    ),
+    limits: {
+      maximum_candidates: citationInteger(limits.maximum_candidates),
+      candidate_values_are_legal_conclusions:
+        limits.candidate_values_are_legal_conclusions === true,
+      window_scope: typeof limits.window_scope === "string"
+        ? limits.window_scope
+        : null,
+    },
+  };
+}
+
+function citationTerminationPosition(value) {
+  const position = terminationPositionEvidence(value);
+  if (!position) return null;
+  const allowedAttributeKeys = [
+    "duration_candidate_present",
+    "notice_language_present",
+    "facially_bilateral_language_present",
+  ];
+  return {
+    schema: "esheria.termination-position-signals.v1",
+    applicable: position.applicable,
+    reason: position.reason,
+    detector_version: position.detectorVersion,
+    duration_extractor_version: position.durationExtractorVersion,
+    scope: position.scope,
+    eligibility: {
+      theme: typeof position.eligibility.theme === "string"
+        ? position.eligibility.theme
+        : null,
+      theme_basis: typeof position.eligibility.theme_basis === "string"
+        ? position.eligibility.theme_basis
+        : null,
+      taxonomy_version:
+        typeof position.eligibility.taxonomy_version === "string"
+          ? position.eligibility.taxonomy_version
+          : null,
+      generated_by: typeof position.eligibility.generated_by === "string"
+        ? position.eligibility.generated_by
+        : null,
+    },
+    signals: position.signals.map((value) => {
+      const signal = record(value);
+      const attributes = record(signal.generated_attributes);
+      const support = record(signal.observed_support);
+      const supportText = citationText(support.text, 2_000);
+      const matchedText = citationText(support.matched_text, 600);
+      return {
+        signal_key: typeof signal.signal_key === "string"
+          ? signal.signal_key
+          : null,
+        label: typeof signal.label === "string" ? signal.label : null,
+        signal_basis: typeof signal.signal_basis === "string"
+          ? signal.signal_basis
+          : null,
+        confidence: Number.isFinite(Number(signal.confidence))
+          ? Number(signal.confidence)
+          : null,
+        detector_version: typeof signal.detector_version === "string"
+          ? signal.detector_version
+          : null,
+        rule_id: typeof signal.rule_id === "string" ? signal.rule_id : null,
+        generated_attributes: Object.fromEntries(
+          allowedAttributeKeys.filter((key) =>
+            typeof attributes[key] === "boolean"
+          ).map((key) => [key, attributes[key]]),
+        ),
+        observed_support: {
+          text: supportText.text,
+          text_truncated: supportText.truncated,
+          sha256: typeof support.sha256 === "string" ? support.sha256 : null,
+          text_basis: support.text_basis === "observed" ? "observed" : null,
+          clause_char_start: citationInteger(support.clause_char_start),
+          clause_char_end: citationInteger(support.clause_char_end),
+          document_char_start: citationInteger(support.document_char_start),
+          document_char_end: citationInteger(support.document_char_end),
+          matched_text: matchedText.text,
+          matched_text_truncated: matchedText.truncated,
+          matched_text_sha256: typeof support.matched_text_sha256 === "string"
+            ? support.matched_text_sha256
+            : null,
+          matched_clause_char_start: citationInteger(
+            support.matched_clause_char_start,
+          ),
+          matched_clause_char_end: citationInteger(
+            support.matched_clause_char_end,
+          ),
+          bounded_excerpt: support.bounded_excerpt === true,
+        },
+        observed_duration_candidates: citationObservedDurationCandidates(
+          signal.observed_duration_candidates,
+        ),
+        anchor_clause_id: typeof signal.anchor_clause_id === "string" &&
+            UUID_PATTERN.test(signal.anchor_clause_id)
+          ? signal.anchor_clause_id
+          : null,
+        anchor_clause_sha256: typeof signal.anchor_clause_sha256 === "string"
+          ? signal.anchor_clause_sha256
+          : null,
+      };
+    }),
+    coverage: {
+      matched_signal_count: position.matchedSignalCount,
+      supported_rule_count: position.supportedRuleCount,
+    },
+    limits: {
+      maximum_signals: citationInteger(position.limits.maximum_signals),
+      maximum_duration_candidates_per_signal: citationInteger(
+        position.limits.maximum_duration_candidates_per_signal,
+      ),
+      support_is_bounded_excerpt:
+        position.limits.support_is_bounded_excerpt === true,
+      absence_is_not_evidence_of_absence:
+        position.limits.absence_is_not_evidence_of_absence === true,
+      signals_are_legal_conclusions:
+        position.limits.signals_are_legal_conclusions === true,
+      duration_candidates_are_normalized:
+        position.limits.duration_candidates_are_normalized === true,
+    },
+    limitations: position.limitations,
+  };
+}
+
 export function buildCitationManifest({
   query = "",
   kind = "",
@@ -1180,11 +1455,14 @@ export function buildCitationManifest({
       commercial_position: citationCommercialPosition(
         evidence.commercialPosition,
       ),
+      termination_position: citationTerminationPosition(
+        evidence.terminationPosition,
+      ),
     };
   });
 
   return {
-    schema: "esheria.contract-citations.v5",
+    schema: "esheria.contract-citations.v6",
     generated_at: timestamp.toISOString(),
     retrieval_scope: {
       query: normalizedQuery || null,
@@ -1196,7 +1474,7 @@ export function buildCitationManifest({
       "This export contains only the selected published evidence and bounded context; it is not a representative market sample.",
       "Observed wording is evidence. Generated classifications, themes, summaries and date types are interpretations, not source facts.",
       "Definition-use matching and target resolution are generated navigation aids; unresolved references are preserved rather than guessed.",
-      "Commercial position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
+      "Commercial and termination position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
       "Cap-value candidates are exact lexical tokens from bounded observed support, not normalized amounts or interpreted liability caps.",
       "Verify the recorded source, completeness, amendments and governing law before legal or commercial reliance.",
     ],
@@ -1659,9 +1937,22 @@ const POSITION_ATTRIBUTE_LABELS = Object.freeze({
   wilful_or_willful_misconduct: "Wilful/willful misconduct named",
 });
 
+const TERMINATION_ATTRIBUTE_LABELS = Object.freeze({
+  duration_candidate_present: "Observed duration candidate appears",
+  notice_language_present: "Notice wording appears",
+  facially_bilateral_language_present: "Facially bilateral wording appears",
+});
+
 function positionAttributeEntries(value) {
   const attributes = record(value);
   return Object.entries(POSITION_ATTRIBUTE_LABELS)
+    .filter(([key]) => typeof attributes[key] === "boolean")
+    .map(([key, label]) => [label, attributes[key] ? "Yes" : "No"]);
+}
+
+function terminationAttributeEntries(value) {
+  const attributes = record(value);
+  return Object.entries(TERMINATION_ATTRIBUTE_LABELS)
     .filter(([key]) => typeof attributes[key] === "boolean")
     .map(([key, label]) => [label, attributes[key] ? "Yes" : "No"]);
 }
@@ -1804,6 +2095,11 @@ function boot() {
     positionKind: "",
     positionSource: "",
     positionLoading: false,
+    terminationSignal: "",
+    terminationDuration: "",
+    terminationKind: "",
+    terminationSource: "",
+    terminationLoading: false,
   };
 
   const authView = byId("auth-view");
@@ -1829,6 +2125,14 @@ function boot() {
   const positionButton = byId("position-submit");
   const positionFacets = byId("position-facets");
   const positionStatus = byId("position-status");
+  const terminationForm = byId("termination-form");
+  const terminationSignalInput = byId("termination-signal");
+  const terminationDurationInput = byId("termination-duration");
+  const terminationKindInput = byId("termination-kind");
+  const terminationSourceInput = byId("termination-source");
+  const terminationButton = byId("termination-submit");
+  const terminationFacets = byId("termination-facets");
+  const terminationStatus = byId("termination-status");
   const partySearchForm = byId("party-search-form");
   const partyQueryInput = byId("party-query");
   const partyKindInput = byId("party-kind");
@@ -1916,6 +2220,11 @@ function boot() {
     state.positionKind = "";
     state.positionSource = "";
     state.positionLoading = false;
+    state.terminationSignal = "";
+    state.terminationDuration = "";
+    state.terminationKind = "";
+    state.terminationSource = "";
+    state.terminationLoading = false;
     state.resultMode = "search";
     state.clauseParty = "";
     positionForm.reset();
@@ -1924,6 +2233,12 @@ function boot() {
     );
     positionStatus.textContent =
       "Browse supported signals across published, nonduplicate evidence.";
+    terminationForm.reset();
+    terminationFacets.replaceChildren(
+      element("span", "", "Available evidence:"),
+    );
+    terminationStatus.textContent =
+      "Browse positive wording matches across published, nonduplicate contracts and amendments.";
     partyPrevious.disabled = true;
     partyNext.disabled = true;
     partySearchStatus.textContent =
@@ -2006,6 +2321,17 @@ function boot() {
     );
     const positionValueFacets = array(
       positionSummary.published_value_candidate_facets,
+    );
+    const terminationSummary = record(root.termination_summary);
+    const terminationCurrent = record(terminationSummary.current);
+    const terminationLibrary = record(
+      terminationSummary.published_position_library,
+    );
+    const terminationSignalFacets = array(
+      terminationSummary.published_signal_facets,
+    );
+    const terminationDurationFacet = record(
+      terminationSummary.published_duration_candidate_facet,
     );
 
     summaryCards.replaceChildren(
@@ -2091,6 +2417,24 @@ function boot() {
         Number(positionCurrent.missing_clauses) === 0
           ? "Complete"
           : `${count(positionCurrent.missing_clauses)} missing`,
+      ],
+      [
+        "Termination position cache",
+        `${count(terminationCurrent.cached_clauses)} / ${
+          count(terminationCurrent.eligible_clauses)
+        } current clauses`,
+      ],
+      [
+        "Published termination library",
+        `${count(terminationLibrary.matched_clauses)} clauses across ${
+          count(terminationLibrary.distinct_agreements)
+        } agreements`,
+      ],
+      [
+        "Termination cache repair backlog",
+        Number(terminationCurrent.missing_clauses) === 0
+          ? "Complete"
+          : `${count(terminationCurrent.missing_clauses)} missing`,
       ],
       [
         "Average extraction confidence",
@@ -2242,6 +2586,59 @@ function boot() {
         sourceCoverage ? ` · ${sourceCoverage}` : ""
       }; generated coverage, not market prevalence.`;
     }
+    terminationFacets.replaceChildren(
+      element("span", "", "Available evidence:"),
+    );
+    for (const facetValue of terminationSignalFacets) {
+      const facet = record(facetValue);
+      const signalKey = displayText(facet.signal_key);
+      const label = TERMINATION_POSITION_SIGNALS[signalKey];
+      if (!label || facet.signal_basis !== "generated") continue;
+      const button = element(
+        "button",
+        "",
+        `${label} · ${count(facet.clauses)} clauses / ${
+          count(facet.distinct_agreements)
+        } agreements`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        terminationSignalInput.value = signalKey;
+        terminationForm.requestSubmit();
+      });
+      terminationFacets.append(button);
+    }
+    if (Number(terminationDurationFacet.clauses) > 0) {
+      const button = element(
+        "button",
+        "",
+        `Exact duration candidates · ${
+          count(terminationDurationFacet.clauses)
+        } clauses`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        terminationDurationInput.value = "present";
+        terminationForm.requestSubmit();
+      });
+      terminationFacets.append(button);
+    }
+    if (Number(terminationLibrary.matched_clauses) > 0) {
+      const sourceCoverage = array(terminationLibrary.by_source)
+        .slice(0, 10)
+        .map((sourceValue) => {
+          const source = record(sourceValue);
+          return `${displayText(source.source_slug)} ${count(source.clauses)}`;
+        })
+        .join(" · ");
+      terminationStatus.textContent = `${
+        count(terminationLibrary.matched_clauses)
+      } detected clauses across ${
+        count(terminationLibrary.distinct_agreements)
+      } useful agreements${
+        sourceCoverage ? ` · ${sourceCoverage}` : ""
+      }; generated wording coverage, not legal conclusions.`;
+    }
     const disclosure = record(summary.disclosure);
     const disclosureLines = [
       disclosure.coverage,
@@ -2250,6 +2647,8 @@ function boot() {
       partySummary.measurement,
       positionSummary.measurement,
       positionSummary.absence_warning,
+      terminationSummary.measurement,
+      terminationSummary.absence_warning,
     ].filter((value) => typeof value === "string");
     corpusDisclosure.replaceChildren(
       ...disclosureLines.map((line) => element("p", "", line)),
@@ -2460,6 +2859,105 @@ function boot() {
     return container;
   }
 
+  function terminationPositionPanel(value, collapsed = false) {
+    const position = terminationPositionEvidence(value);
+    if (!position?.applicable) return null;
+    const container = collapsed
+      ? element("details", "comparison-context commercial-position")
+      : section("Termination wording signals");
+    if (collapsed) {
+      container.append(
+        element(
+          "summary",
+          "",
+          `Termination signals · ${count(position.matchedSignalCount)} matched`,
+        ),
+      );
+    }
+    container.append(
+      element(
+        "p",
+        "focus-note",
+        "Generated wording matches for exit-risk triage. They do not determine who holds a termination right, whether a trigger is satisfied, or legal effect; absence is not evidence of absence.",
+      ),
+      element(
+        "p",
+        "muted",
+        `Scope: matched clause only · detector ${
+          displayText(position.detectorVersion)
+        } · eligibility theme ${displayText(position.eligibility.theme)} (${
+          displayText(position.eligibility.theme_basis)
+        })`,
+      ),
+    );
+    if (!position.signals.length) {
+      container.append(
+        element(
+          "p",
+          "muted",
+          "No supported termination wording matched this clause. Inspect the wording directly.",
+        ),
+      );
+      return container;
+    }
+    for (const signalValue of position.signals) {
+      const signal = record(signalValue);
+      const support = record(signal.observed_support);
+      const attributes = terminationAttributeEntries(
+        signal.generated_attributes,
+      );
+      const card = element("article", "relationship position-signal");
+      append(
+        card,
+        element("span", "badge generated", "Generated termination signal"),
+        element("h4", "", displayText(signal.label, signal.signal_key)),
+        element(
+          "p",
+          "muted",
+          `Confidence ${
+            Number.isFinite(Number(signal.confidence))
+              ? `${Math.round(Number(signal.confidence) * 100)}%`
+              : "not stated"
+          } · rule ${displayText(signal.rule_id)}`,
+        ),
+      );
+      if (attributes.length) card.append(dataList(attributes));
+      const durations = observedDurationEntries(
+        signal.observed_duration_candidates,
+      );
+      if (durations.length) {
+        const values = element("div", "position-values");
+        append(
+          values,
+          element("span", "badge observed", "Observed duration candidates"),
+          element("p", "", durations.join(" · ")),
+          element(
+            "p",
+            "muted",
+            "Exact lexical spans from bounded support; they are not normalized or classified as notice or cure periods.",
+          ),
+        );
+        card.append(values);
+      }
+      const evidence = element("div", "position-support");
+      append(
+        evidence,
+        element("span", "badge observed", "Observed support excerpt"),
+        element("p", "observed-text", boundedText(support.text, 2_000)),
+        element(
+          "p",
+          "muted",
+          `Clause characters ${displayText(support.clause_char_start, "?")}–${
+            displayText(support.clause_char_end, "?")
+          } · SHA-256 ${displayText(support.sha256, "not available")}`,
+        ),
+      );
+      card.append(evidence);
+      container.append(card);
+    }
+    return container;
+  }
+
   function comparisonColumn(selection, evidence, position) {
     const agreement = evidence.agreement;
     const source = evidence.source;
@@ -2619,6 +3117,11 @@ function boot() {
       true,
     );
     if (commercialPosition) column.append(commercialPosition);
+    const terminationPosition = terminationPositionPanel(
+      evidence.terminationPosition,
+      true,
+    );
+    if (terminationPosition) column.append(terminationPosition);
 
     const connectedContext = comparisonConnectedContext(evidence.anchorContext);
     if (connectedContext) {
@@ -3459,6 +3962,47 @@ function boot() {
         ),
       );
     }
+    const terminationPosition = terminationPositionEvidence(
+      item.termination_position,
+    );
+    const terminationSummary = terminationPosition?.applicable
+      ? element("div", "result-position-summary")
+      : null;
+    if (terminationSummary) {
+      const signalLabels = terminationPosition.signals.map((signal) =>
+        displayText(record(signal).label, record(signal).signal_key)
+      );
+      const durations = terminationPosition.signals.flatMap((signal) =>
+        observedDurationEntries(
+          record(signal).observed_duration_candidates,
+        )
+      ).slice(0, 6);
+      append(
+        terminationSummary,
+        element("span", "badge generated", "Generated termination wording"),
+        element(
+          "p",
+          "",
+          signalLabels.length
+            ? `Matched: ${signalLabels.join(" · ")}`
+            : terminationPosition.reason === "position_cache_unavailable"
+            ? "Termination cache unavailable; inspect the clause directly."
+            : "No supported termination wording matched this clause.",
+        ),
+        durations.length
+          ? element(
+            "p",
+            "",
+            `Observed duration candidates: ${durations.join(" · ")}`,
+          )
+          : null,
+        element(
+          "p",
+          "muted",
+          "Clause-only navigation signal, not a determination of rights, triggers or legal effect.",
+        ),
+      );
+    }
     const agreementId = typeof item.agreement_id === "string"
       ? item.agreement_id
       : "";
@@ -3490,6 +4034,7 @@ function boot() {
       element("p", "muted", clauseLabel),
       highlightedExcerpt(item.evidence_excerpt),
       positionSummary,
+      terminationSummary,
       actions,
     );
     return card;
@@ -3509,6 +4054,8 @@ function boot() {
           "empty",
           state.resultMode === "positions"
             ? "No published liability-position evidence matched these filters."
+            : state.resultMode === "termination_positions"
+            ? "No published termination-position evidence matched these filters."
             : "No published clause evidence matched this query.",
         ),
       ]),
@@ -3524,6 +4071,15 @@ function boot() {
           rows.length === 1 ? "" : "s"
         } loaded below.`
         : "No position evidence matched these filters.";
+    } else if (state.resultMode === "termination_positions") {
+      searchStatus.textContent = rows.length
+        ? `Showing termination evidence ${start}–${end}. Generated wording matches are not determinations of rights, triggers or legal effect.`
+        : "No termination evidence returned. Detector and corpus coverage may be incomplete.";
+      terminationStatus.textContent = rows.length
+        ? `${rows.length} bounded termination result${
+          rows.length === 1 ? "" : "s"
+        } loaded below.`
+        : "No termination wording matched these filters.";
     } else {
       searchStatus.textContent = rows.length
         ? `Showing results ${start}–${end}${
@@ -3537,10 +4093,14 @@ function boot() {
   }
 
   async function performSearch() {
-    if (!state.token || state.searching || state.positionLoading) return;
+    if (
+      !state.token || state.searching || state.positionLoading ||
+      state.terminationLoading
+    ) return;
     state.searching = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
+    terminationButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Searching published clause evidence…";
@@ -3559,14 +4119,19 @@ function boot() {
       state.searching = false;
       searchButton.disabled = false;
       positionButton.disabled = false;
+      terminationButton.disabled = false;
     }
   }
 
   async function performPositionBrowse() {
-    if (!state.token || state.searching || state.positionLoading) return;
+    if (
+      !state.token || state.searching || state.positionLoading ||
+      state.terminationLoading
+    ) return;
     state.positionLoading = true;
     searchButton.disabled = true;
     positionButton.disabled = true;
+    terminationButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published liability positions…";
@@ -3588,6 +4153,40 @@ function boot() {
       state.positionLoading = false;
       searchButton.disabled = false;
       positionButton.disabled = false;
+      terminationButton.disabled = false;
+    }
+  }
+
+  async function performTerminationBrowse() {
+    if (
+      !state.token || state.searching || state.positionLoading ||
+      state.terminationLoading
+    ) return;
+    state.terminationLoading = true;
+    searchButton.disabled = true;
+    positionButton.disabled = true;
+    terminationButton.disabled = true;
+    previous.disabled = true;
+    next.disabled = true;
+    searchStatus.textContent = "Loading published termination wording…";
+    terminationStatus.textContent = "Applying evidence filters…";
+    try {
+      const path = buildTerminationPositionPath({
+        signalKeys: state.terminationSignal ? [state.terminationSignal] : [],
+        hasDuration: state.terminationDuration === "present",
+        kind: state.terminationKind,
+        source: state.terminationSource,
+        limit: state.limit,
+        offset: state.offset,
+      });
+      renderSearch(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, terminationStatus);
+    } finally {
+      state.terminationLoading = false;
+      searchButton.disabled = false;
+      positionButton.disabled = false;
+      terminationButton.disabled = false;
     }
   }
 
@@ -3821,6 +4420,10 @@ function boot() {
       data.commercial_position,
     );
     if (commercialPosition) fragment.append(commercialPosition);
+    const terminationPosition = terminationPositionPanel(
+      data.termination_position,
+    );
+    if (terminationPosition) fragment.append(terminationPosition);
 
     const anchorContext = record(data.anchor_context);
     if (
@@ -4419,6 +5022,30 @@ function boot() {
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
+  terminationForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearComparison();
+    state.resultMode = "termination_positions";
+    state.terminationSignal = terminationSignalInput.value;
+    state.terminationDuration = terminationDurationInput.value;
+    state.terminationKind = terminationKindInput.value;
+    state.terminationSource = terminationSourceInput.value.trim().toLowerCase();
+    const signalLabel =
+      terminationSignalInput.selectedOptions[0]?.textContent ??
+        "Any detected wording";
+    const durationLabel =
+      terminationDurationInput.selectedOptions[0]?.textContent ??
+        "Any duration evidence";
+    state.query = `Termination library: ${signalLabel}; ${durationLabel}`;
+    state.clauseParty = "";
+    state.kind = state.terminationKind;
+    state.source = state.terminationSource;
+    state.offset = 0;
+    syncGuideSelection("");
+    performTerminationBrowse();
+    resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const query = queryInput.value.trim();
@@ -4441,13 +5068,20 @@ function boot() {
   previous.addEventListener("click", () => {
     state.offset = Math.max(0, state.offset - state.limit);
     if (state.resultMode === "positions") performPositionBrowse();
-    else performSearch();
+    else if (state.resultMode === "termination_positions") {
+      performTerminationBrowse();
+    } else performSearch();
   });
   next.addEventListener("click", () => {
     if (!state.hasMore) return;
-    state.offset = Math.min(1_000, state.offset + state.limit);
+    state.offset = Math.min(
+      state.resultMode === "termination_positions" ? 5_000 : 1_000,
+      state.offset + state.limit,
+    );
     if (state.resultMode === "positions") performPositionBrowse();
-    else performSearch();
+    else if (state.resultMode === "termination_positions") {
+      performTerminationBrowse();
+    } else performSearch();
   });
   for (const button of document.querySelectorAll("[data-query]")) {
     button.addEventListener("click", () => {
