@@ -8627,7 +8627,7 @@ function boot() {
     amendmentChangeStatus.textContent =
       "Browse positive amendment wording with one exact representative cue per agreement.";
     amendmentChangeMatrixStatus.textContent =
-      "Select 2–5 amendments to build one evidence-linked CSV.";
+      "Select 2–5 amendments to build an on-screen triage and evidence-linked CSV.";
     clearAmendmentChangeTriageSummary();
     amendmentChangeResults.replaceChildren();
     partyPrevious.disabled = true;
@@ -11865,7 +11865,38 @@ function boot() {
       );
       agreementCards.append(card);
     }
-    fragment.append(agreementCards);
+    const exportStatus = element("p", "muted tiny");
+    exportStatus.setAttribute("role", "status");
+    const downloadJson = element(
+      "button",
+      "button secondary amendment-triage-download-json",
+      "Download selected triage JSON",
+    );
+    downloadJson.type = "button";
+    downloadJson.addEventListener("click", () => {
+      try {
+        const blob = new Blob([`${JSON.stringify(summary, null, 2)}\n`], {
+          type: "application/json;charset=utf-8",
+        });
+        const objectUrl = URL.createObjectURL(blob);
+        const link = element("a");
+        link.href = objectUrl;
+        link.download =
+          `esheria-amendment-triage-${summary.generated_at.slice(0, 10)}.json`;
+        link.hidden = true;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+        exportStatus.textContent =
+          "Triage JSON downloaded with generated counts, exact observed reference examples, evidence hashes and explicit limitations.";
+      } catch {
+        exportStatus.textContent = "The triage JSON could not be created.";
+      }
+    });
+    const exportActions = element("div", "result-actions");
+    exportActions.append(downloadJson);
+    append(fragment, agreementCards, exportActions, exportStatus);
     amendmentChangeTriageSummary.replaceChildren(fragment);
     amendmentChangeTriageSummary.hidden = false;
   }
@@ -11883,7 +11914,7 @@ function boot() {
       : "muted";
     amendmentChangeMatrixStatus.textContent = message ??
       (selected === 0
-        ? "Select 2–5 amendments to build one evidence-linked CSV."
+        ? "Select 2–5 amendments to build an on-screen triage and evidence-linked CSV."
         : selected === 1
         ? "1 amendment selected. Select at least one more."
         : selected === AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS
@@ -12320,7 +12351,7 @@ function boot() {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
       finalMessage =
-        `Downloaded ${rowCount} evidence row(s) across ${selected.length} amendments. Every packet was freshly revalidated; generated labels remain separate from exact observed wording.`;
+        `Triage ready and ${rowCount} evidence row(s) downloaded across ${selected.length} amendments. Every packet was freshly revalidated; generated labels remain separate from exact observed wording. The matching triage JSON is available below.`;
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         handleFailure(error, amendmentChangeMatrixStatus);
