@@ -62,11 +62,11 @@ export const PARTY_DECISION_BRIEF_SHORTLIST_SCHEMA =
 export const PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_SCHEMA =
   "esheria.party-decision-brief-shortlist-matrix.v1";
 export const PARTY_DOSSIER_SCHEMA =
-  "observed-party-negotiation-dossier-v7";
+  "observed-party-negotiation-dossier-v8";
 export const PARTY_DOSSIER_EXPORT_SCHEMA =
-  "esheria.observed-party-negotiation-dossier.v4";
+  "esheria.observed-party-negotiation-dossier.v5";
 export const PARTY_DOSSIER_MATRIX_SCHEMA =
-  "esheria.observed-party-negotiation-dossier-matrix.v4";
+  "esheria.observed-party-negotiation-dossier-matrix.v5";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
 export const DECISION_BRIEF_DIRECTORY_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
@@ -5537,7 +5537,9 @@ export function buildPartyDossierExport(
     limits.exact_theme_support_context_selection !==
       "up_to_500_unicode_code_points_before_and_after_exact_support" ||
     limits.example_selection_order !==
-      "per_theme_highest_confidence_then_newest_distinct_document_v1" ||
+      "commercial_theme_then_unused_agreement_then_unused_clause_then_v7_rank_v1" ||
+    limits.example_selection_candidate_limit_per_theme !== 3 ||
+    limits.example_selection_is_global_optimum !== false ||
     limits.returned_examples_are_representative !== false ||
     limits.exact_theme_support_is_legal_conclusion !== false ||
     limits.missing_exact_theme_support_establishes_theme_absence !== false
@@ -5759,6 +5761,9 @@ export function buildPartyDossierExport(
       exact_theme_support_context_selection:
         limits.exact_theme_support_context_selection,
       example_selection_order: limits.example_selection_order,
+      example_selection_candidate_limit_per_theme:
+        limits.example_selection_candidate_limit_per_theme,
+      example_selection_is_global_optimum: false,
       returned_examples_are_representative: false,
       exact_theme_support_is_legal_conclusion: false,
       missing_exact_theme_support_establishes_theme_absence: false,
@@ -5770,7 +5775,7 @@ export function buildPartyDossierExport(
       "Document records and recorded family keys are not unique deals or reviewed relationships.",
       "Theme labels, counts and commercial-priority order are generated navigation, not market prevalence, risk scores or legal conclusions.",
       "Exact theme-support spans explain stored detector matches only; match-centered context is bounded and unavailable support is disclosed without establishing absence.",
-      "Returned examples are a bounded deterministic convenience sample; repeated agreements or clauses across themes can concentrate the display and do not represent the party portfolio.",
+      "Returned examples are selected greedily for agreement and clause breadth from a bounded three-candidate-per-theme pool; this is not a global optimum or representative party portfolio.",
       "Examples are bounded observed excerpts; inspect complete agreements, definitions, schedules, amendments and related documents before relying on them.",
       "A missing theme or example does not establish that wording, a right or a legal consequence is absent.",
     ],
@@ -5883,6 +5888,8 @@ const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "exact_theme_support_context_max_characters",
   "exact_theme_support_context_selection",
   "example_selection_order",
+  "example_selection_candidate_limit_per_theme",
+  "example_selection_is_global_optimum",
   "returned_examples_are_representative",
   "exact_theme_support_is_legal_conclusion",
   "missing_exact_theme_support_establishes_theme_absence",
@@ -6051,6 +6058,9 @@ function serializePartyDossierMatrix(output) {
         exact_theme_support_context_selection:
           output.limits.exact_theme_support_context_selection,
         example_selection_order: output.limits.example_selection_order,
+        example_selection_candidate_limit_per_theme:
+          output.limits.example_selection_candidate_limit_per_theme,
+        example_selection_is_global_optimum: "FALSE",
         returned_examples_are_representative: "FALSE",
         exact_theme_support_is_legal_conclusion: "FALSE",
         missing_exact_theme_support_establishes_theme_absence: "FALSE",
@@ -14617,7 +14627,9 @@ function boot() {
         } clauses`,
         `${count(returnedExampleSample.returned_examples)} rows · ${
           count(returnedExampleSample.cross_theme_reused_clauses)
-        } clauses reused across themes · bounded, not representative`,
+        } clauses reused across themes · breadth-aware from up to ${
+          count(dossierExport.limits.example_selection_candidate_limit_per_theme)
+        } candidates/theme · bounded, not representative`,
       ),
       metric("Sources", count(sources.length), "Rights-gated source systems"),
     );
