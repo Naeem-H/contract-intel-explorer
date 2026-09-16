@@ -11791,6 +11791,15 @@ function boot() {
             count(item.coverage.actionable_cues_without_bounded_reference)
           } actionable non-finding(s).`,
         ),
+        element(
+          "p",
+          item.coverage.source_cues_truncated
+            ? "coverage-warning"
+            : "muted tiny",
+          item.coverage.source_cues_truncated
+            ? "Coverage warning: this source packet was truncated at its return limit, so this amendment's generated counts and examples may omit later positive cues."
+            : "This source packet did not report return-limit truncation; detector and extraction limitations still apply.",
+        ),
         amendmentChangeTriageCountGroup(
           "Actions",
           item.action_counts,

@@ -790,6 +790,9 @@ mark {
 .amendment-change-triage .results {
   margin-top: 14px;
 }
+.coverage-warning {
+  color: var(--gold);
+}
 .comparison-toolbar {
   position: sticky;
   top: 76px;
