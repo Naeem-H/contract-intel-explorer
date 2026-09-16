@@ -62,11 +62,11 @@ export const PARTY_DECISION_BRIEF_SHORTLIST_SCHEMA =
 export const PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_SCHEMA =
   "esheria.party-decision-brief-shortlist-matrix.v1";
 export const PARTY_DOSSIER_SCHEMA =
-  "observed-party-negotiation-dossier-v5";
+  "observed-party-negotiation-dossier-v6";
 export const PARTY_DOSSIER_EXPORT_SCHEMA =
-  "esheria.observed-party-negotiation-dossier.v2";
+  "esheria.observed-party-negotiation-dossier.v3";
 export const PARTY_DOSSIER_MATRIX_SCHEMA =
-  "esheria.observed-party-negotiation-dossier-matrix.v2";
+  "esheria.observed-party-negotiation-dossier-matrix.v3";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
 export const DECISION_BRIEF_DIRECTORY_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
@@ -5025,6 +5025,88 @@ function partyDossierNormalizedName(value) {
 const PARTY_DOSSIER_THEME_SUPPORT_ORIGIN =
   "clause.generated_fields.theme_support";
 
+function partyDossierThemeSupportContext(
+  value,
+  supportStart,
+  supportEnd,
+  supportText,
+  charStart,
+  charEnd,
+) {
+  const context = record(value);
+  const expectedKeys = [
+    "observed_text",
+    "observed_text_sha256",
+    "clause_relative_start",
+    "clause_relative_end",
+    "document_char_start",
+    "document_char_end",
+    "support_relative_start",
+    "support_relative_end",
+    "truncated_before",
+    "truncated_after",
+    "database_validated_against_clause",
+  ];
+  const observedText = decisionBriefString(context.observed_text, 2_000);
+  const contextStart = decisionBriefInteger(context.clause_relative_start);
+  const contextEnd = decisionBriefInteger(context.clause_relative_end, 1);
+  const documentStart = decisionBriefInteger(context.document_char_start);
+  const documentEnd = decisionBriefInteger(context.document_char_end, 1);
+  const supportContextStart = decisionBriefInteger(
+    context.support_relative_start,
+  );
+  const supportContextEnd = decisionBriefInteger(
+    context.support_relative_end,
+    1,
+  );
+  const contextCharacters = observedText === undefined
+    ? null
+    : Array.from(observedText);
+  if (
+    !hasExactKeys(context, expectedKeys) ||
+    observedText === undefined ||
+    contextCharacters === null ||
+    contextStart === null ||
+    contextEnd === null ||
+    contextEnd <= contextStart ||
+    contextEnd - contextStart !== contextCharacters.length ||
+    contextEnd > charEnd - charStart ||
+    documentStart === null ||
+    documentEnd === null ||
+    documentStart !== charStart + contextStart ||
+    documentEnd !== charStart + contextEnd ||
+    supportContextStart === null ||
+    supportContextEnd === null ||
+    supportContextEnd <= supportContextStart ||
+    supportContextStart !== supportStart - contextStart ||
+    supportContextEnd !== supportEnd - contextStart ||
+    supportContextEnd > contextCharacters.length ||
+    contextCharacters.slice(supportContextStart, supportContextEnd).join("") !==
+      supportText ||
+    !DECISION_BRIEF_HASH_PATTERN.test(context.observed_text_sha256) ||
+    typeof context.truncated_before !== "boolean" ||
+    context.truncated_before !== (contextStart > 0) ||
+    typeof context.truncated_after !== "boolean" ||
+    context.truncated_after !== (contextEnd < charEnd - charStart) ||
+    context.database_validated_against_clause !== true
+  ) {
+    return null;
+  }
+  return {
+    observed_text: observedText,
+    observed_text_sha256: context.observed_text_sha256,
+    clause_relative_start: contextStart,
+    clause_relative_end: contextEnd,
+    document_char_start: documentStart,
+    document_char_end: documentEnd,
+    support_relative_start: supportContextStart,
+    support_relative_end: supportContextEnd,
+    truncated_before: context.truncated_before,
+    truncated_after: context.truncated_after,
+    database_validated_against_clause: true,
+  };
+}
+
 function partyDossierThemeSupport(
   value,
   theme,
@@ -5063,6 +5145,7 @@ function partyDossierThemeSupport(
     "method",
     "text_basis",
     "database_validated_against_clause",
+    "observed_context",
   ];
   const relativeStart = decisionBriefInteger(support.clause_relative_start);
   const relativeEnd = decisionBriefInteger(support.clause_relative_end, 1);
@@ -5074,6 +5157,14 @@ function partyDossierThemeSupport(
   const excerptCharacters = typeof excerpt === "string" ? Array.from(excerpt) : [];
   const replayAvailable = relativeEnd !== null &&
     relativeEnd <= excerptCharacters.length;
+  const observedContext = partyDossierThemeSupportContext(
+    support.observed_context,
+    relativeStart,
+    relativeEnd,
+    support.observed_text,
+    charStart,
+    charEnd,
+  );
   if (
     !hasExactKeys(support, expectedKeys) ||
     support.availability !== "exact_detector_span" ||
@@ -5101,7 +5192,8 @@ function partyDossierThemeSupport(
     typeof support.method !== "string" ||
     !/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,99}$/.test(support.method) ||
     support.text_basis !== "observed" ||
-    support.database_validated_against_clause !== true
+    support.database_validated_against_clause !== true ||
+    observedContext === null
   ) {
     return null;
   }
@@ -5119,6 +5211,7 @@ function partyDossierThemeSupport(
     text_basis: "observed",
     database_validated_against_clause: true,
     excerpt_replay_available: replayAvailable,
+    observed_context: observedContext,
   };
 }
 
@@ -5388,6 +5481,9 @@ export function buildPartyDossierExport(
       PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
     limits.exact_theme_support_offsets !==
       "zero_based_half_open_unicode_code_points" ||
+    limits.exact_theme_support_context_max_characters !== 2_000 ||
+    limits.exact_theme_support_context_selection !==
+      "up_to_500_unicode_code_points_before_and_after_exact_support" ||
     limits.exact_theme_support_is_legal_conclusion !== false ||
     limits.missing_exact_theme_support_establishes_theme_absence !== false
   ) {
@@ -5574,6 +5670,10 @@ export function buildPartyDossierExport(
       example_theme_support_scope: limits.example_theme_support_scope,
       exact_theme_support_origin: limits.exact_theme_support_origin,
       exact_theme_support_offsets: limits.exact_theme_support_offsets,
+      exact_theme_support_context_max_characters:
+        limits.exact_theme_support_context_max_characters,
+      exact_theme_support_context_selection:
+        limits.exact_theme_support_context_selection,
       exact_theme_support_is_legal_conclusion: false,
       missing_exact_theme_support_establishes_theme_absence: false,
     },
@@ -5583,7 +5683,7 @@ export function buildPartyDossierExport(
       "The party scope is an exact normalized observed-name match, not entity resolution or a complete portfolio.",
       "Document records and recorded family keys are not unique deals or reviewed relationships.",
       "Theme labels, counts and commercial-priority order are generated navigation, not market prevalence, risk scores or legal conclusions.",
-      "Exact theme-support spans explain stored detector matches only; unavailable support is disclosed and does not establish absence.",
+      "Exact theme-support spans explain stored detector matches only; match-centered context is bounded and unavailable support is disclosed without establishing absence.",
       "Examples are bounded observed excerpts; inspect complete agreements, definitions, schedules, amendments and related documents before relying on them.",
       "A missing theme or example does not establish that wording, a right or a legal consequence is absent.",
     ],
@@ -5689,6 +5789,8 @@ const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "example_theme_support_scope",
   "exact_theme_support_origin",
   "exact_theme_support_offsets",
+  "exact_theme_support_context_max_characters",
+  "exact_theme_support_context_selection",
   "exact_theme_support_is_legal_conclusion",
   "missing_exact_theme_support_establishes_theme_absence",
   "theme_limit",
@@ -5757,6 +5859,17 @@ const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "theme_support_text_basis",
   "theme_support_database_validated_against_clause",
   "theme_support_excerpt_replay_available",
+  "theme_support_context_observed_text",
+  "theme_support_context_observed_text_sha256",
+  "theme_support_context_clause_relative_start",
+  "theme_support_context_clause_relative_end",
+  "theme_support_context_document_char_start",
+  "theme_support_context_document_char_end",
+  "theme_support_context_support_relative_start",
+  "theme_support_context_support_relative_end",
+  "theme_support_context_truncated_before",
+  "theme_support_context_truncated_after",
+  "theme_support_context_database_validated_against_clause",
   "exact_observed_name_scope_only",
   "complete_party_portfolio_claimed",
   "document_records_are_unique_relationships",
@@ -5832,6 +5945,10 @@ function serializePartyDossierMatrix(output) {
           output.limits.example_theme_support_scope,
         exact_theme_support_origin: output.limits.exact_theme_support_origin,
         exact_theme_support_offsets: output.limits.exact_theme_support_offsets,
+        exact_theme_support_context_max_characters:
+          output.limits.exact_theme_support_context_max_characters,
+        exact_theme_support_context_selection:
+          output.limits.exact_theme_support_context_selection,
         exact_theme_support_is_legal_conclusion: "FALSE",
         missing_exact_theme_support_establishes_theme_absence: "FALSE",
         theme_limit: output.limits.theme_limit,
@@ -5920,6 +6037,42 @@ function serializePartyDossierMatrix(output) {
         theme_support_excerpt_replay_available: example === null
           ? null
           : matrixBoolean(example.theme_support.excerpt_replay_available),
+        theme_support_context_observed_text:
+          example?.theme_support.observed_context?.observed_text,
+        theme_support_context_observed_text_sha256:
+          example?.theme_support.observed_context?.observed_text_sha256,
+        theme_support_context_clause_relative_start:
+          example?.theme_support.observed_context?.clause_relative_start,
+        theme_support_context_clause_relative_end:
+          example?.theme_support.observed_context?.clause_relative_end,
+        theme_support_context_document_char_start:
+          example?.theme_support.observed_context?.document_char_start,
+        theme_support_context_document_char_end:
+          example?.theme_support.observed_context?.document_char_end,
+        theme_support_context_support_relative_start:
+          example?.theme_support.observed_context?.support_relative_start,
+        theme_support_context_support_relative_end:
+          example?.theme_support.observed_context?.support_relative_end,
+        theme_support_context_truncated_before: example === null ||
+            example.theme_support.observed_context === undefined
+          ? null
+          : matrixBoolean(
+            example.theme_support.observed_context.truncated_before,
+          ),
+        theme_support_context_truncated_after: example === null ||
+            example.theme_support.observed_context === undefined
+          ? null
+          : matrixBoolean(
+            example.theme_support.observed_context.truncated_after,
+          ),
+        theme_support_context_database_validated_against_clause:
+          example === null ||
+              example.theme_support.observed_context === undefined
+            ? null
+            : matrixBoolean(
+              example.theme_support.observed_context
+                .database_validated_against_clause === true,
+            ),
         exact_observed_name_scope_only: "TRUE",
         complete_party_portfolio_claimed: "FALSE",
         document_records_are_unique_relationships: "FALSE",
@@ -14267,6 +14420,38 @@ function boot() {
     }
   }
 
+  function partyDossierMarkedSupportContext(themeSupport) {
+    const context = themeSupport.observed_context;
+    const characters = Array.from(context.observed_text);
+    const paragraph = element(
+      "p",
+      "excerpt decision-brief-marked-evidence",
+    );
+    if (context.truncated_before) {
+      paragraph.append(document.createTextNode("… "));
+    }
+    paragraph.append(
+      document.createTextNode(
+        characters.slice(0, context.support_relative_start).join(""),
+      ),
+      element(
+        "mark",
+        "",
+        characters.slice(
+          context.support_relative_start,
+          context.support_relative_end,
+        ).join(""),
+      ),
+      document.createTextNode(
+        characters.slice(context.support_relative_end).join(""),
+      ),
+    );
+    if (context.truncated_after) {
+      paragraph.append(document.createTextNode(" …"));
+    }
+    return paragraph;
+  }
+
   function renderPartyDossier(payload) {
     const root = record(record(payload).data);
     const generatedAt = new Date().toISOString();
@@ -14425,6 +14610,7 @@ function boot() {
         );
         const themeSupport = record(example.theme_support);
         if (themeSupport.availability === "exact_detector_span") {
+          const supportContext = themeSupport.observed_context;
           append(
             exampleCard,
             element(
@@ -14433,14 +14619,15 @@ function boot() {
               "Exact detector support",
             ),
             element(
-              "p",
-              "excerpt",
-              boundedText(themeSupport.observed_text, 1_000),
+              "strong",
+              "",
+              "Observed context around exact match",
             ),
+            partyDossierMarkedSupportContext(themeSupport),
             element(
               "p",
               "muted tiny",
-              `Clause characters ${
+              `Exact “${boundedText(themeSupport.observed_text, 1_000)}” · clause characters ${
                 count(themeSupport.clause_relative_start)
               }–${count(themeSupport.clause_relative_end)} · document characters ${
                 count(themeSupport.document_char_start)
@@ -14448,6 +14635,10 @@ function boot() {
                 displayText(themeSupport.method, "method unavailable")
               } · support SHA-256 ${
                 displayText(themeSupport.observed_text_sha256)
+              } · context clause characters ${
+                count(supportContext.clause_relative_start)
+              }–${count(supportContext.clause_relative_end)} · context SHA-256 ${
+                displayText(supportContext.observed_text_sha256)
               }`,
             ),
           );
