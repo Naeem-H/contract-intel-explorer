@@ -8463,7 +8463,25 @@ function boot() {
       inspect.addEventListener("click", () => loadAgreement(agreementId));
       actions.append(inspect);
       if (["contract", "amendment"].includes(item.document_kind)) {
+        const openBrief = element(
+          "button",
+          "button secondary party-brief-open-button",
+          "Open five-topic brief",
+        );
+        openBrief.type = "button";
+        openBrief.setAttribute("data-agreement-id", agreementId);
+        openBrief.setAttribute(
+          "aria-label",
+          `Open five-topic evidence brief for ${
+            displayText(item.observed_title, "untitled agreement")
+          }`,
+        );
+        openBrief.addEventListener(
+          "click",
+          () => loadAgreementDecisionBrief(agreementId),
+        );
         actions.append(
+          openBrief,
           partyDecisionBriefComparisonChoice(item, agreementId),
         );
       }
