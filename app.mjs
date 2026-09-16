@@ -43,6 +43,8 @@ export const FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA =
 export const FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA =
   "esheria.family-proposal-lifecycle-comparison.v1";
 export const AMENDMENT_CHANGE_MAP_SCHEMA = "esheria.amendment-change-map.v1";
+export const AMENDMENT_CHANGE_MAP_MATRIX_SCHEMA =
+  "esheria.amendment-change-map-matrix.v1";
 export const PARTY_DECISION_BRIEF_SCAN_CONCURRENCY = 3;
 export const PARTY_DECISION_BRIEF_SCAN_EXAMPLES = 1;
 export const PARTY_DECISION_BRIEF_SCAN_MAX = 50;
@@ -2702,6 +2704,179 @@ export function buildAmendmentChangeMapExport(
     },
     export_limitations: [...AMENDMENT_CHANGE_MAP_LIMITATIONS],
   };
+}
+
+const AMENDMENT_CHANGE_MAP_MATRIX_COLUMNS = Object.freeze([
+  "matrix_schema",
+  "generated_at",
+  "agreement_id",
+  "agreement_title",
+  "agreement_document_kind",
+  "agreement_published_at",
+  "agreement_artifact_sha256",
+  "extraction_id",
+  "extraction_method",
+  "extraction_version",
+  "extracted_text_sha256",
+  "agreement_text_basis",
+  "source_slug",
+  "source_name",
+  "source_publisher",
+  "source_external_id",
+  "source_url",
+  "source_observed_published_at",
+  "returned_cue_count",
+  "actionable_cue_count",
+  "actionable_cues_with_bounded_reference",
+  "actionable_cues_without_bounded_reference",
+  "duplicate_reference_candidates_suppressed",
+  "candidate_count",
+  "source_cues_truncated",
+  "candidate_row_number",
+  "candidate_version",
+  "action_key",
+  "action_label",
+  "action_basis",
+  "reference_selection_basis",
+  "reference_kind",
+  "observed_reference",
+  "reference_text_basis",
+  "reference_excerpt_char_start",
+  "reference_excerpt_char_end",
+  "reference_clause_char_start",
+  "reference_clause_char_end",
+  "reference_document_char_start",
+  "reference_document_char_end",
+  "supporting_excerpt_sha256",
+  "cue_key",
+  "cue_label",
+  "cue_basis",
+  "cue_confidence",
+  "cue_detector_version",
+  "cue_rule_id",
+  "clause_id",
+  "clause_sequence",
+  "clause_heading",
+  "clause_observed_text_sha256",
+  "observed_support_excerpt",
+  "observed_support_sha256",
+  "observed_matched_text",
+  "observed_matched_text_sha256",
+  "target_document_resolved",
+  "target_provision_resolved",
+  "amendment_direction_determined",
+  "agreement_relationship_established",
+  "legal_effect_determined",
+  "change_map_limitations",
+  "cue_packet_limitations",
+]);
+
+export function buildAmendmentChangeMapCsv(
+  value,
+  generatedAt = new Date().toISOString(),
+) {
+  const output = buildAmendmentChangeMapExport(value, generatedAt);
+  const map = output.change_map;
+  const agreement = output.agreement;
+  const source = output.source;
+  const candidateRows = map.candidates.length ? map.candidates : [null];
+  const rows = candidateRows.map((candidateValue, index) => {
+    const candidate = record(candidateValue);
+    const reference = record(candidate.observed_reference);
+    const cue = record(candidate.supporting_cue);
+    const clause = record(cue.clause);
+    const observed = record(cue.observed_evidence);
+    return {
+      matrix_schema: AMENDMENT_CHANGE_MAP_MATRIX_SCHEMA,
+      generated_at: output.generated_at,
+      agreement_id: agreement.agreement_id,
+      agreement_title: agreement.title,
+      agreement_document_kind: agreement.document_kind,
+      agreement_published_at: agreement.published_at,
+      agreement_artifact_sha256: agreement.artifact_sha256,
+      extraction_id: agreement.extraction_id,
+      extraction_method: agreement.extraction_method,
+      extraction_version: agreement.extraction_version,
+      extracted_text_sha256: agreement.extracted_text_sha256,
+      agreement_text_basis: agreement.text_basis,
+      source_slug: source.slug,
+      source_name: source.name,
+      source_publisher: source.publisher,
+      source_external_id: source.external_id,
+      source_url: source.source_url,
+      source_observed_published_at: source.observed_published_at,
+      returned_cue_count: map.coverage.returned_cue_count,
+      actionable_cue_count: map.coverage.actionable_cue_count,
+      actionable_cues_with_bounded_reference:
+        map.coverage.actionable_cues_with_bounded_reference,
+      actionable_cues_without_bounded_reference:
+        map.coverage.actionable_cues_without_bounded_reference,
+      duplicate_reference_candidates_suppressed:
+        map.coverage.duplicate_reference_candidates_suppressed,
+      candidate_count: map.coverage.candidate_count,
+      source_cues_truncated: matrixBoolean(
+        map.coverage.source_cues_truncated,
+      ),
+      candidate_row_number: candidateValue === null ? null : index + 1,
+      candidate_version: candidate.candidate_version,
+      action_key: candidate.action_key,
+      action_label: candidate.action_label,
+      action_basis: candidate.action_basis,
+      reference_selection_basis: candidate.reference_selection_basis,
+      reference_kind: reference.reference_kind,
+      observed_reference: reference.text,
+      reference_text_basis: reference.text_basis,
+      reference_excerpt_char_start: reference.excerpt_char_start,
+      reference_excerpt_char_end: reference.excerpt_char_end,
+      reference_clause_char_start: reference.clause_char_start,
+      reference_clause_char_end: reference.clause_char_end,
+      reference_document_char_start: reference.document_char_start,
+      reference_document_char_end: reference.document_char_end,
+      supporting_excerpt_sha256: reference.supporting_excerpt_sha256,
+      cue_key: cue.cue_key,
+      cue_label: cue.label,
+      cue_basis: cue.cue_basis,
+      cue_confidence: cue.confidence,
+      cue_detector_version: cue.detector_version,
+      cue_rule_id: cue.rule_id,
+      clause_id: cue.anchor_clause_id,
+      clause_sequence: clause.sequence,
+      clause_heading: clause.heading,
+      clause_observed_text_sha256: cue.anchor_clause_sha256,
+      observed_support_excerpt: observed.excerpt,
+      observed_support_sha256: observed.sha256,
+      observed_matched_text: observed.matched_text,
+      observed_matched_text_sha256: observed.matched_text_sha256,
+      target_document_resolved: matrixBoolean(
+        map.limits.target_document_resolved,
+      ),
+      target_provision_resolved: matrixBoolean(
+        map.limits.target_provision_resolved,
+      ),
+      amendment_direction_determined: matrixBoolean(
+        map.limits.amendment_direction_determined,
+      ),
+      agreement_relationship_established: matrixBoolean(
+        map.limits.agreement_relationship_established,
+      ),
+      legal_effect_determined: matrixBoolean(
+        map.limits.legal_effect_determined,
+      ),
+      change_map_limitations: map.limitations.join(" | "),
+      cue_packet_limitations:
+        output.supporting_change_cues.limitations.join(" | "),
+    };
+  });
+  return "\uFEFF" +
+    [
+      AMENDMENT_CHANGE_MAP_MATRIX_COLUMNS.map(csvCell).join(","),
+      ...rows.map((row) =>
+        AMENDMENT_CHANGE_MAP_MATRIX_COLUMNS.map((column) =>
+          csvCell(row[column])
+        ).join(",")
+      ),
+    ].join("\r\n") +
+    "\r\n";
 }
 
 export function amendmentChangeDirectoryEvidence(value, expected = {}) {
@@ -11254,13 +11429,13 @@ function boot() {
 
     const exportStatus = element("p", "muted tiny");
     exportStatus.setAttribute("role", "status");
-    const download = element(
+    const downloadJson = element(
       "button",
       "button secondary amendment-change-download-map",
       "Download evidence-linked change map",
     );
-    download.type = "button";
-    download.addEventListener("click", () => {
+    downloadJson.type = "button";
+    downloadJson.addEventListener("click", () => {
       try {
         const output = buildAmendmentChangeMapExport(packet);
         const blob = new Blob([`${JSON.stringify(output, null, 2)}\n`], {
@@ -11284,7 +11459,39 @@ function boot() {
           : "The change-map export could not be created.";
       }
     });
-    append(panel, list, download, exportStatus);
+    const downloadCsv = element(
+      "button",
+      "button secondary amendment-change-download-csv",
+      "Download spreadsheet-ready CSV",
+    );
+    downloadCsv.type = "button";
+    downloadCsv.addEventListener("click", () => {
+      try {
+        const output = buildAmendmentChangeMapCsv(packet);
+        const blob = new Blob([output], {
+          type: "text/csv;charset=utf-8",
+        });
+        const objectUrl = URL.createObjectURL(blob);
+        const link = element("a");
+        link.href = objectUrl;
+        link.download =
+          `esheria-amendment-change-map-${packet.agreement.agreement_id}.csv`;
+        link.hidden = true;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+        exportStatus.textContent =
+          "Change-map CSV downloaded with one evidence-linked candidate per row, spreadsheet-formula protection, and no bearer token or private Storage path.";
+      } catch (error) {
+        exportStatus.textContent = error instanceof Error
+          ? error.message
+          : "The change-map CSV could not be created.";
+      }
+    });
+    const exportActions = element("div", "result-actions");
+    append(exportActions, downloadJson, downloadCsv);
+    append(panel, list, exportActions, exportStatus);
     return panel;
   }
 
