@@ -232,7 +232,7 @@
           <h2
             id="amendment-change-directory-title">Browse amendment change evidence</h2>
           <p
-            class="search-note">Find published, nonduplicate amendment records with positive deterministic matches for amendment, replacement, addition, continuing-effect, unchanged-terms, effectiveness, waiver, or novation wording. Each result exposes exact observed support. Loading the full cue packet also builds downloadable JSON and spreadsheet-ready CSV maps of generated action and bounded-reference candidates linked to exact observed text. A candidate is not a resolved provision or document and does not establish amendment direction, relationship, or legal effect; nonstandard or OCR-corrupted wording may be missed.</p>
+            class="search-note">Find published, nonduplicate amendment records with positive deterministic matches for amendment, replacement, addition, continuing-effect, unchanged-terms, effectiveness, waiver, or novation wording. Each result exposes exact observed support. Loading the full cue packet builds downloadable JSON and spreadsheet-ready CSV maps of generated action and bounded-reference candidates linked to exact observed text; select 2–5 results to combine freshly revalidated packets in one CSV. A candidate is not a resolved provision or document and does not establish amendment direction, relationship, or legal effect; nonstandard or OCR-corrupted wording may be missed.</p>
           <form id="amendment-change-directory-form"
             class="search-form amendment-change-form">
             <label for="amendment-change-cue">Change wording</label>
@@ -265,6 +265,22 @@
           </form>
           <p id="amendment-change-directory-status" class="muted"
             role="status" aria-live="polite">Browse positive amendment wording with one exact representative cue per agreement.</p>
+          <div id="amendment-change-matrix-toolbar"
+            class="comparison-toolbar amendment-change-matrix-toolbar"
+            aria-labelledby="amendment-change-matrix-toolbar-title">
+            <div>
+              <strong
+                id="amendment-change-matrix-toolbar-title">Build a multi-amendment matrix</strong>
+              <span id="amendment-change-matrix-status" class="muted"
+                role="status" aria-live="polite">Select 2–5 amendments to build one evidence-linked CSV.</span>
+            </div>
+            <div class="comparison-actions">
+              <button id="clear-amendment-change-matrix"
+                class="button secondary" type="button" disabled>Clear selection</button>
+              <button id="download-amendment-change-matrix"
+                class="button primary" type="button" disabled>Build selected CSV</button>
+            </div>
+          </div>
           <div id="amendment-change-directory-results"
             class="results amendment-change-results"></div>
           <div class="pager">

@@ -45,6 +45,9 @@ export const FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA =
 export const AMENDMENT_CHANGE_MAP_SCHEMA = "esheria.amendment-change-map.v1";
 export const AMENDMENT_CHANGE_MAP_MATRIX_SCHEMA =
   "esheria.amendment-change-map-matrix.v1";
+export const AMENDMENT_CHANGE_MAP_MATRIX_MIN_ITEMS = 2;
+export const AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS = 5;
+export const AMENDMENT_CHANGE_MAP_MATRIX_FETCH_CONCURRENCY = 3;
 export const PARTY_DECISION_BRIEF_SCAN_CONCURRENCY = 3;
 export const PARTY_DECISION_BRIEF_SCAN_EXAMPLES = 1;
 export const PARTY_DECISION_BRIEF_SCAN_MAX = 50;
@@ -2771,10 +2774,7 @@ const AMENDMENT_CHANGE_MAP_MATRIX_COLUMNS = Object.freeze([
   "cue_packet_limitations",
 ]);
 
-export function buildAmendmentChangeMapCsv(
-  value,
-  generatedAt = new Date().toISOString(),
-) {
+function amendmentChangeMapMatrixRows(value, generatedAt) {
   const output = buildAmendmentChangeMapExport(value, generatedAt);
   const map = output.change_map;
   const agreement = output.agreement;
@@ -2867,6 +2867,10 @@ export function buildAmendmentChangeMapCsv(
         output.supporting_change_cues.limitations.join(" | "),
     };
   });
+  return { agreementId: agreement.agreement_id, rows };
+}
+
+function serializeAmendmentChangeMapMatrix(rows) {
   return "\uFEFF" +
     [
       AMENDMENT_CHANGE_MAP_MATRIX_COLUMNS.map(csvCell).join(","),
@@ -2877,6 +2881,39 @@ export function buildAmendmentChangeMapCsv(
       ),
     ].join("\r\n") +
     "\r\n";
+}
+
+export function buildAmendmentChangeMapCsv(
+  value,
+  generatedAt = new Date().toISOString(),
+) {
+  return serializeAmendmentChangeMapMatrix(
+    amendmentChangeMapMatrixRows(value, generatedAt).rows,
+  );
+}
+
+export function buildAmendmentChangeMapCollectionCsv(
+  values,
+  generatedAt = new Date().toISOString(),
+) {
+  if (
+    !Array.isArray(values) ||
+    values.length < AMENDMENT_CHANGE_MAP_MATRIX_MIN_ITEMS ||
+    values.length > AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS
+  ) {
+    throw new TypeError("Amendment change-map selection is invalid");
+  }
+  const agreementIds = new Set();
+  const rows = [];
+  for (const value of values) {
+    const matrix = amendmentChangeMapMatrixRows(value, generatedAt);
+    if (agreementIds.has(matrix.agreementId)) {
+      throw new TypeError("Amendment change-map selection is invalid");
+    }
+    agreementIds.add(matrix.agreementId);
+    rows.push(...matrix.rows);
+  }
+  return serializeAmendmentChangeMapMatrix(rows);
 }
 
 export function amendmentChangeDirectoryEvidence(value, expected = {}) {
@@ -8099,6 +8136,8 @@ function boot() {
     amendmentChangeLimit: 12,
     amendmentChangeHasMore: false,
     amendmentChangeLoading: false,
+    amendmentChangeMatrixSelection: new Map(),
+    amendmentChangeMatrixLoading: false,
     decisionBriefDirectoryMinimumTopics: 3,
     decisionBriefDirectoryKind: "",
     decisionBriefDirectorySource: "",
@@ -8182,6 +8221,13 @@ function boot() {
   const amendmentChangeResults = byId("amendment-change-directory-results");
   const amendmentChangePrevious = byId("amendment-change-directory-previous");
   const amendmentChangeNext = byId("amendment-change-directory-next");
+  const amendmentChangeMatrixStatus = byId("amendment-change-matrix-status");
+  const clearAmendmentChangeMatrixButton = byId(
+    "clear-amendment-change-matrix",
+  );
+  const downloadAmendmentChangeMatrixButton = byId(
+    "download-amendment-change-matrix",
+  );
   const decisionBriefDirectoryForm = byId("decision-brief-directory-form");
   const decisionBriefMinimumTopicsInput = byId(
     "decision-brief-minimum-topics",
@@ -8371,6 +8417,8 @@ function boot() {
     state.amendmentChangeOffset = 0;
     state.amendmentChangeHasMore = false;
     state.amendmentChangeLoading = false;
+    state.amendmentChangeMatrixSelection.clear();
+    state.amendmentChangeMatrixLoading = false;
     state.decisionBriefDirectoryMinimumTopics = 3;
     state.decisionBriefDirectoryKind = "";
     state.decisionBriefDirectorySource = "";
@@ -8433,6 +8481,8 @@ function boot() {
     amendmentChangeNext.disabled = true;
     amendmentChangeStatus.textContent =
       "Browse positive amendment wording with one exact representative cue per agreement.";
+    amendmentChangeMatrixStatus.textContent =
+      "Select 2–5 amendments to build one evidence-linked CSV.";
     amendmentChangeResults.replaceChildren();
     partyPrevious.disabled = true;
     partyNext.disabled = true;
@@ -8466,6 +8516,7 @@ function boot() {
     closeDialog(comparisonDialog);
     updateComparisonControls();
     updateDecisionBriefComparisonControls();
+    updateAmendmentChangeMatrixControls();
     workspace.hidden = true;
     clearButton.hidden = true;
     authView.hidden = false;
@@ -11495,6 +11546,94 @@ function boot() {
     return panel;
   }
 
+  function updateAmendmentChangeMatrixControls(message = null, kind = "") {
+    const selected = state.amendmentChangeMatrixSelection.size;
+    clearAmendmentChangeMatrixButton.disabled = selected === 0 ||
+      state.amendmentChangeMatrixLoading;
+    downloadAmendmentChangeMatrixButton.disabled =
+      state.amendmentChangeMatrixLoading ||
+      selected < AMENDMENT_CHANGE_MAP_MATRIX_MIN_ITEMS ||
+      selected > AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS;
+    amendmentChangeMatrixStatus.className = kind === "error"
+      ? "status error"
+      : "muted";
+    amendmentChangeMatrixStatus.textContent = message ??
+      (selected === 0
+        ? "Select 2–5 amendments to build one evidence-linked CSV."
+        : selected === 1
+        ? "1 amendment selected. Select at least one more."
+        : selected === AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS
+        ? "5 amendments selected (maximum). Ready to build the matrix."
+        : `${selected} amendments selected. Ready to build the matrix.`);
+
+    for (
+      const input of amendmentChangeResults.querySelectorAll(
+        ".amendment-change-matrix-input",
+      )
+    ) {
+      const agreementId = input.getAttribute("data-agreement-id") ?? "";
+      const selectedHere = state.amendmentChangeMatrixSelection.has(
+        agreementId,
+      );
+      input.checked = selectedHere;
+      input.disabled = state.amendmentChangeMatrixLoading ||
+        (selected >= AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS && !selectedHere);
+      input.title = input.disabled && !selectedHere
+        ? "The amendment matrix already has five agreements"
+        : "";
+    }
+  }
+
+  function clearAmendmentChangeMatrix() {
+    if (state.amendmentChangeMatrixLoading) return;
+    state.amendmentChangeMatrixSelection.clear();
+    updateAmendmentChangeMatrixControls();
+  }
+
+  function toggleAmendmentChangeMatrix(item, input) {
+    const agreementId = item.agreement.agreement_id;
+    if (!UUID_PATTERN.test(agreementId)) return;
+    if (input.checked) {
+      if (
+        !state.amendmentChangeMatrixSelection.has(agreementId) &&
+        state.amendmentChangeMatrixSelection.size >=
+          AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS
+      ) {
+        input.checked = false;
+        updateAmendmentChangeMatrixControls(
+          "An amendment matrix can contain at most five agreements. Remove one before adding another.",
+          "error",
+        );
+        return;
+      }
+      state.amendmentChangeMatrixSelection.set(agreementId, item);
+    } else {
+      state.amendmentChangeMatrixSelection.delete(agreementId);
+    }
+    updateAmendmentChangeMatrixControls();
+  }
+
+  function amendmentChangeMatrixChoice(item) {
+    const agreementId = item.agreement.agreement_id;
+    const label = element("label", "compare-choice");
+    const input = element("input", "amendment-change-matrix-input");
+    input.type = "checkbox";
+    input.checked = state.amendmentChangeMatrixSelection.has(agreementId);
+    input.setAttribute("data-agreement-id", agreementId);
+    input.setAttribute(
+      "aria-label",
+      `Select ${displayText(item.agreement.title, "untitled amendment")} from ${
+        displayText(item.source.name, "unknown source")
+      } for the amendment change matrix`,
+    );
+    input.addEventListener(
+      "change",
+      () => toggleAmendmentChangeMatrix(item, input),
+    );
+    append(label, input, element("span", "", "Select for change matrix"));
+    return label;
+  }
+
   function changeCueEvidenceDetails(cue, open = false) {
     const details = element("details", "brief-comparison-more");
     details.open = open;
@@ -11674,6 +11813,7 @@ function boot() {
     );
     append(
       actions,
+      amendmentChangeMatrixChoice(item),
       inspectCues,
       inspectAgreement,
       sourceLink(item.source.source_url, "Open recorded source ↗"),
@@ -11735,6 +11875,7 @@ function boot() {
           ),
         ]),
     );
+    updateAmendmentChangeMatrixControls();
     const start = response.items.length ? state.amendmentChangeOffset + 1 : 0;
     const end = state.amendmentChangeOffset + response.items.length;
     amendmentChangeStatus.textContent = response.items.length
@@ -11786,6 +11927,86 @@ function boot() {
       amendmentChangeNext.disabled = !state.amendmentChangeHasMore ||
         state.amendmentChangeOffset + state.amendmentChangeLimit >
           AMENDMENT_CHANGE_DIRECTORY_OFFSET_MAX;
+    }
+  }
+
+  async function downloadSelectedAmendmentChangeMatrix() {
+    const selected = [...state.amendmentChangeMatrixSelection.values()];
+    if (
+      !state.token ||
+      state.amendmentChangeMatrixLoading ||
+      selected.length < AMENDMENT_CHANGE_MAP_MATRIX_MIN_ITEMS ||
+      selected.length > AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS
+    ) {
+      return;
+    }
+
+    const token = state.token;
+    state.amendmentChangeMatrixLoading = true;
+    updateAmendmentChangeMatrixControls(
+      `Loading and revalidating ${selected.length} bounded cue packets…`,
+    );
+    let finalMessage = null;
+    let finalKind = "";
+    try {
+      const packets = [];
+      for (
+        let start = 0;
+        start < selected.length;
+        start += AMENDMENT_CHANGE_MAP_MATRIX_FETCH_CONCURRENCY
+      ) {
+        const batch = selected.slice(
+          start,
+          start + AMENDMENT_CHANGE_MAP_MATRIX_FETCH_CONCURRENCY,
+        );
+        const settled = await Promise.allSettled(
+          batch.map((item) =>
+            fetchAgreementChangeCues(
+              item.agreement.agreement_id,
+              token,
+              AGREEMENT_CHANGE_CUE_LIMIT_MAX,
+            )
+          ),
+        );
+        if (state.token !== token) return;
+        const rejected = settled.find((result) => result.status === "rejected");
+        if (rejected) throw rejected.reason;
+        packets.push(...settled.map((result) => result.value));
+      }
+
+      const generatedAt = new Date().toISOString();
+      const csv = buildAmendmentChangeMapCollectionCsv(packets, generatedAt);
+      const rowCount = packets.reduce((total, packet) => {
+        const map = amendmentChangeMapEvidence(packet);
+        return total + Math.max(map?.coverage.candidate_count ?? 0, 1);
+      }, 0);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = element("a");
+      link.href = objectUrl;
+      link.download =
+        `esheria-amendment-change-matrix-${generatedAt.slice(0, 10)}.csv`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      finalMessage =
+        `Downloaded ${rowCount} evidence row(s) across ${selected.length} amendments. Every packet was freshly revalidated; generated labels remain separate from exact observed wording.`;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleFailure(error, amendmentChangeMatrixStatus);
+        return;
+      }
+      finalKind = "error";
+      finalMessage = error instanceof Error
+        ? error.message
+        : "The selected amendment matrix could not be created.";
+    } finally {
+      state.amendmentChangeMatrixLoading = false;
+      if (state.token === token) {
+        updateAmendmentChangeMatrixControls(finalMessage, finalKind);
+      }
     }
   }
 
@@ -15060,6 +15281,14 @@ function boot() {
     performFamilyProposalBrowse();
   });
 
+  clearAmendmentChangeMatrixButton.addEventListener(
+    "click",
+    clearAmendmentChangeMatrix,
+  );
+  downloadAmendmentChangeMatrixButton.addEventListener(
+    "click",
+    downloadSelectedAmendmentChangeMatrix,
+  );
   amendmentChangeForm.addEventListener("submit", (event) => {
     event.preventDefault();
     state.amendmentChangeCue = amendmentChangeCueInput.value;
@@ -15388,6 +15617,7 @@ function boot() {
 
   updateComparisonControls();
   updateDecisionBriefComparisonControls();
+  updateAmendmentChangeMatrixControls();
   tokenInput.focus();
 }
 
