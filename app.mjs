@@ -42,6 +42,7 @@ export const FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA =
   "esheria.family-proposal-brief-comparison.v1";
 export const FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA =
   "esheria.family-proposal-lifecycle-comparison.v1";
+export const AMENDMENT_CHANGE_MAP_SCHEMA = "esheria.amendment-change-map.v1";
 export const PARTY_DECISION_BRIEF_SCAN_CONCURRENCY = 3;
 export const PARTY_DECISION_BRIEF_SCAN_EXAMPLES = 1;
 export const PARTY_DECISION_BRIEF_SCAN_MAX = 50;
@@ -1080,6 +1081,25 @@ const AGREEMENT_CHANGE_CUE_LABELS = Object.freeze({
 const AGREEMENT_CHANGE_CUE_ORDER = new Map(
   Object.keys(AGREEMENT_CHANGE_CUE_LABELS).map((key, index) => [key, index]),
 );
+const AMENDMENT_CHANGE_ACTIONS = Object.freeze({
+  amend_or_modify: "Amend or modify",
+  amend_and_restate: "Amend and restate",
+  delete_and_replace: "Delete and replace",
+  add_or_insert: "Add or insert",
+});
+const AMENDMENT_CHANGE_ACTION_PRIORITY = Object.freeze({
+  amend_or_modify: 1,
+  add_or_insert: 2,
+  delete_and_replace: 3,
+  amend_and_restate: 4,
+});
+const AMENDMENT_CHANGE_MAP_LIMITATIONS = Object.freeze([
+  "Provision-reference candidates and action labels are deterministic generated navigation aids selected from bounded observed cue excerpts.",
+  "The displayed reference text is an exact observed substring, but it is not resolved to a provision in another document.",
+  "Only returned positive cue matches are considered; nonstandard wording, OCR corruption, later matches in a clause and cues beyond the packet limit may be missed.",
+  "Candidates do not establish the changed document, amendment direction, incorporation, supersession, novation or legal effect.",
+  "Read the complete amendment, base agreement, definitions, schedules and governing law before relying on a candidate.",
+]);
 const AGREEMENT_CHANGE_CUE_LIMITATIONS = Object.freeze([
   "Cues are deterministic generated pattern matches over the current observed extraction; exact matched wording and bounded observed support are supplied separately.",
   "A cue does not identify which other document is changed and does not establish amendment direction, incorporation, supersession or legal effect.",
@@ -2295,6 +2315,392 @@ export function agreementChangeCueEvidence(
     coverage: { ...coverage },
     limits: { ...limits },
     limitations: [...root.limitations],
+  };
+}
+
+function amendmentChangeAction(cue) {
+  if (cue.cue_key === "delete_and_replace_language") {
+    return "delete_and_replace";
+  }
+  if (cue.cue_key === "addition_or_insertion_language") {
+    return "add_or_insert";
+  }
+  if (cue.cue_key === "amended_and_restated_language") {
+    return "amend_and_restate";
+  }
+  if (cue.cue_key !== "express_amendment_language") return null;
+
+  const observed = cue.observed_evidence;
+  const excerptCharacters = Array.from(observed.excerpt);
+  const relativeMatchEnd = observed.matched_clause_char_end -
+    observed.clause_char_start;
+  const suffix = excerptCharacters.slice(
+    relativeMatchEnd,
+    relativeMatchEnd + 180,
+  ).join("");
+  if (/^\s+and\s+restated\b/iu.test(suffix)) return "amend_and_restate";
+  if (
+    /^\s+(?:(?:by\s+)?(?:deleting|removing)\b[\s\S]{0,120}\breplac|to\s+replace\b)/iu
+      .test(suffix)
+  ) {
+    return "delete_and_replace";
+  }
+  if (/^\s+(?:by\s+)?(?:adding|inserting)\b/iu.test(suffix)) {
+    return "add_or_insert";
+  }
+  return "amend_or_modify";
+}
+
+function amendmentReferenceDelimitersAreBalanced(value) {
+  const pairs = new Map([
+    [")", "("],
+    ["]", "["],
+  ]);
+  const stack = [];
+  for (const character of value) {
+    if (character === "(" || character === "[") {
+      stack.push(character);
+      continue;
+    }
+    if (pairs.has(character) && stack.pop() !== pairs.get(character)) {
+      return false;
+    }
+  }
+  return stack.length === 0;
+}
+
+function boundedAmendmentReference(cue) {
+  const observed = cue.observed_evidence;
+  const excerptCharacters = Array.from(observed.excerpt);
+  const relativeMatchStart = observed.matched_clause_char_start -
+    observed.clause_char_start;
+  if (relativeMatchStart < 1 || relativeMatchStart > excerptCharacters.length) {
+    return null;
+  }
+
+  const prefix = excerptCharacters.slice(0, relativeMatchStart).join("");
+  const tail = Array.from(prefix).slice(-260).join("");
+  const boundaries = [...tail.matchAll(
+    /[;]|[.!?]["”’')\]]?(?=\s+)/gu,
+  )];
+  const lastBoundary = boundaries.length
+    ? boundaries[boundaries.length - 1]
+    : null;
+  const boundaryEnd = lastBoundary
+    ? lastBoundary.index + lastBoundary[0].length
+    : 0;
+  let segment = tail.slice(boundaryEnd).trim();
+
+  // A list item following an introductory colon is a closer target candidate
+  // than a structural reference in that introduction.
+  const listBoundaries = [...segment.matchAll(
+    /:\s*(?:\([a-z0-9ivxlcdm]+\)|[a-z0-9ivxlcdm]+[.)])\s*/giu,
+  )];
+  const lastListBoundary = listBoundaries.length
+    ? listBoundaries[listBoundaries.length - 1]
+    : null;
+  if (lastListBoundary) {
+    segment = segment.slice(
+      lastListBoundary.index + lastListBoundary[0].length,
+    ).trim();
+  }
+
+  // Extracted section numbers sometimes occupy a separate line before the
+  // defined-term instruction that actually contains the cue.
+  const definedTermLineBoundaries = [...segment.matchAll(
+    /\n+\s*(?=(?:the|a|an)\s+(?:following\s+)?(?:defined\s+terms?|definitions?)\b)/giu,
+  )];
+  const lastDefinedTermLineBoundary = definedTermLineBoundaries.length
+    ? definedTermLineBoundaries[definedTermLineBoundaries.length - 1]
+    : null;
+  if (lastDefinedTermLineBoundary) {
+    segment = segment.slice(
+      lastDefinedTermLineBoundary.index +
+        lastDefinedTermLineBoundary[0].length,
+    ).trim();
+  }
+
+  segment = segment.replace(
+    /^(?:\(?[a-z0-9ivx]+\)|[a-z0-9ivx]+[.)])\s+/iu,
+    "",
+  );
+  segment = segment.replace(
+    /\s+(?:shall\s+be\s+and|be\s+and\s+(?:it\s+)?hereby|(?:is|are|be)\s+hereby|hereby)$/iu,
+    "",
+  ).trim();
+  if (!segment) return null;
+
+  const documentPattern =
+    /((?:(?:the|this|The|This|THE|THIS|above-referenced|existing|Existing|original|Original|amended|Amended|restated|Restated|credit|security|merger|purchase|investment|registration|rights|letter|loan|note|warrant|[A-Z0-9][\p{L}\p{N}&'’.-]*)\s+){0,8}(?:Agreement|AGREEMENT|agreement|Plan|PLAN|plan|Indenture|INDENTURE|indenture|Note|NOTE|note|Warrant|WARRANT|warrant|Certificate|CERTIFICATE|certificate|Lease|LEASE|lease|Consent|CONSENT|consent))\s*$/u;
+  const quotedDocumentPattern =
+    /((?:the\s+)?["“][^"“”\n]{1,160}(?:Agreement|Plan|Indenture|Note|Warrant|Certificate|Lease|Consent)["”])\s*\)?\s*$/iu;
+  let candidate = null;
+  let referenceKind = null;
+
+  const exactAcronym = /^(?:the|this)\s+[A-Z][A-Z0-9.-]{1,15}$/u.exec(
+    segment,
+  );
+  if (exactAcronym) {
+    candidate = exactAcronym[0];
+    referenceKind = "document_reference";
+  }
+
+  const quotedDocument = quotedDocumentPattern.exec(segment);
+  if (!candidate && quotedDocument) {
+    candidate = quotedDocument[1].trim();
+    referenceKind = "document_reference";
+  }
+
+  const lastComma = segment.lastIndexOf(",");
+  if (!candidate && lastComma >= 0) {
+    const suffix = segment.slice(lastComma + 1).trim();
+    const documentMatch = documentPattern.exec(suffix);
+    if (documentMatch) {
+      candidate = documentMatch[1].trim();
+      referenceKind = "document_reference";
+    }
+  }
+
+  if (!candidate) {
+    const markerPattern =
+      /\b(?:section(?:s)?|article(?:s)?|clause(?:s)?|paragraph(?:s)?|subsection(?:s)?|exhibit(?:s)?|schedule(?:s)?|annex(?:es)?|appendix(?:es)?|recital(?:s)?|definition(?:s)?|term(?:s)?)\b/iu;
+    const marker = markerPattern.exec(segment);
+    if (marker) {
+      let start = marker.index;
+      const beforeMarker = segment.slice(0, start);
+      if (
+        Array.from(beforeMarker).length <= 80 &&
+        /^(?:the\s+)?(?:(?:following|new|additional|first|second|third|fourth|fifth|final|capitalized|defined)\s+)*$/iu
+          .test(beforeMarker)
+      ) {
+        start = 0;
+      }
+      candidate = segment.slice(start).trim();
+      referenceKind = /^(?:the\s+)?(?:following\s+)?(?:defined\s+terms?|definitions?|terms?)\b/iu
+          .test(candidate)
+        ? "defined_term_reference"
+        : /^(?:the\s+)?(?:following\s+)?(?:exhibits?|schedules?|annex(?:es)?|appendix(?:es)?)\b/iu
+          .test(candidate)
+        ? "schedule_or_exhibit_reference"
+        : "provision_reference";
+    }
+  }
+
+  if (!candidate) {
+    const documentMatch = documentPattern.exec(segment);
+    if (documentMatch) {
+      candidate = documentMatch[1].trim();
+      referenceKind = "document_reference";
+    }
+  }
+  if (!candidate) {
+    const acronymMatch = /(the\s+[A-Z][A-Z0-9.-]{1,15})$/u.exec(segment);
+    if (acronymMatch) {
+      candidate = acronymMatch[1];
+      referenceKind = "document_reference";
+    }
+  }
+  if (
+    !candidate &&
+    /^(?:the\s+)?following\s+[\p{L}\p{N}][\s\S]{0,120}$/iu.test(segment)
+  ) {
+    candidate = segment;
+    referenceKind = "described_item_reference";
+  }
+  if (candidate) {
+    candidate = candidate.replace(/[,;:]\s*$/u, "").trimEnd();
+  }
+  if (
+    !candidate ||
+    Array.from(candidate).length > 240 ||
+    !amendmentReferenceDelimitersAreBalanced(candidate)
+  ) {
+    return null;
+  }
+
+  const candidateCodeUnitStart = prefix.lastIndexOf(candidate);
+  if (candidateCodeUnitStart < 0) return null;
+  const excerptCharStart = Array.from(
+    prefix.slice(0, candidateCodeUnitStart),
+  ).length;
+  const excerptCharEnd = excerptCharStart + Array.from(candidate).length;
+  if (
+    Array.from(observed.excerpt).slice(excerptCharStart, excerptCharEnd).join("") !==
+      candidate
+  ) {
+    return null;
+  }
+  const clauseCharStart = observed.clause_char_start + excerptCharStart;
+  const clauseCharEnd = observed.clause_char_start + excerptCharEnd;
+  const hasDocumentOffsets = observed.document_char_start !== null;
+  return {
+    text: candidate,
+    text_basis: "observed",
+    reference_kind: referenceKind,
+    excerpt_char_start: excerptCharStart,
+    excerpt_char_end: excerptCharEnd,
+    clause_char_start: clauseCharStart,
+    clause_char_end: clauseCharEnd,
+    document_char_start: hasDocumentOffsets
+      ? observed.document_char_start + excerptCharStart
+      : null,
+    document_char_end: hasDocumentOffsets
+      ? observed.document_char_start + excerptCharEnd
+      : null,
+    supporting_excerpt_sha256: observed.sha256,
+  };
+}
+
+function amendmentChangeInstructionCandidate(cue) {
+  const actionKey = amendmentChangeAction(cue);
+  if (!actionKey) return null;
+  const observedReference = boundedAmendmentReference(cue);
+  if (!observedReference) return null;
+  return {
+    candidate_version: "amendment_provision_reference_rules_v1",
+    action_key: actionKey,
+    action_label: AMENDMENT_CHANGE_ACTIONS[actionKey],
+    action_basis: "generated",
+    reference_selection_basis: "generated_bounded_prefix_v1",
+    observed_reference: observedReference,
+    supporting_cue: {
+      cue_key: cue.cue_key,
+      label: cue.label,
+      cue_basis: cue.cue_basis,
+      confidence: cue.confidence,
+      detector_version: cue.detector_version,
+      rule_id: cue.rule_id,
+      anchor_clause_id: cue.anchor_clause_id,
+      anchor_clause_sha256: cue.anchor_clause_sha256,
+      clause: { ...cue.clause },
+      observed_evidence: { ...cue.observed_evidence },
+    },
+  };
+}
+
+export function amendmentChangeMapEvidence(value) {
+  const root = record(value);
+  const agreement = record(root.agreement);
+  const limits = record(root.limits);
+  const agreementId = typeof agreement.agreement_id === "string"
+    ? agreement.agreement_id
+    : "";
+  const expectedLimit = decisionBriefInteger(limits.maximum_returned_cues, 1);
+  if (
+    !UUID_PATTERN.test(agreementId) ||
+    expectedLimit === null ||
+    expectedLimit > AGREEMENT_CHANGE_CUE_LIMIT_MAX
+  ) {
+    return null;
+  }
+  const packet = agreementChangeCueEvidence(value, agreementId, expectedLimit);
+  if (!packet || packet.agreement.document_kind !== "amendment") return null;
+
+  const actionableCues = packet.cues.filter((cue) =>
+    amendmentChangeAction(cue) !== null
+  );
+  const derivedCandidates = actionableCues.map(
+    amendmentChangeInstructionCandidate,
+  ).filter((candidate) => candidate !== null);
+  const candidatesByReference = new Map();
+  for (const candidate of derivedCandidates) {
+    const reference = candidate.observed_reference;
+    const identity = `${candidate.supporting_cue.anchor_clause_id}:${
+      reference.clause_char_start
+    }:${reference.clause_char_end}`;
+    const existing = candidatesByReference.get(identity);
+    const candidatePriority = AMENDMENT_CHANGE_ACTION_PRIORITY[
+      candidate.action_key
+    ];
+    const existingPriority = existing
+      ? AMENDMENT_CHANGE_ACTION_PRIORITY[existing.action_key]
+      : -1;
+    const candidateCuePriority = AGREEMENT_CHANGE_CUE_ORDER.get(
+      candidate.supporting_cue.cue_key,
+    );
+    const existingCuePriority = existing
+      ? AGREEMENT_CHANGE_CUE_ORDER.get(existing.supporting_cue.cue_key)
+      : -1;
+    if (
+      !existing ||
+      candidatePriority > existingPriority ||
+      (candidatePriority === existingPriority &&
+        candidateCuePriority > existingCuePriority)
+    ) {
+      candidatesByReference.set(identity, candidate);
+    }
+  }
+  const candidates = [...candidatesByReference.values()].sort((left, right) =>
+    left.supporting_cue.clause.sequence -
+      right.supporting_cue.clause.sequence ||
+    left.observed_reference.clause_char_start -
+      right.observed_reference.clause_char_start ||
+    left.action_key.localeCompare(right.action_key)
+  );
+
+  return {
+    schema: AMENDMENT_CHANGE_MAP_SCHEMA,
+    agreement_id: packet.agreement.agreement_id,
+    detector_version: "amendment_provision_reference_rules_v1",
+    candidates,
+    coverage: {
+      returned_cue_count: packet.coverage.returned_cue_count,
+      actionable_cue_count: actionableCues.length,
+      actionable_cues_with_bounded_reference: derivedCandidates.length,
+      actionable_cues_without_bounded_reference:
+        actionableCues.length - derivedCandidates.length,
+      duplicate_reference_candidates_suppressed:
+        derivedCandidates.length - candidates.length,
+      candidate_count: candidates.length,
+      source_cues_truncated: packet.limits.cues_truncated,
+    },
+    limits: {
+      maximum_reference_characters: 240,
+      source_cue_limit: packet.limits.maximum_returned_cues,
+      exact_observed_reference_text: true,
+      reference_selection_basis: "generated_bounded_prefix_v1",
+      target_document_resolved: false,
+      target_provision_resolved: false,
+      amendment_direction_determined: false,
+      agreement_relationship_established: false,
+      legal_effect_determined: false,
+    },
+    limitations: [...AMENDMENT_CHANGE_MAP_LIMITATIONS],
+  };
+}
+
+export function buildAmendmentChangeMapExport(
+  value,
+  generatedAt = new Date().toISOString(),
+) {
+  const map = amendmentChangeMapEvidence(value);
+  if (!map || !isValidFamilyTimestamp(generatedAt)) {
+    throw new TypeError("Amendment change-map evidence is invalid");
+  }
+  const packet = agreementChangeCueEvidence(
+    value,
+    map.agreement_id,
+    record(value).limits.maximum_returned_cues,
+  );
+  if (!packet) throw new TypeError("Amendment change-map evidence is invalid");
+  return {
+    schema: AMENDMENT_CHANGE_MAP_SCHEMA,
+    generated_at: generatedAt,
+    agreement: { ...packet.agreement },
+    source: { ...packet.source },
+    change_map: map,
+    supporting_change_cues: {
+      api_version: packet.api_version,
+      cues: packet.cues.map((cue) => ({
+        ...cue,
+        clause: { ...cue.clause },
+        observed_evidence: { ...cue.observed_evidence },
+      })),
+      coverage: { ...packet.coverage },
+      limits: { ...packet.limits },
+      limitations: [...packet.limitations],
+    },
+    export_limitations: [...AMENDMENT_CHANGE_MAP_LIMITATIONS],
   };
 }
 
@@ -10757,6 +11163,131 @@ function boot() {
     return paragraph;
   }
 
+  function changeInstructionCandidateNote(candidate) {
+    if (!candidate) return null;
+    const reference = candidate.observed_reference;
+    const note = element("div", "change-instruction-candidate");
+    const referenceLine = element("p");
+    referenceLine.append(
+      element("strong", "", `${candidate.action_label}: `),
+      document.createTextNode("“"),
+      element("span", "observed-reference", reference.text),
+      document.createTextNode("”"),
+    );
+    append(
+      note,
+      element(
+        "span",
+        "badge basis-generated",
+        "Generated instruction candidate",
+      ),
+      referenceLine,
+      element(
+        "p",
+        "muted tiny",
+        `Exact observed ${reference.reference_kind.replaceAll("_", " ")} · clause characters ${
+          count(reference.clause_char_start)
+        }–${count(reference.clause_char_end)} · selected from support SHA-256 ${
+          reference.supporting_excerpt_sha256
+        }. The reference is not resolved to another document or provision.`,
+      ),
+    );
+    return note;
+  }
+
+  function amendmentChangeMapPanel(packet) {
+    const map = amendmentChangeMapEvidence(packet);
+    if (!map) {
+      throw new ApiError(
+        "The amendment change map did not match its evidence contract.",
+      );
+    }
+    const panel = element("section", "change-instruction-map");
+    append(
+      panel,
+      element("h4", "", "Generated amendment change map"),
+      element(
+        "p",
+        "focus-note",
+        `${count(map.coverage.candidate_count)} bounded reference candidate(s) from ${
+          count(map.coverage.actionable_cue_count)
+        } actionable returned cue(s); ${
+          count(map.coverage.actionable_cues_without_bounded_reference)
+        } had no safely bounded reference candidate. Selection and action labels are generated; quoted references are exact observed text.`,
+      ),
+    );
+    const list = element("div", "change-instruction-list");
+    if (!map.candidates.length) {
+      list.append(
+        element(
+          "p",
+          "empty",
+          "No bounded structural reference candidate was found. This is not evidence that the amendment lacks operative changes.",
+        ),
+      );
+    } else {
+      for (const candidate of map.candidates) {
+        const item = element("article", "change-instruction-item");
+        append(
+          item,
+          element(
+            "span",
+            "badge basis-generated",
+            candidate.action_label,
+          ),
+          element(
+            "p",
+            "observed-reference",
+            `“${candidate.observed_reference.text}”`,
+          ),
+          element(
+            "p",
+            "muted tiny",
+            `Clause ${count(candidate.supporting_cue.clause.sequence)} · ${
+              candidate.observed_reference.reference_kind.replaceAll("_", " ")
+            } · source rule ${candidate.supporting_cue.rule_id}`,
+          ),
+        );
+        list.append(item);
+      }
+    }
+
+    const exportStatus = element("p", "muted tiny");
+    exportStatus.setAttribute("role", "status");
+    const download = element(
+      "button",
+      "button secondary amendment-change-download-map",
+      "Download evidence-linked change map",
+    );
+    download.type = "button";
+    download.addEventListener("click", () => {
+      try {
+        const output = buildAmendmentChangeMapExport(packet);
+        const blob = new Blob([`${JSON.stringify(output, null, 2)}\n`], {
+          type: "application/json;charset=utf-8",
+        });
+        const objectUrl = URL.createObjectURL(blob);
+        const link = element("a");
+        link.href = objectUrl;
+        link.download =
+          `esheria-amendment-change-map-${packet.agreement.agreement_id}.json`;
+        link.hidden = true;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+        exportStatus.textContent =
+          "Change-map JSON downloaded with exact observed support, generated candidate labels, and no bearer token or private Storage path.";
+      } catch (error) {
+        exportStatus.textContent = error instanceof Error
+          ? error.message
+          : "The change-map export could not be created.";
+      }
+    });
+    append(panel, list, download, exportStatus);
+    return panel;
+  }
+
   function changeCueEvidenceDetails(cue, open = false) {
     const details = element("details", "brief-comparison-more");
     details.open = open;
@@ -10838,9 +11369,13 @@ function boot() {
     }
 
     const evidence = element("section", "change-cue-evidence");
+    const representativeInstruction = amendmentChangeInstructionCandidate(
+      item.representative_cue,
+    );
     append(
       evidence,
       element("h4", "", "Representative exact observed cue"),
+      changeInstructionCandidateNote(representativeInstruction),
       element(
         "p",
         "muted",
@@ -10895,6 +11430,7 @@ function boot() {
               count(packet.coverage.matched_cue_count)
             } bounded positive cue(s) revalidated from the current observed extraction. Cues do not establish the changed instrument, direction, relationship, or legal effect.`,
           ),
+          amendmentChangeMapPanel(packet),
           cueList,
         );
         inspectCues.textContent = "Change cues loaded";

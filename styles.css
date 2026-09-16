@@ -522,6 +522,39 @@ select:focus {
   margin-bottom: 0;
 }
 
+.change-instruction-candidate,
+.change-instruction-map {
+  padding: 0.75rem;
+  border: 1px solid #4c4a32;
+  border-radius: 9px;
+  background: #15140c;
+}
+
+.change-instruction-candidate {
+  margin-bottom: 0.75rem;
+}
+
+.change-instruction-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.change-instruction-item {
+  padding: 0.65rem;
+  border-left: 3px solid var(--gold);
+  background: #0c1411;
+}
+
+.change-instruction-item p {
+  margin: 0.4rem 0 0;
+}
+
+.observed-reference {
+  color: var(--ink);
+  font-weight: 680;
+}
+
 .brief-directory-card {
   display: grid;
   gap: 0.75rem;
