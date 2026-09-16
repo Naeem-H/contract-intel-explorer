@@ -36,6 +36,8 @@ export const AGREEMENT_DECISION_BRIEF_COMPARISON_SCHEMA =
   "esheria.agreement-decision-brief-comparison.v1";
 export const PARTY_DECISION_BRIEF_SCAN_CONCURRENCY = 3;
 export const PARTY_DECISION_BRIEF_SCAN_EXAMPLES = 1;
+export const PARTY_DECISION_BRIEF_SCAN_MAX = 50;
+export const PARTY_DECISION_BRIEF_SHORTLIST_MAX = 10;
 export const PARTY_DOSSIER_SCHEMA =
   "observed-party-negotiation-dossier-v4";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
@@ -1817,6 +1819,35 @@ export function rankPartyResultsByDecisionBriefCoverage(
       left.index - right.index;
   });
   return indexed.map((entry) => entry.value);
+}
+
+export function partyDecisionBriefShortlist(
+  values,
+  coverageValues,
+  limit = PARTY_DECISION_BRIEF_SHORTLIST_MAX,
+) {
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > PARTY_DECISION_BRIEF_SHORTLIST_MAX
+  ) {
+    throw new TypeError(
+      "Party brief shortlist limit is outside the allowed range",
+    );
+  }
+  const ranked = rankPartyResultsByDecisionBriefCoverage(
+    values,
+    coverageValues,
+  );
+  const coverageByAgreement = new Map(
+    coverageValues.map((value) => [record(value).agreementId, value]),
+  );
+  return ranked
+    .filter((value) => {
+      const coverage = coverageByAgreement.get(record(value).agreement_id);
+      return coverage && coverage.matchedTopicCount > 0;
+    })
+    .slice(0, limit);
 }
 
 export function buildAgreementDecisionBriefExport(
@@ -6233,6 +6264,13 @@ function boot() {
   const partySearchStatus = byId("party-search-status");
   const partyBriefRankButton = byId("party-rank-decision-briefs");
   const partyBriefRankStatus = byId("party-decision-brief-rank-status");
+  const partyBriefShortlist = byId("party-decision-brief-shortlist");
+  const partyBriefShortlistTitle = byId(
+    "party-decision-brief-shortlist-title",
+  );
+  const partyBriefShortlistResults = byId(
+    "party-decision-brief-shortlist-results",
+  );
   const partyDecisionBriefComparisonStatus = byId(
     "party-decision-brief-comparison-status",
   );
@@ -6429,7 +6467,9 @@ function boot() {
       "Enter an observed buyer, supplier, filing entity, or stated party name.";
     partyBriefRankStatus.className = "muted";
     partyBriefRankStatus.textContent =
-      "Run a party search, then validate and rank its visible contract or amendment records by five-topic evidence coverage.";
+      "Run a party search, then build a bounded evidence-bearing shortlist from up to 50 matching records.";
+    partyBriefShortlist.hidden = true;
+    partyBriefShortlistResults.replaceChildren();
     syncGuideSelection("");
     results.replaceChildren(
       element("p", "empty", "Sign in to search published evidence."),
@@ -8810,8 +8850,10 @@ function boot() {
         : "";
     }
     for (
-      const button of partyResults.querySelectorAll(
-        ".party-brief-compare-button",
+      const button of [partyResults, partyBriefShortlistResults].flatMap(
+        (container) => [
+          ...container.querySelectorAll(".party-brief-compare-button"),
+        ],
       )
     ) {
       const agreementId = button.getAttribute("data-agreement-id") ?? "";
@@ -9293,6 +9335,8 @@ function boot() {
     const pagination = record(root.pagination);
     state.partyPageResults = rows;
     state.partyBriefCoverage = new Map();
+    partyBriefShortlist.hidden = true;
+    partyBriefShortlistResults.replaceChildren();
     state.partyHasMore = pagination.has_more === true;
     partyPrevious.disabled = state.partyOffset === 0;
     partyNext.disabled = !state.partyHasMore;
@@ -9310,36 +9354,81 @@ function boot() {
       return UUID_PATTERN.test(item.agreement_id) &&
         DECISION_BRIEF_DOCUMENT_KINDS.has(item.document_kind);
     }).length;
-    partyBriefRankButton.disabled = eligibleCount === 0;
+    const canContainEligibleBriefs = rows.length > 0 &&
+      (!state.partyKind || DECISION_BRIEF_DOCUMENT_KINDS.has(state.partyKind));
+    partyBriefRankButton.disabled = !canContainEligibleBriefs;
     partyBriefRankStatus.className = "muted";
-    partyBriefRankStatus.textContent = eligibleCount
-      ? `Validate and rank ${count(eligibleCount)} visible contract or amendment record(s) by positive evidence across the five tracked topics.`
+    partyBriefRankStatus.textContent = canContainEligibleBriefs
+      ? `Fetch up to ${count(PARTY_DECISION_BRIEF_SCAN_MAX)} matching records and validate each eligible contract or amendment against the five tracked topics.${
+        eligibleCount
+          ? ` This page contains ${count(eligibleCount)} eligible record(s).`
+          : " This page has no eligible record, but the bounded query set may."
+      }`
       : "No visible contract or amendment record is eligible for a strict five-topic brief.";
   }
 
-  async function rankVisiblePartyDecisionBriefs() {
+  async function rankPartyDecisionBriefCohort() {
     if (!state.token || state.partyBriefScanLoading) return;
-    const candidates = state.partyPageResults.filter((value) => {
-      const item = record(value);
-      return UUID_PATTERN.test(item.agreement_id) &&
-        DECISION_BRIEF_DOCUMENT_KINDS.has(item.document_kind);
-    });
-    if (!candidates.length) return;
+    if (!state.partyQuery) return;
 
     const generation = state.partyBriefScanGeneration + 1;
     state.partyBriefScanGeneration = generation;
     state.partyBriefScanLoading = true;
     state.partyBriefCoverage = new Map();
+    partyBriefShortlist.hidden = true;
+    partyBriefShortlistResults.replaceChildren();
     const token = state.token;
+    const query = state.partyQuery;
+    const kind = state.partyKind;
+    const source = state.partySource;
     partyBriefRankButton.disabled = true;
     statusMessage(
       partyBriefRankStatus,
-      `Validating 0 of ${count(candidates.length)} strict five-topic briefs…`,
+      `Loading up to ${count(PARTY_DECISION_BRIEF_SCAN_MAX)} matching records for bounded brief validation…`,
     );
 
     const coverage = [];
     let failureCount = 0;
+    let candidates = [];
     try {
+      const partyPayload = await requestJson(
+        buildPartySearchPath({
+          query,
+          kind,
+          source,
+          limit: PARTY_DECISION_BRIEF_SCAN_MAX,
+          offset: 0,
+        }),
+        token,
+      );
+      if (
+        state.token !== token ||
+        state.partyBriefScanGeneration !== generation
+      ) {
+        return;
+      }
+      const payloadRoot = record(partyPayload);
+      const scanRows = array(payloadRoot.results).slice(
+        0,
+        PARTY_DECISION_BRIEF_SCAN_MAX,
+      );
+      candidates = scanRows.filter((value) => {
+        const item = record(value);
+        return UUID_PATTERN.test(item.agreement_id) &&
+          DECISION_BRIEF_DOCUMENT_KINDS.has(item.document_kind);
+      });
+      if (!candidates.length) {
+        statusMessage(
+          partyBriefRankStatus,
+          "No contract or amendment in the bounded matching-record set is eligible for a strict five-topic brief.",
+        );
+        return;
+      }
+      statusMessage(
+        partyBriefRankStatus,
+        `Validating 0 of ${count(candidates.length)} eligible strict five-topic briefs…`,
+      );
+
       for (
         let offset = 0;
         offset < candidates.length;
@@ -9399,18 +9488,40 @@ function boot() {
       state.partyBriefCoverage = new Map(
         coverage.map((item) => [item.agreementId, item]),
       );
-      const ranked = rankPartyResultsByDecisionBriefCoverage(
-        state.partyPageResults,
+      renderPartyResultRows(state.partyPageResults);
+      const shortlist = partyDecisionBriefShortlist(
+        candidates,
         coverage,
       );
-      renderPartyResultRows(ranked);
+      partyBriefShortlistTitle.textContent = shortlist.length
+        ? `Top ${count(shortlist.length)} evidence-bearing matching record(s)`
+        : "No positive-match record in this bounded scan";
+      partyBriefShortlistResults.replaceChildren(
+        ...(shortlist.length
+          ? shortlist.map(partyResultCard)
+          : [
+            element(
+              "p",
+              "empty",
+              "No validated brief returned a positive match across the five tracked detector topics. This does not establish that the provisions or consequences are absent.",
+            ),
+          ]),
+      );
+      partyBriefShortlist.hidden = false;
+      updateDecisionBriefComparisonControls();
       const positiveCount = coverage.filter((item) =>
         item.matchedTopicCount > 0
       ).length;
       const zeroCount = coverage.length - positiveCount;
+      const pagination = record(payloadRoot.pagination);
+      const total = Number(pagination.total_matching_agreements);
+      const scanWasTruncated = pagination.has_more === true ||
+        (Number.isSafeInteger(total) && total > scanRows.length);
       statusMessage(
         partyBriefRankStatus,
-        `Ranked ${count(coverage.length)} validated visible brief(s): ${
+        `Validated ${count(coverage.length)} eligible brief(s) across ${
+          count(scanRows.length)
+        } matching record(s): ${
           count(positiveCount)
         } with positive five-topic evidence and ${
           count(zeroCount)
@@ -9418,7 +9529,11 @@ function boot() {
           failureCount
             ? ` ${count(failureCount)} record(s) could not be validated and remain unranked.`
             : ""
-        } This is generated page-level navigation, not a risk score, prevalence measure or finding of absence.`,
+        } ${
+          scanWasTruncated
+            ? `The query exceeds the ${count(PARTY_DECISION_BRIEF_SCAN_MAX)}-record scan bound, so this is not the whole matching set.`
+            : "The full returned matching set fit inside the scan bound."
+        } The shortlist is generated navigation, not entity resolution, a risk score, prevalence measure or finding of absence.`,
         failureCount ? "error" : "success",
       );
     } catch (error) {
@@ -9431,7 +9546,8 @@ function boot() {
     } finally {
       if (state.partyBriefScanGeneration === generation) {
         state.partyBriefScanLoading = false;
-        partyBriefRankButton.disabled = !state.token || !candidates.length;
+        partyBriefRankButton.disabled = !state.token || !state.partyQuery ||
+          !candidates.length;
       }
     }
   }
@@ -9443,6 +9559,8 @@ function boot() {
     state.partyPageResults = [];
     state.partyBriefCoverage = new Map();
     state.partySearching = true;
+    partyBriefShortlist.hidden = true;
+    partyBriefShortlistResults.replaceChildren();
     partySearchButton.disabled = true;
     partyBriefRankButton.disabled = true;
     partyPrevious.disabled = true;
@@ -9450,7 +9568,7 @@ function boot() {
     partySearchStatus.textContent = "Searching published party observations…";
     partyBriefRankStatus.className = "muted";
     partyBriefRankStatus.textContent =
-      "Waiting for the current party-result page before scanning strict briefs.";
+      "Waiting for matching records before building the bounded strict-brief shortlist.";
     try {
       const path = buildPartySearchPath({
         query: state.partyQuery,
@@ -12196,7 +12314,7 @@ function boot() {
 
   partyBriefRankButton.addEventListener(
     "click",
-    rankVisiblePartyDecisionBriefs,
+    rankPartyDecisionBriefCohort,
   );
   partySearchForm.addEventListener("submit", (event) => {
     event.preventDefault();

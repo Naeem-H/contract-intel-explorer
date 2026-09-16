@@ -602,6 +602,16 @@ select:focus {
 .party-brief-coverage .badge {
   margin: 0 5px 5px 0;
 }
+.party-brief-shortlist {
+  margin: 18px 0 24px;
+  padding: 16px;
+  border: 1px solid #365646;
+  border-radius: 12px;
+  background: rgb(18 54 38 / 22%);
+}
+.party-brief-shortlist .compact-heading {
+  margin-top: 0;
+}
 .dossier-theme {
   display: grid;
   gap: 12px;
