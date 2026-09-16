@@ -7735,6 +7735,9 @@ export function vendorPositionEvidence(value) {
     detectorVersion: typeof position.detector_version === "string"
       ? position.detector_version
       : null,
+    qualityRevision: typeof position.quality_revision === "string"
+      ? position.quality_revision
+      : null,
     scope: typeof position.scope === "string" ? position.scope : null,
     analysisWindow: record(position.analysis_window),
     eligibility: record(position.eligibility),
@@ -11473,7 +11476,7 @@ function boot() {
     indemnityLoading: false,
     vendorTopic: "intellectual_property",
     vendorSignal: "",
-    vendorContext: "commercial",
+    vendorContext: "vendor",
     vendorKind: "",
     vendorSource: "",
     vendorLoading: false,
@@ -11832,7 +11835,7 @@ function boot() {
     state.indemnityLoading = false;
     state.vendorTopic = "intellectual_property";
     state.vendorSignal = "";
-    state.vendorContext = "commercial";
+    state.vendorContext = "vendor";
     state.vendorKind = "";
     state.vendorSource = "";
     state.vendorLoading = false;
