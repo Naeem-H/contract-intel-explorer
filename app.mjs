@@ -45,9 +45,12 @@ export const FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA =
 export const AMENDMENT_CHANGE_MAP_SCHEMA = "esheria.amendment-change-map.v1";
 export const AMENDMENT_CHANGE_MAP_MATRIX_SCHEMA =
   "esheria.amendment-change-map-matrix.v1";
+export const AMENDMENT_CHANGE_TRIAGE_SCHEMA =
+  "esheria.amendment-change-triage.v1";
 export const AMENDMENT_CHANGE_MAP_MATRIX_MIN_ITEMS = 2;
 export const AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS = 5;
 export const AMENDMENT_CHANGE_MAP_MATRIX_FETCH_CONCURRENCY = 3;
+export const AMENDMENT_CHANGE_TRIAGE_EXAMPLE_MAX = 3;
 export const PARTY_DECISION_BRIEF_SCAN_CONCURRENCY = 3;
 export const PARTY_DECISION_BRIEF_SCAN_EXAMPLES = 1;
 export const PARTY_DECISION_BRIEF_SCAN_MAX = 50;
@@ -1097,6 +1100,13 @@ const AMENDMENT_CHANGE_ACTION_PRIORITY = Object.freeze({
   add_or_insert: 2,
   delete_and_replace: 3,
   amend_and_restate: 4,
+});
+const AMENDMENT_CHANGE_REFERENCE_LABELS = Object.freeze({
+  provision_reference: "Provision",
+  document_reference: "Document",
+  defined_term_reference: "Defined term",
+  schedule_or_exhibit_reference: "Schedule or exhibit",
+  described_item_reference: "Described item",
 });
 const AMENDMENT_CHANGE_MAP_LIMITATIONS = Object.freeze([
   "Provision-reference candidates and action labels are deterministic generated navigation aids selected from bounded observed cue excerpts.",
@@ -2914,6 +2924,138 @@ export function buildAmendmentChangeMapCollectionCsv(
     rows.push(...matrix.rows);
   }
   return serializeAmendmentChangeMapMatrix(rows);
+}
+
+export function buildAmendmentChangeTriageSummary(
+  values,
+  generatedAt = new Date().toISOString(),
+) {
+  if (
+    !Array.isArray(values) ||
+    values.length < AMENDMENT_CHANGE_MAP_MATRIX_MIN_ITEMS ||
+    values.length > AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS ||
+    !isValidFamilyTimestamp(generatedAt)
+  ) {
+    throw new TypeError("Amendment change-map selection is invalid");
+  }
+  const actionKeys = Object.keys(AMENDMENT_CHANGE_ACTIONS);
+  const referenceKeys = Object.keys(AMENDMENT_CHANGE_REFERENCE_LABELS);
+  const actionCounts = Object.fromEntries(actionKeys.map((key) => [key, 0]));
+  const referenceCounts = Object.fromEntries(
+    referenceKeys.map((key) => [key, 0]),
+  );
+  const totals = {
+    returned_cue_count: 0,
+    actionable_cue_count: 0,
+    actionable_cues_with_bounded_reference: 0,
+    actionable_cues_without_bounded_reference: 0,
+    duplicate_reference_candidates_suppressed: 0,
+    candidate_count: 0,
+    source_packets_truncated: 0,
+  };
+  const agreementIds = new Set();
+  const agreements = values.map((value) => {
+    const output = buildAmendmentChangeMapExport(value, generatedAt);
+    const agreement = output.agreement;
+    const source = output.source;
+    const map = output.change_map;
+    if (agreementIds.has(agreement.agreement_id)) {
+      throw new TypeError("Amendment change-map selection is invalid");
+    }
+    agreementIds.add(agreement.agreement_id);
+    const agreementActionCounts = Object.fromEntries(
+      actionKeys.map((key) => [key, 0]),
+    );
+    const agreementReferenceCounts = Object.fromEntries(
+      referenceKeys.map((key) => [key, 0]),
+    );
+    for (const candidate of map.candidates) {
+      agreementActionCounts[candidate.action_key] += 1;
+      actionCounts[candidate.action_key] += 1;
+      const referenceKey = candidate.observed_reference.reference_kind;
+      agreementReferenceCounts[referenceKey] += 1;
+      referenceCounts[referenceKey] += 1;
+    }
+    for (const key of Object.keys(totals)) {
+      if (key === "source_packets_truncated") continue;
+      totals[key] += map.coverage[key];
+    }
+    if (map.coverage.source_cues_truncated) {
+      totals.source_packets_truncated += 1;
+    }
+    return {
+      agreement: {
+        agreement_id: agreement.agreement_id,
+        title: agreement.title,
+        published_at: agreement.published_at,
+        artifact_sha256: agreement.artifact_sha256,
+        extraction_id: agreement.extraction_id,
+        extracted_text_sha256: agreement.extracted_text_sha256,
+        text_basis: agreement.text_basis,
+      },
+      source: {
+        slug: source.slug,
+        name: source.name,
+        external_id: source.external_id,
+        source_url: source.source_url,
+        observed_published_at: source.observed_published_at,
+      },
+      coverage: { ...map.coverage },
+      action_counts: agreementActionCounts,
+      reference_counts: agreementReferenceCounts,
+      candidate_examples: map.candidates.slice(
+        0,
+        AMENDMENT_CHANGE_TRIAGE_EXAMPLE_MAX,
+      ).map((candidate) => ({
+        action_key: candidate.action_key,
+        action_label: candidate.action_label,
+        action_basis: candidate.action_basis,
+        reference_kind: candidate.observed_reference.reference_kind,
+        observed_reference: candidate.observed_reference.text,
+        reference_text_basis: candidate.observed_reference.text_basis,
+        clause_id: candidate.supporting_cue.anchor_clause_id,
+        clause_sequence: candidate.supporting_cue.clause.sequence,
+        supporting_excerpt_sha256:
+          candidate.observed_reference.supporting_excerpt_sha256,
+      })),
+      candidate_examples_omitted: Math.max(
+        map.candidates.length - AMENDMENT_CHANGE_TRIAGE_EXAMPLE_MAX,
+        0,
+      ),
+    };
+  });
+  return {
+    schema: AMENDMENT_CHANGE_TRIAGE_SCHEMA,
+    generated_at: generatedAt,
+    selection: {
+      agreement_count: agreements.length,
+      minimum_agreements: AMENDMENT_CHANGE_MAP_MATRIX_MIN_ITEMS,
+      maximum_agreements: AMENDMENT_CHANGE_MAP_MATRIX_MAX_ITEMS,
+      same_family_asserted: false,
+      relationship_asserted: false,
+    },
+    totals: {
+      ...totals,
+      action_counts: actionCounts,
+      reference_counts: referenceCounts,
+    },
+    agreements,
+    limits: {
+      candidate_examples_per_agreement: AMENDMENT_CHANGE_TRIAGE_EXAMPLE_MAX,
+      action_counts_are_generated: true,
+      reference_counts_are_generated: true,
+      quoted_reference_text_is_observed: true,
+      target_document_resolved: false,
+      target_provision_resolved: false,
+      amendment_direction_determined: false,
+      agreement_relationship_established: false,
+      legal_effect_determined: false,
+    },
+    limitations: [
+      "This selected set is user-chosen and is not a representative market sample or a verified document family.",
+      ...AMENDMENT_CHANGE_MAP_LIMITATIONS,
+    ],
+  };
 }
 
 export function amendmentChangeDirectoryEvidence(value, expected = {}) {
@@ -8222,6 +8364,9 @@ function boot() {
   const amendmentChangePrevious = byId("amendment-change-directory-previous");
   const amendmentChangeNext = byId("amendment-change-directory-next");
   const amendmentChangeMatrixStatus = byId("amendment-change-matrix-status");
+  const amendmentChangeTriageSummary = byId(
+    "amendment-change-triage-summary",
+  );
   const clearAmendmentChangeMatrixButton = byId(
     "clear-amendment-change-matrix",
   );
@@ -8483,6 +8628,7 @@ function boot() {
       "Browse positive amendment wording with one exact representative cue per agreement.";
     amendmentChangeMatrixStatus.textContent =
       "Select 2–5 amendments to build one evidence-linked CSV.";
+    clearAmendmentChangeTriageSummary();
     amendmentChangeResults.replaceChildren();
     partyPrevious.disabled = true;
     partyNext.disabled = true;
@@ -11546,6 +11692,175 @@ function boot() {
     return panel;
   }
 
+  function clearAmendmentChangeTriageSummary() {
+    amendmentChangeTriageSummary.replaceChildren();
+    amendmentChangeTriageSummary.hidden = true;
+  }
+
+  function amendmentChangeTriageCountGroup(title, counts, labels) {
+    const group = element("section");
+    append(group, element("h4", "", title));
+    const badges = element("div", "change-cue-summary");
+    for (const [key, label] of Object.entries(labels)) {
+      if (counts[key] > 0) {
+        badges.append(
+          element(
+            "span",
+            "badge basis-generated",
+            `${label}: ${count(counts[key])}`,
+          ),
+        );
+      }
+    }
+    if (!badges.childElementCount) {
+      badges.append(element("span", "muted", "No bounded candidates"));
+    }
+    group.append(badges);
+    return group;
+  }
+
+  function renderAmendmentChangeTriageSummary(summary) {
+    const totals = summary.totals;
+    const fragment = document.createDocumentFragment();
+    append(
+      fragment,
+      element("h3", "", "Selected amendment triage"),
+      element(
+        "p",
+        "focus-note",
+        `${count(summary.selection.agreement_count)} selected amendment(s) · ${
+          count(totals.candidate_count)
+        } bounded reference candidate(s) from ${
+          count(totals.actionable_cue_count)
+        } actionable cue(s) · ${
+          count(totals.actionable_cues_without_bounded_reference)
+        } actionable non-finding(s).`,
+      ),
+      amendmentChangeTriageCountGroup(
+        "Generated action labels",
+        totals.action_counts,
+        AMENDMENT_CHANGE_ACTIONS,
+      ),
+      amendmentChangeTriageCountGroup(
+        "Generated reference categories",
+        totals.reference_counts,
+        AMENDMENT_CHANGE_REFERENCE_LABELS,
+      ),
+      element(
+        "p",
+        "muted",
+        `${count(totals.source_packets_truncated)} selected packet(s) report source-cue truncation. The selection is not asserted to be one document family; counts are navigation aids, quoted references are observed text, and no target, direction, relationship or legal effect is resolved.`,
+      ),
+    );
+    const agreementCards = element("div", "results");
+    for (const item of summary.agreements) {
+      const card = element("article", "result-card");
+      const top = element("div", "result-top");
+      append(
+        top,
+        element(
+          "h4",
+          "",
+          displayText(item.agreement.title, "Untitled amendment"),
+        ),
+        element("span", "badge basis-observed", "Observed references"),
+      );
+      const metadata = element("div", "meta");
+      append(
+        metadata,
+        element("span", "", displayText(item.source.name, "Unknown source")),
+        element("span", "", `Source record ${item.source.external_id}`),
+        item.agreement.published_at
+          ? element(
+            "span",
+            "",
+            `Observed publication ${date(item.agreement.published_at)}`,
+          )
+          : null,
+      );
+      append(
+        card,
+        top,
+        metadata,
+        element(
+          "p",
+          "focus-note",
+          `${count(item.coverage.candidate_count)} candidate(s) · ${
+            count(item.coverage.actionable_cue_count)
+          } actionable cue(s) · ${
+            count(item.coverage.actionable_cues_without_bounded_reference)
+          } actionable non-finding(s).`,
+        ),
+        amendmentChangeTriageCountGroup(
+          "Actions",
+          item.action_counts,
+          AMENDMENT_CHANGE_ACTIONS,
+        ),
+        amendmentChangeTriageCountGroup(
+          "References",
+          item.reference_counts,
+          AMENDMENT_CHANGE_REFERENCE_LABELS,
+        ),
+      );
+      const examples = element("section");
+      examples.append(element("h4", "", "Exact observed reference examples"));
+      if (!item.candidate_examples.length) {
+        examples.append(
+          element(
+            "p",
+            "empty",
+            "No safe bounded reference candidate was found in the returned actionable cues. This is not evidence that the amendment lacks operative changes.",
+          ),
+        );
+      }
+      for (const example of item.candidate_examples) {
+        const reference = element("article", "change-instruction-item");
+        append(
+          reference,
+          element(
+            "span",
+            "badge basis-generated",
+            example.action_label,
+          ),
+          element(
+            "p",
+            "observed-reference",
+            `“${example.observed_reference}”`,
+          ),
+          element(
+            "p",
+            "muted tiny",
+            `Observed ${
+              AMENDMENT_CHANGE_REFERENCE_LABELS[example.reference_kind]
+                .toLowerCase()
+            } · clause ${count(example.clause_sequence)} · support SHA-256 ${
+              example.supporting_excerpt_sha256
+            }`,
+          ),
+        );
+        examples.append(reference);
+      }
+      if (item.candidate_examples_omitted > 0) {
+        examples.append(
+          element(
+            "p",
+            "muted",
+            `${count(item.candidate_examples_omitted)} additional candidate(s) are retained in the downloaded matrix.`,
+          ),
+        );
+      }
+      append(
+        card,
+        examples,
+        sourceLink(item.source.source_url, "Open recorded source ↗"),
+      );
+      agreementCards.append(card);
+    }
+    fragment.append(agreementCards);
+    amendmentChangeTriageSummary.replaceChildren(fragment);
+    amendmentChangeTriageSummary.hidden = false;
+  }
+
   function updateAmendmentChangeMatrixControls(message = null, kind = "") {
     const selected = state.amendmentChangeMatrixSelection.size;
     clearAmendmentChangeMatrixButton.disabled = selected === 0 ||
@@ -11587,6 +11902,7 @@ function boot() {
   function clearAmendmentChangeMatrix() {
     if (state.amendmentChangeMatrixLoading) return;
     state.amendmentChangeMatrixSelection.clear();
+    clearAmendmentChangeTriageSummary();
     updateAmendmentChangeMatrixControls();
   }
 
@@ -11610,6 +11926,7 @@ function boot() {
     } else {
       state.amendmentChangeMatrixSelection.delete(agreementId);
     }
+    clearAmendmentChangeTriageSummary();
     updateAmendmentChangeMatrixControls();
   }
 
@@ -11975,11 +12292,13 @@ function boot() {
       }
 
       const generatedAt = new Date().toISOString();
+      const summary = buildAmendmentChangeTriageSummary(packets, generatedAt);
       const csv = buildAmendmentChangeMapCollectionCsv(packets, generatedAt);
-      const rowCount = packets.reduce((total, packet) => {
-        const map = amendmentChangeMapEvidence(packet);
-        return total + Math.max(map?.coverage.candidate_count ?? 0, 1);
-      }, 0);
+      const rowCount = summary.agreements.reduce(
+        (total, item) => total + Math.max(item.coverage.candidate_count, 1),
+        0,
+      );
+      renderAmendmentChangeTriageSummary(summary);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const objectUrl = URL.createObjectURL(blob);
       const link = element("a");

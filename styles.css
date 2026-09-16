@@ -758,12 +758,14 @@ mark {
   cursor: pointer;
 }
 .compare-choice:has(.compare-input:focus-visible),
-.compare-choice:has(.brief-compare-input:focus-visible) {
+.compare-choice:has(.brief-compare-input:focus-visible),
+.compare-choice:has(.amendment-change-matrix-input:focus-visible) {
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgb(124 224 173 / 12%);
 }
 .compare-input,
-.brief-compare-input {
+.brief-compare-input,
+.amendment-change-matrix-input {
   flex: 0 0 16px;
   width: 16px;
   min-width: 16px;
@@ -774,8 +776,19 @@ mark {
   accent-color: var(--green);
 }
 .compare-input:focus,
-.brief-compare-input:focus {
+.brief-compare-input:focus,
+.amendment-change-matrix-input:focus {
   box-shadow: none;
+}
+.amendment-change-triage {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid #355344;
+  border-radius: 12px;
+  background: #0b1712;
+}
+.amendment-change-triage .results {
+  margin-top: 14px;
 }
 .comparison-toolbar {
   position: sticky;
