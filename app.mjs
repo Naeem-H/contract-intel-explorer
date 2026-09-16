@@ -62,11 +62,11 @@ export const PARTY_DECISION_BRIEF_SHORTLIST_SCHEMA =
 export const PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_SCHEMA =
   "esheria.party-decision-brief-shortlist-matrix.v1";
 export const PARTY_DOSSIER_SCHEMA =
-  "observed-party-negotiation-dossier-v6";
+  "observed-party-negotiation-dossier-v7";
 export const PARTY_DOSSIER_EXPORT_SCHEMA =
-  "esheria.observed-party-negotiation-dossier.v3";
+  "esheria.observed-party-negotiation-dossier.v4";
 export const PARTY_DOSSIER_MATRIX_SCHEMA =
-  "esheria.observed-party-negotiation-dossier-matrix.v3";
+  "esheria.observed-party-negotiation-dossier-matrix.v4";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
 export const DECISION_BRIEF_DIRECTORY_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
@@ -4996,6 +4996,54 @@ function partyDossierThemeSupportCoverage(value) {
   };
 }
 
+function partyDossierReturnedExampleSample(value) {
+  const sample = record(value);
+  const returnedExamples = decisionBriefInteger(sample.returned_examples);
+  const distinctAgreements = decisionBriefInteger(sample.distinct_agreements);
+  const distinctClauses = decisionBriefInteger(sample.distinct_clauses);
+  const reusedClauses = decisionBriefInteger(
+    sample.cross_theme_reused_clauses,
+  );
+  const maximumThemesPerClause = decisionBriefInteger(
+    sample.maximum_themes_per_clause,
+  );
+  if (
+    !hasExactKeys(sample, [
+      "returned_examples",
+      "distinct_agreements",
+      "distinct_clauses",
+      "cross_theme_reused_clauses",
+      "maximum_themes_per_clause",
+    ]) ||
+    returnedExamples === null ||
+    distinctAgreements === null ||
+    distinctClauses === null ||
+    reusedClauses === null ||
+    maximumThemesPerClause === null ||
+    distinctAgreements > returnedExamples ||
+    distinctClauses > returnedExamples ||
+    reusedClauses > distinctClauses ||
+    (returnedExamples === 0 &&
+      (distinctAgreements !== 0 ||
+        distinctClauses !== 0 ||
+        reusedClauses !== 0 ||
+        maximumThemesPerClause !== 0)) ||
+    (returnedExamples > 0 &&
+      (distinctAgreements < 1 ||
+        distinctClauses < 1 ||
+        maximumThemesPerClause < 1))
+  ) {
+    return null;
+  }
+  return {
+    returned_examples: returnedExamples,
+    distinct_agreements: distinctAgreements,
+    distinct_clauses: distinctClauses,
+    cross_theme_reused_clauses: reusedClauses,
+    maximum_themes_per_clause: maximumThemesPerClause,
+  };
+}
+
 function partyDossierStringList(value, maximumItems = 20) {
   if (!Array.isArray(value) || value.length > maximumItems) return null;
   const items = value.map((item) => decisionBriefString(item, 200));
@@ -5352,6 +5400,9 @@ export function buildPartyDossierExport(
   const exampleThemeSupport = partyDossierThemeSupportCoverage(
     coverage.example_theme_support,
   );
+  const returnedExampleSample = partyDossierReturnedExampleSample(
+    coverage.returned_example_sample,
+  );
   const query = decisionBriefString(scope.query, 200);
   const normalizedQuery = decisionBriefString(scope.normalized_query, 200);
   const matchedPartyRecords = decisionBriefInteger(scope.matched_party_records);
@@ -5423,6 +5474,7 @@ export function buildPartyDossierExport(
     !isValidFamilyTimestamp(generatedAt) ||
     familyCoverage === null ||
     exampleThemeSupport === null ||
+    returnedExampleSample === null ||
     query === undefined ||
     normalizedQuery === undefined ||
     partyDossierNormalizedName(query) !== normalizedQuery ||
@@ -5484,6 +5536,9 @@ export function buildPartyDossierExport(
     limits.exact_theme_support_context_max_characters !== 2_000 ||
     limits.exact_theme_support_context_selection !==
       "up_to_500_unicode_code_points_before_and_after_exact_support" ||
+    limits.example_selection_order !==
+      "per_theme_highest_confidence_then_newest_distinct_document_v1" ||
+    limits.returned_examples_are_representative !== false ||
     limits.exact_theme_support_is_legal_conclusion !== false ||
     limits.missing_exact_theme_support_establishes_theme_absence !== false
   ) {
@@ -5607,10 +5662,38 @@ export function buildPartyDossierExport(
       total + theme.example_theme_support.exact_detector_span_examples,
     0,
   );
+  const returnedExamples = themes.flatMap((theme) => theme.examples);
+  const returnedAgreementIds = new Set(
+    returnedExamples.map((example) => example.agreement_id),
+  );
+  const returnedClauseThemes = new Map();
+  for (const theme of themes) {
+    for (const example of theme.examples) {
+      const clauseThemes = returnedClauseThemes.get(example.clause_id) ??
+        new Set();
+      clauseThemes.add(theme.theme);
+      returnedClauseThemes.set(example.clause_id, clauseThemes);
+    }
+  }
+  const calculatedReusedClauses = [...returnedClauseThemes.values()].filter(
+    (themeKeys) => themeKeys.size > 1,
+  ).length;
+  const calculatedMaximumThemesPerClause = Math.max(
+    0,
+    ...[...returnedClauseThemes.values()].map((themeKeys) => themeKeys.size),
+  );
   if (
     (documentRecords === 0 && (themes.length || observedClauses !== 0)) ||
     exampleThemeSupport.returned_examples !== returnedExampleCount ||
-    exampleThemeSupport.exact_detector_span_examples !== exactSupportCount
+    exampleThemeSupport.exact_detector_span_examples !== exactSupportCount ||
+    returnedExampleSample.returned_examples !== returnedExampleCount ||
+    returnedExampleSample.distinct_agreements !== returnedAgreementIds.size ||
+    returnedExampleSample.distinct_agreements > documentRecords ||
+    returnedExampleSample.distinct_clauses !== returnedClauseThemes.size ||
+    returnedExampleSample.cross_theme_reused_clauses !==
+      calculatedReusedClauses ||
+    returnedExampleSample.maximum_themes_per_clause !==
+      calculatedMaximumThemesPerClause
   ) {
     throw new TypeError("Party dossier export is invalid");
   }
@@ -5641,6 +5724,7 @@ export function buildPartyDossierExport(
       capture_methods: captureMethods,
       party_resolution_statuses: resolutionStatuses,
       example_theme_support: exampleThemeSupport,
+      returned_example_sample: returnedExampleSample,
       recorded_family_groups: familyCoverage.recordedFamilyGroups,
       document_records_with_recorded_family_key:
         familyCoverage.documentsWithFamily,
@@ -5674,6 +5758,8 @@ export function buildPartyDossierExport(
         limits.exact_theme_support_context_max_characters,
       exact_theme_support_context_selection:
         limits.exact_theme_support_context_selection,
+      example_selection_order: limits.example_selection_order,
+      returned_examples_are_representative: false,
       exact_theme_support_is_legal_conclusion: false,
       missing_exact_theme_support_establishes_theme_absence: false,
     },
@@ -5684,6 +5770,7 @@ export function buildPartyDossierExport(
       "Document records and recorded family keys are not unique deals or reviewed relationships.",
       "Theme labels, counts and commercial-priority order are generated navigation, not market prevalence, risk scores or legal conclusions.",
       "Exact theme-support spans explain stored detector matches only; match-centered context is bounded and unavailable support is disclosed without establishing absence.",
+      "Returned examples are a bounded deterministic convenience sample; repeated agreements or clauses across themes can concentrate the display and do not represent the party portfolio.",
       "Examples are bounded observed excerpts; inspect complete agreements, definitions, schedules, amendments and related documents before relying on them.",
       "A missing theme or example does not establish that wording, a right or a legal consequence is absent.",
     ],
@@ -5777,6 +5864,10 @@ const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "coverage_returned_examples",
   "coverage_exact_detector_span_examples",
   "coverage_without_exact_detector_span",
+  "coverage_returned_example_distinct_agreements",
+  "coverage_returned_example_distinct_clauses",
+  "coverage_cross_theme_reused_example_clauses",
+  "coverage_maximum_themes_per_example_clause",
   "recorded_family_groups",
   "documents_with_recorded_family_key",
   "documents_without_recorded_family_key",
@@ -5791,6 +5882,8 @@ const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "exact_theme_support_offsets",
   "exact_theme_support_context_max_characters",
   "exact_theme_support_context_selection",
+  "example_selection_order",
+  "returned_examples_are_representative",
   "exact_theme_support_is_legal_conclusion",
   "missing_exact_theme_support_establishes_theme_absence",
   "theme_limit",
@@ -5928,6 +6021,14 @@ function serializePartyDossierMatrix(output) {
           output.coverage.example_theme_support.exact_detector_span_examples,
         coverage_without_exact_detector_span:
           output.coverage.example_theme_support.without_exact_detector_span,
+        coverage_returned_example_distinct_agreements:
+          output.coverage.returned_example_sample.distinct_agreements,
+        coverage_returned_example_distinct_clauses:
+          output.coverage.returned_example_sample.distinct_clauses,
+        coverage_cross_theme_reused_example_clauses:
+          output.coverage.returned_example_sample.cross_theme_reused_clauses,
+        coverage_maximum_themes_per_example_clause:
+          output.coverage.returned_example_sample.maximum_themes_per_clause,
         recorded_family_groups: output.coverage.recorded_family_groups,
         documents_with_recorded_family_key:
           output.coverage.document_records_with_recorded_family_key,
@@ -5949,6 +6050,8 @@ function serializePartyDossierMatrix(output) {
           output.limits.exact_theme_support_context_max_characters,
         exact_theme_support_context_selection:
           output.limits.exact_theme_support_context_selection,
+        example_selection_order: output.limits.example_selection_order,
+        returned_examples_are_representative: "FALSE",
         exact_theme_support_is_legal_conclusion: "FALSE",
         missing_exact_theme_support_establishes_theme_absence: "FALSE",
         theme_limit: output.limits.theme_limit,
@@ -14460,6 +14563,7 @@ function boot() {
     const scope = record(root.party_scope);
     const coverage = record(root.coverage);
     const familyCoverage = partyDossierFamilyCoverage(root);
+    const returnedExampleSample = dossierExport.coverage.returned_example_sample;
     if (familyCoverage === null) {
       throw new ApiError(
         "The party dossier response did not match its family-coverage contract.",
@@ -14505,6 +14609,15 @@ function boot() {
           coverage.example_theme_support.exact_detector_span_examples,
         )}/${count(coverage.example_theme_support.returned_examples)}`,
         "Returned examples only · detector evidence",
+      ),
+      metric(
+        "Example diversity",
+        `${count(returnedExampleSample.distinct_agreements)} agreements · ${
+          count(returnedExampleSample.distinct_clauses)
+        } clauses`,
+        `${count(returnedExampleSample.returned_examples)} rows · ${
+          count(returnedExampleSample.cross_theme_reused_clauses)
+        } clauses reused across themes · bounded, not representative`,
       ),
       metric("Sources", count(sources.length), "Rights-gated source systems"),
     );
