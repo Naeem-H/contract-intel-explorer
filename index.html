@@ -707,13 +707,24 @@
               <p class="eyebrow">Negotiation preparation</p>
               <h2 id="party-dossier-title">Observed-party dossier</h2>
             </div>
-            <button id="close-party-dossier" class="button secondary"
-              type="button">Close dossier</button>
+            <div class="dialog-actions">
+              <button id="download-party-dossier-csv"
+                class="button secondary" type="button" disabled>
+                Download dossier CSV</button>
+              <button id="download-party-dossier-json"
+                class="button secondary" type="button" disabled>
+                Download dossier JSON</button>
+              <button id="close-party-dossier" class="button secondary"
+                type="button">Close dossier</button>
+            </div>
           </div>
           <p
             class="search-note">This exact-name evidence cohort is not a resolved entity portfolio. Theme labels are generated navigation aids; counts are not market prevalence or legal conclusions.</p>
           <p id="party-dossier-status" class="muted" role="status"
             aria-live="polite"></p>
+          <p id="party-dossier-export-status" class="muted" role="status"
+            aria-live="polite">Exports are built only after the bounded dossier
+            passes strict evidence and provenance validation.</p>
           <div id="party-dossier-summary" class="metric-grid"></div>
           <div id="party-dossier-themes" class="results spaced"></div>
         </section>

@@ -63,6 +63,10 @@ export const PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_SCHEMA =
   "esheria.party-decision-brief-shortlist-matrix.v1";
 export const PARTY_DOSSIER_SCHEMA =
   "observed-party-negotiation-dossier-v4";
+export const PARTY_DOSSIER_EXPORT_SCHEMA =
+  "esheria.observed-party-negotiation-dossier.v1";
+export const PARTY_DOSSIER_MATRIX_SCHEMA =
+  "esheria.observed-party-negotiation-dossier-matrix.v1";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
 export const DECISION_BRIEF_DIRECTORY_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
@@ -4927,6 +4931,721 @@ export function partyDossierFamilyCoverage(value) {
   };
 }
 
+function partyDossierOptionalText(value, maximum) {
+  if (value === null || value === undefined) return null;
+  const validated = decisionBriefString(value, maximum);
+  return validated === undefined ? undefined : validated;
+}
+
+function partyDossierTimestamp(value, nullable = true) {
+  if (nullable && (value === null || value === undefined)) return null;
+  if (
+    typeof value !== "string" ||
+    value.length > 64 ||
+    Number.isNaN(Date.parse(value))
+  ) {
+    return undefined;
+  }
+  return value;
+}
+
+function partyDossierCountMap(value, allowedKeys = null) {
+  if (!isRecord(value)) return null;
+  const output = {};
+  for (const [key, countValue] of Object.entries(value)) {
+    const count = decisionBriefInteger(countValue, 1);
+    if (
+      !key ||
+      Array.from(key).length > 300 ||
+      count === null ||
+      (allowedKeys && !allowedKeys.has(key))
+    ) {
+      return null;
+    }
+    output[key] = count;
+  }
+  return output;
+}
+
+function partyDossierStringList(value, maximumItems = 20) {
+  if (!Array.isArray(value) || value.length > maximumItems) return null;
+  const items = value.map((item) => decisionBriefString(item, 200));
+  if (
+    items.some((item) => item === undefined) ||
+    new Set(items).size !== items.length
+  ) {
+    return null;
+  }
+  return items;
+}
+
+function partyDossierConfidence(value, nullable = false) {
+  if (nullable && (value === null || value === undefined)) return null;
+  return typeof value === "number" && Number.isFinite(value) &&
+      value >= 0 && value <= 1
+    ? value
+    : undefined;
+}
+
+function partyDossierNormalizedName(value) {
+  return typeof value === "string"
+    ? value.trim().replace(/\s+/gu, " ").toLowerCase()
+    : null;
+}
+
+function partyDossierExample(value, theme, confidenceMinimum, confidenceMaximum) {
+  const example = record(value);
+  const clauseSequence = decisionBriefInteger(example.clause_sequence, 1);
+  const charStart = decisionBriefInteger(example.char_start);
+  const charEnd = decisionBriefInteger(example.char_end, 1);
+  const pageStart = example.page_start === null || example.page_start === undefined
+    ? null
+    : decisionBriefInteger(example.page_start, 1);
+  const pageEnd = example.page_end === null || example.page_end === undefined
+    ? null
+    : decisionBriefInteger(example.page_end, 1);
+  const sourceUrl = safeExternalUrl(example.source_url);
+  const excerptLength = typeof example.observed_text_excerpt === "string"
+    ? Array.from(example.observed_text_excerpt).length
+    : null;
+  const observedPublishedAt = partyDossierTimestamp(
+    example.observed_published_at,
+  );
+  const clauseHeading = partyDossierOptionalText(example.clause_heading, 1_000);
+  const observedTitle = partyDossierOptionalText(example.observed_title, 1_000);
+  const observedRole = partyDossierOptionalText(
+    example.observed_party_role,
+    300,
+  );
+  const taxonomyVersion = partyDossierOptionalText(
+    example.taxonomy_version,
+    200,
+  );
+  const generatedBy = partyDossierOptionalText(example.generated_by, 200);
+  const themeConfidence = partyDossierConfidence(
+    example.theme_confidence,
+    true,
+  );
+  if (
+    typeof example.agreement_id !== "string" ||
+    !UUID_PATTERN.test(example.agreement_id) ||
+    typeof example.clause_id !== "string" ||
+    !UUID_PATTERN.test(example.clause_id) ||
+    clauseSequence === null ||
+    charStart === null ||
+    charEnd === null ||
+    charEnd <= charStart ||
+    (pageStart === null) !== (pageEnd === null) ||
+    (pageStart !== null && pageEnd < pageStart) ||
+    clauseHeading === undefined ||
+    observedTitle === undefined ||
+    observedRole === undefined ||
+    taxonomyVersion === undefined ||
+    generatedBy === undefined ||
+    observedPublishedAt === undefined ||
+    typeof example.observed_text_excerpt !== "string" ||
+    !example.observed_text_excerpt ||
+    excerptLength > 2_000 ||
+    typeof example.observed_text_excerpt_truncated !== "boolean" ||
+    (example.observed_text_excerpt_truncated
+      ? excerptLength !== 2_000 || charEnd - charStart <= excerptLength
+      : excerptLength !== charEnd - charStart) ||
+    !DECISION_BRIEF_HASH_PATTERN.test(example.observed_text_sha256) ||
+    !["observed", "generated", "reviewed"].includes(example.theme_basis) ||
+    themeConfidence === undefined ||
+    (themeConfidence !== null && confidenceMinimum !== null &&
+      themeConfidence < confidenceMinimum) ||
+    (themeConfidence !== null && confidenceMaximum !== null &&
+      themeConfidence > confidenceMaximum) ||
+    typeof example.observed_party_name !== "string" ||
+    !example.observed_party_name.trim() ||
+    Array.from(example.observed_party_name).length > 1_000 ||
+    !PARTY_CAPTURE_METHODS.has(example.party_capture_method) ||
+    !PARTY_RESOLUTION_STATUSES.has(example.party_resolution_status) ||
+    !DOCUMENT_KINDS.has(example.document_kind) ||
+    typeof example.source_slug !== "string" ||
+    !SOURCE_PATTERN.test(example.source_slug) ||
+    decisionBriefString(example.source_name, 500) === undefined ||
+    decisionBriefString(example.source_external_id, 2_000) === undefined ||
+    typeof example.source_external_id_truncated !== "boolean" ||
+    sourceUrl === null ||
+    !DECISION_BRIEF_HASH_PATTERN.test(example.artifact_sha256) ||
+    example.text_basis !== "observed"
+  ) {
+    return null;
+  }
+  return {
+    agreement_id: example.agreement_id,
+    clause_id: example.clause_id,
+    clause_sequence: clauseSequence,
+    clause_heading: clauseHeading,
+    page_start: pageStart,
+    page_end: pageEnd,
+    char_start: charStart,
+    char_end: charEnd,
+    observed_text_excerpt: example.observed_text_excerpt,
+    observed_text_excerpt_truncated: example.observed_text_excerpt_truncated,
+    observed_text_sha256: example.observed_text_sha256,
+    text_basis: "observed",
+    theme_basis: example.theme_basis,
+    theme_confidence: themeConfidence,
+    taxonomy_version: taxonomyVersion,
+    generated_by: generatedBy,
+    observed_party_name: example.observed_party_name,
+    observed_party_role: observedRole,
+    party_capture_method: example.party_capture_method,
+    party_resolution_status: example.party_resolution_status,
+    document_kind: example.document_kind,
+    observed_title: observedTitle,
+    source_slug: example.source_slug,
+    source_name: example.source_name,
+    source_external_id: example.source_external_id,
+    source_external_id_truncated: example.source_external_id_truncated,
+    source_url: sourceUrl,
+    observed_published_at: observedPublishedAt,
+    artifact_sha256: example.artifact_sha256,
+    theme,
+  };
+}
+
+export function buildPartyDossierExport(
+  value,
+  generatedAt = new Date().toISOString(),
+) {
+  const root = record(value);
+  const scope = record(root.party_scope);
+  const coverage = record(root.coverage);
+  const limits = record(root.limits);
+  const familyCoverage = partyDossierFamilyCoverage(root);
+  const query = decisionBriefString(scope.query, 200);
+  const normalizedQuery = decisionBriefString(scope.normalized_query, 200);
+  const matchedPartyRecords = decisionBriefInteger(scope.matched_party_records);
+  const documentRecords = decisionBriefInteger(coverage.document_records);
+  const distinctArtifacts = decisionBriefInteger(coverage.distinct_artifacts);
+  const observedClauses = decisionBriefInteger(coverage.observed_clauses);
+  const publishedAtMinimum = partyDossierTimestamp(coverage.published_at_min);
+  const publishedAtMaximum = partyDossierTimestamp(coverage.published_at_max);
+  const sourceRows = array(coverage.sources);
+  const sources = [];
+  for (const sourceValue of sourceRows) {
+    const source = record(sourceValue);
+    const sourceCount = decisionBriefInteger(source.document_records, 1);
+    if (
+      typeof source.source_slug !== "string" ||
+      !SOURCE_PATTERN.test(source.source_slug) ||
+      decisionBriefString(source.source_name, 500) === undefined ||
+      sourceCount === null ||
+      sources.some((item) => item.source_slug === source.source_slug)
+    ) {
+      throw new TypeError("Party dossier export is invalid");
+    }
+    sources.push({
+      source_slug: source.source_slug,
+      source_name: source.source_name,
+      document_records: sourceCount,
+    });
+  }
+  const documentKinds = partyDossierCountMap(coverage.document_kinds, DOCUMENT_KINDS);
+  const observedRoles = partyDossierCountMap(coverage.observed_roles);
+  const captureMethods = partyDossierCountMap(
+    coverage.capture_methods,
+    PARTY_CAPTURE_METHODS,
+  );
+  const resolutionStatuses = partyDossierCountMap(
+    coverage.party_resolution_statuses,
+    PARTY_RESOLUTION_STATUSES,
+  );
+  const variantRows = array(scope.observed_name_variants);
+  const variants = [];
+  for (const variantValue of variantRows) {
+    const variant = record(variantValue);
+    const mentionCount = decisionBriefInteger(variant.mention_count, 1);
+    const variantDocumentRecords = decisionBriefInteger(
+      variant.document_records,
+      1,
+    );
+    if (
+      decisionBriefString(variant.observed_name, 1_000) === undefined ||
+      mentionCount === null ||
+      variantDocumentRecords === null ||
+      variantDocumentRecords > documentRecords ||
+      variants.some((item) => item.observed_name === variant.observed_name)
+    ) {
+      throw new TypeError("Party dossier export is invalid");
+    }
+    variants.push({
+      observed_name: variant.observed_name,
+      mention_count: mentionCount,
+      document_records: variantDocumentRecords,
+    });
+  }
+  const qualityObservations = partyDossierStringList(
+    root.quality_observations,
+    20,
+  );
+  if (
+    root.api_version !== PARTY_DOSSIER_SCHEMA ||
+    !isValidFamilyTimestamp(generatedAt) ||
+    familyCoverage === null ||
+    query === undefined ||
+    normalizedQuery === undefined ||
+    partyDossierNormalizedName(query) !== normalizedQuery ||
+    scope.match_mode !== "exact_case_insensitive_whitespace_normalized" ||
+    matchedPartyRecords === null ||
+    typeof scope.low_specificity_warning !== "boolean" ||
+    scope.identity_resolution_applied !== false ||
+    typeof scope.observed_name_variants_truncated !== "boolean" ||
+    !Array.isArray(scope.observed_name_variants) ||
+    variantRows.length > 100 ||
+    variants.some((variant) =>
+      partyDossierNormalizedName(variant.observed_name) !== normalizedQuery
+    ) ||
+    documentRecords === null ||
+    distinctArtifacts === null ||
+    observedClauses === null ||
+    distinctArtifacts > documentRecords ||
+    publishedAtMinimum === undefined ||
+    publishedAtMaximum === undefined ||
+    ((publishedAtMinimum === null) !== (publishedAtMaximum === null)) ||
+    (publishedAtMinimum !== null &&
+      Date.parse(publishedAtMinimum) > Date.parse(publishedAtMaximum)) ||
+    !Array.isArray(coverage.sources) ||
+    sources.reduce((sum, source) => sum + source.document_records, 0) !==
+      documentRecords ||
+    documentKinds === null ||
+    Object.values(documentKinds).reduce((sum, count) => sum + count, 0) !==
+      documentRecords ||
+    observedRoles === null ||
+    captureMethods === null ||
+    Object.values(observedRoles).reduce((sum, count) => sum + count, 0) !==
+      variants.reduce((sum, variant) => sum + variant.mention_count, 0) ||
+    Object.values(captureMethods).reduce((sum, count) => sum + count, 0) !==
+      variants.reduce((sum, variant) => sum + variant.mention_count, 0) ||
+    resolutionStatuses === null ||
+    Object.values(resolutionStatuses).reduce((sum, count) => sum + count, 0) !==
+      matchedPartyRecords ||
+    qualityObservations === null ||
+    limits.theme_limit === null ||
+    decisionBriefInteger(limits.theme_limit, 1) === null ||
+    limits.theme_limit > 20 ||
+    limits.examples_per_theme === null ||
+    decisionBriefInteger(limits.examples_per_theme, 1) === null ||
+    limits.examples_per_theme > 3 ||
+    limits.example_text_characters !== 2_000 ||
+    limits.theme_selection !== "commercial_priority_v1" ||
+    limits.theme_noise_filter !== "dated_crown_copyright_notice_only_v1" ||
+    limits.stored_theme_rows_mutated !== false ||
+    limits.exact_observed_name_scope_only !== true ||
+    limits.complete_party_portfolio_claimed !== false ||
+    limits.theme_counts_are_market_prevalence !== false ||
+    limits.document_records_are_unique_relationships !== false ||
+    limits.generated_theme_labels_are_legal_conclusions !== false
+  ) {
+    throw new TypeError("Party dossier export is invalid");
+  }
+
+  const themes = [];
+  const themeRows = array(root.theme_coverage);
+  if (!Array.isArray(root.theme_coverage) || themeRows.length > limits.theme_limit) {
+    throw new TypeError("Party dossier export is invalid");
+  }
+  for (const [themeIndex, themeValue] of themeRows.entries()) {
+    const theme = record(themeValue);
+    const themeKey = decisionBriefString(theme.theme, 200);
+    const commercialPriority = decisionBriefInteger(theme.commercial_priority, 1);
+    const clauseMatches = decisionBriefInteger(theme.clause_matches, 1);
+    const themeDocumentRecords = decisionBriefInteger(theme.document_records, 1);
+    const basisCounts = partyDossierCountMap(
+      theme.basis_counts,
+      new Set(["observed", "generated", "reviewed"]),
+    );
+    const taxonomyVersions = partyDossierStringList(theme.taxonomy_versions);
+    const generatedBy = partyDossierStringList(theme.generated_by);
+    const confidenceMinimum = partyDossierConfidence(
+      theme.detector_confidence_min,
+      true,
+    );
+    const confidenceMaximum = partyDossierConfidence(
+      theme.detector_confidence_max,
+      true,
+    );
+    const qualityWarning = partyDossierOptionalText(theme.quality_warning, 1_000);
+    const examples = array(theme.examples).map((example) =>
+      partyDossierExample(
+        example,
+        themeKey,
+        confidenceMinimum,
+        confidenceMaximum,
+      )
+    );
+    if (
+      themeKey === undefined ||
+      !/^[a-z0-9_]{1,200}$/.test(themeKey) ||
+      themes.some((item) => item.theme === themeKey) ||
+      commercialPriority === null ||
+      (themeIndex > 0 &&
+        commercialPriority < themes[themeIndex - 1].commercial_priority) ||
+      theme.theme_label_status !== "generated_or_reviewed_metadata" ||
+      clauseMatches === null ||
+      clauseMatches > observedClauses ||
+      themeDocumentRecords === null ||
+      themeDocumentRecords > documentRecords ||
+      basisCounts === null ||
+      Object.values(basisCounts).reduce((sum, count) => sum + count, 0) !==
+        clauseMatches ||
+      taxonomyVersions === null ||
+      generatedBy === null ||
+      confidenceMinimum === undefined ||
+      confidenceMaximum === undefined ||
+      ((confidenceMinimum === null) !== (confidenceMaximum === null)) ||
+      (confidenceMinimum !== null && confidenceMinimum > confidenceMaximum) ||
+      qualityWarning === undefined ||
+      !Array.isArray(theme.examples) ||
+      examples.length !== Math.min(limits.examples_per_theme, themeDocumentRecords) ||
+      examples.some((example) => example === null) ||
+      new Set(examples.map((example) => example?.agreement_id)).size !==
+        examples.length ||
+      examples.some((example) =>
+        partyDossierNormalizedName(example?.observed_party_name) !==
+          normalizedQuery ||
+        !sources.some((source) => source.source_slug === example?.source_slug) ||
+        !Object.hasOwn(documentKinds, example?.document_kind) ||
+        !Object.hasOwn(captureMethods, example?.party_capture_method) ||
+        !Object.hasOwn(
+          resolutionStatuses,
+          example?.party_resolution_status,
+        ) ||
+        !Object.hasOwn(
+          observedRoles,
+          example?.observed_party_role ?? "not_stated",
+        ) ||
+        !Object.hasOwn(basisCounts, example?.theme_basis) ||
+        (example?.taxonomy_version !== null &&
+          !taxonomyVersions.includes(example.taxonomy_version)) ||
+        (example?.generated_by !== null &&
+          !generatedBy.includes(example.generated_by))
+      )
+    ) {
+      throw new TypeError("Party dossier export is invalid");
+    }
+    themes.push({
+      theme: themeKey,
+      commercial_priority: commercialPriority,
+      theme_label_status: theme.theme_label_status,
+      clause_matches: clauseMatches,
+      document_records: themeDocumentRecords,
+      basis_counts: basisCounts,
+      taxonomy_versions: taxonomyVersions,
+      generated_by: generatedBy,
+      detector_confidence_min: confidenceMinimum,
+      detector_confidence_max: confidenceMaximum,
+      quality_warning: qualityWarning,
+      examples,
+    });
+  }
+  if (documentRecords === 0 && (themes.length || observedClauses !== 0)) {
+    throw new TypeError("Party dossier export is invalid");
+  }
+  return {
+    schema: PARTY_DOSSIER_EXPORT_SCHEMA,
+    source_api_version: PARTY_DOSSIER_SCHEMA,
+    generated_at: generatedAt,
+    scope: {
+      party_query: query,
+      normalized_party_query: normalizedQuery,
+      match_mode: scope.match_mode,
+      matched_party_records: matchedPartyRecords,
+      observed_name_variants: variants,
+      observed_name_variants_truncated:
+        scope.observed_name_variants_truncated,
+      low_specificity_warning: scope.low_specificity_warning,
+      identity_resolution_applied: false,
+    },
+    coverage: {
+      document_records: documentRecords,
+      distinct_artifacts: distinctArtifacts,
+      observed_clauses: observedClauses,
+      published_at_min: publishedAtMinimum,
+      published_at_max: publishedAtMaximum,
+      sources,
+      document_kinds: documentKinds,
+      observed_roles: observedRoles,
+      capture_methods: captureMethods,
+      party_resolution_statuses: resolutionStatuses,
+      recorded_family_groups: familyCoverage.recordedFamilyGroups,
+      document_records_with_recorded_family_key:
+        familyCoverage.documentsWithFamily,
+      document_records_without_recorded_family_key:
+        familyCoverage.documentsWithoutFamily,
+      multi_document_recorded_family_groups:
+        familyCoverage.multiDocumentFamilies,
+      largest_recorded_family_document_count:
+        familyCoverage.largestFamilyDocuments,
+    },
+    limits: {
+      theme_limit: limits.theme_limit,
+      theme_selection: limits.theme_selection,
+      examples_per_theme: limits.examples_per_theme,
+      example_text_characters: limits.example_text_characters,
+      theme_noise_filter: limits.theme_noise_filter,
+      stored_theme_rows_mutated: false,
+      exact_observed_name_scope_only: true,
+      complete_party_portfolio_claimed: false,
+      document_records_are_unique_relationships: false,
+      theme_counts_are_market_prevalence: false,
+      generated_theme_labels_are_legal_conclusions: false,
+      recorded_family_key_basis: limits.recorded_family_key_basis,
+      recorded_family_keys_are_reviewed_relationships: false,
+      recorded_family_keys_are_unique_deals: false,
+      raw_family_keys_exposed: false,
+    },
+    themes,
+    quality_observations: qualityObservations,
+    limitations: [
+      "The party scope is an exact normalized observed-name match, not entity resolution or a complete portfolio.",
+      "Document records and recorded family keys are not unique deals or reviewed relationships.",
+      "Theme labels, counts and commercial-priority order are generated navigation, not market prevalence, risk scores or legal conclusions.",
+      "Examples are bounded observed excerpts; inspect complete agreements, definitions, schedules, amendments and related documents before relying on them.",
+      "A missing theme or example does not establish that wording, a right or a legal consequence is absent.",
+    ],
+    export_safety: {
+      private_storage_paths_included: false,
+      bearer_token_included: false,
+      spreadsheet_formula_execution: false,
+    },
+  };
+}
+
+const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
+  "matrix_schema",
+  "generated_at",
+  "party_query",
+  "normalized_party_query",
+  "match_mode",
+  "matched_party_records",
+  "observed_name_variants_json",
+  "observed_name_variants_truncated",
+  "identity_resolution_applied",
+  "low_specificity_warning",
+  "coverage_document_records",
+  "coverage_distinct_artifacts",
+  "coverage_observed_clauses",
+  "coverage_published_at_min",
+  "coverage_published_at_max",
+  "coverage_sources_json",
+  "coverage_document_kinds_json",
+  "coverage_observed_roles_json",
+  "coverage_capture_methods_json",
+  "coverage_party_resolution_statuses_json",
+  "recorded_family_groups",
+  "documents_with_recorded_family_key",
+  "documents_without_recorded_family_key",
+  "multi_document_recorded_family_groups",
+  "largest_recorded_family_document_count",
+  "recorded_family_key_basis",
+  "recorded_family_keys_are_reviewed_relationships",
+  "recorded_family_keys_are_unique_deals",
+  "raw_family_keys_exposed",
+  "theme_limit",
+  "theme_selection",
+  "examples_per_theme",
+  "example_text_characters",
+  "theme_noise_filter",
+  "stored_theme_rows_mutated",
+  "theme_row_present",
+  "theme_number",
+  "theme_key",
+  "commercial_priority",
+  "theme_label_status",
+  "theme_clause_matches",
+  "theme_document_records",
+  "theme_basis_counts_json",
+  "theme_taxonomy_versions",
+  "theme_generated_by",
+  "detector_confidence_min",
+  "detector_confidence_max",
+  "theme_quality_warning",
+  "example_row_present",
+  "example_number",
+  "agreement_id",
+  "clause_id",
+  "clause_sequence",
+  "clause_heading",
+  "page_start",
+  "page_end",
+  "char_start",
+  "char_end",
+  "observed_text_excerpt",
+  "observed_text_excerpt_truncated",
+  "observed_text_sha256",
+  "text_basis",
+  "theme_basis",
+  "theme_confidence",
+  "example_taxonomy_version",
+  "example_generated_by",
+  "observed_party_name",
+  "observed_party_role",
+  "party_capture_method",
+  "party_resolution_status",
+  "document_kind",
+  "observed_title",
+  "source_slug",
+  "source_name",
+  "source_external_id",
+  "source_external_id_truncated",
+  "source_url",
+  "observed_published_at",
+  "artifact_sha256",
+  "exact_observed_name_scope_only",
+  "complete_party_portfolio_claimed",
+  "document_records_are_unique_relationships",
+  "theme_counts_are_market_prevalence",
+  "generated_theme_labels_are_legal_conclusions",
+  "quality_observations",
+  "dossier_limitations",
+  "private_storage_paths_included",
+  "bearer_token_included",
+]);
+
+function serializePartyDossierMatrix(output) {
+  const rows = [];
+  const themes = output.themes.length ? output.themes : [null];
+  for (const [themeIndex, theme] of themes.entries()) {
+    const examples = theme?.examples.length ? theme.examples : [null];
+    for (const [exampleIndex, example] of examples.entries()) {
+      rows.push({
+        matrix_schema: PARTY_DOSSIER_MATRIX_SCHEMA,
+        generated_at: output.generated_at,
+        party_query: output.scope.party_query,
+        normalized_party_query: output.scope.normalized_party_query,
+        match_mode: output.scope.match_mode,
+        matched_party_records: output.scope.matched_party_records,
+        observed_name_variants_json: JSON.stringify(
+          output.scope.observed_name_variants,
+        ),
+        observed_name_variants_truncated: matrixBoolean(
+          output.scope.observed_name_variants_truncated,
+        ),
+        identity_resolution_applied: "FALSE",
+        low_specificity_warning: matrixBoolean(
+          output.scope.low_specificity_warning,
+        ),
+        coverage_document_records: output.coverage.document_records,
+        coverage_distinct_artifacts: output.coverage.distinct_artifacts,
+        coverage_observed_clauses: output.coverage.observed_clauses,
+        coverage_published_at_min: output.coverage.published_at_min,
+        coverage_published_at_max: output.coverage.published_at_max,
+        coverage_sources_json: JSON.stringify(output.coverage.sources),
+        coverage_document_kinds_json: JSON.stringify(
+          output.coverage.document_kinds,
+        ),
+        coverage_observed_roles_json: JSON.stringify(
+          output.coverage.observed_roles,
+        ),
+        coverage_capture_methods_json: JSON.stringify(
+          output.coverage.capture_methods,
+        ),
+        coverage_party_resolution_statuses_json: JSON.stringify(
+          output.coverage.party_resolution_statuses,
+        ),
+        recorded_family_groups: output.coverage.recorded_family_groups,
+        documents_with_recorded_family_key:
+          output.coverage.document_records_with_recorded_family_key,
+        documents_without_recorded_family_key:
+          output.coverage.document_records_without_recorded_family_key,
+        multi_document_recorded_family_groups:
+          output.coverage.multi_document_recorded_family_groups,
+        largest_recorded_family_document_count:
+          output.coverage.largest_recorded_family_document_count,
+        recorded_family_key_basis: output.limits.recorded_family_key_basis,
+        recorded_family_keys_are_reviewed_relationships: "FALSE",
+        recorded_family_keys_are_unique_deals: "FALSE",
+        raw_family_keys_exposed: "FALSE",
+        theme_limit: output.limits.theme_limit,
+        theme_selection: output.limits.theme_selection,
+        examples_per_theme: output.limits.examples_per_theme,
+        example_text_characters: output.limits.example_text_characters,
+        theme_noise_filter: output.limits.theme_noise_filter,
+        stored_theme_rows_mutated: "FALSE",
+        theme_row_present: matrixBoolean(theme !== null),
+        theme_number: theme === null ? null : themeIndex + 1,
+        theme_key: theme?.theme,
+        commercial_priority: theme?.commercial_priority,
+        theme_label_status: theme?.theme_label_status,
+        theme_clause_matches: theme?.clause_matches,
+        theme_document_records: theme?.document_records,
+        theme_basis_counts_json: theme
+          ? JSON.stringify(theme.basis_counts)
+          : null,
+        theme_taxonomy_versions: theme?.taxonomy_versions.join(" | "),
+        theme_generated_by: theme?.generated_by.join(" | "),
+        detector_confidence_min: theme?.detector_confidence_min,
+        detector_confidence_max: theme?.detector_confidence_max,
+        theme_quality_warning: theme?.quality_warning,
+        example_row_present: matrixBoolean(example !== null),
+        example_number: example === null ? null : exampleIndex + 1,
+        agreement_id: example?.agreement_id,
+        clause_id: example?.clause_id,
+        clause_sequence: example?.clause_sequence,
+        clause_heading: example?.clause_heading,
+        page_start: example?.page_start,
+        page_end: example?.page_end,
+        char_start: example?.char_start,
+        char_end: example?.char_end,
+        observed_text_excerpt: example?.observed_text_excerpt,
+        observed_text_excerpt_truncated: example === null
+          ? null
+          : matrixBoolean(example.observed_text_excerpt_truncated),
+        observed_text_sha256: example?.observed_text_sha256,
+        text_basis: example?.text_basis,
+        theme_basis: example?.theme_basis,
+        theme_confidence: example?.theme_confidence,
+        example_taxonomy_version: example?.taxonomy_version,
+        example_generated_by: example?.generated_by,
+        observed_party_name: example?.observed_party_name,
+        observed_party_role: example?.observed_party_role,
+        party_capture_method: example?.party_capture_method,
+        party_resolution_status: example?.party_resolution_status,
+        document_kind: example?.document_kind,
+        observed_title: example?.observed_title,
+        source_slug: example?.source_slug,
+        source_name: example?.source_name,
+        source_external_id: example?.source_external_id,
+        source_external_id_truncated: example === null
+          ? null
+          : matrixBoolean(example.source_external_id_truncated),
+        source_url: example?.source_url,
+        observed_published_at: example?.observed_published_at,
+        artifact_sha256: example?.artifact_sha256,
+        exact_observed_name_scope_only: "TRUE",
+        complete_party_portfolio_claimed: "FALSE",
+        document_records_are_unique_relationships: "FALSE",
+        theme_counts_are_market_prevalence: "FALSE",
+        generated_theme_labels_are_legal_conclusions: "FALSE",
+        quality_observations: output.quality_observations.join(" | "),
+        dossier_limitations: output.limitations.join(" | "),
+        private_storage_paths_included: "FALSE",
+        bearer_token_included: "FALSE",
+      });
+    }
+  }
+  return "\uFEFF" + [
+    PARTY_DOSSIER_MATRIX_COLUMNS.map(csvCell).join(","),
+    ...rows.map((row) =>
+      PARTY_DOSSIER_MATRIX_COLUMNS.map((column) => csvCell(row[column])).join(",")
+    ),
+  ].join("\r\n") + "\r\n";
+}
+
+export function buildPartyDossierCsv(
+  value,
+  generatedAt = new Date().toISOString(),
+) {
+  return serializePartyDossierMatrix(
+    buildPartyDossierExport(value, generatedAt),
+  );
+}
+
 export function formatEvidenceLocation(value) {
   const clause = record(value);
   if (
@@ -8727,6 +9446,8 @@ function boot() {
     partyBriefScanGeneration: 0,
     partyBriefScanLoading: false,
     partyDossierLoading: false,
+    partyDossierExport: null,
+    partyDossierCsv: null,
     positionSignal: "",
     positionFeature: "",
     positionValue: "",
@@ -8925,8 +9646,11 @@ function boot() {
   const partyDossierSection = byId("party-dossier-section");
   const partyDossierTitle = byId("party-dossier-title");
   const partyDossierStatus = byId("party-dossier-status");
+  const partyDossierExportStatus = byId("party-dossier-export-status");
   const partyDossierSummary = byId("party-dossier-summary");
   const partyDossierThemes = byId("party-dossier-themes");
+  const downloadPartyDossierCsvButton = byId("download-party-dossier-csv");
+  const downloadPartyDossierJsonButton = byId("download-party-dossier-json");
   const searchForm = byId("search-form");
   const queryInput = byId("query");
   const clausePartyInput = byId("clause-party");
@@ -9021,6 +9745,8 @@ function boot() {
     state.partyBriefScanGeneration += 1;
     state.partyBriefScanLoading = false;
     state.partyDossierLoading = false;
+    state.partyDossierExport = null;
+    state.partyDossierCsv = null;
     state.positionSignal = "";
     state.positionFeature = "";
     state.positionValue = "";
@@ -9145,6 +9871,10 @@ function boot() {
     partyDossierSection.hidden = true;
     partyDossierSummary.replaceChildren();
     partyDossierThemes.replaceChildren();
+    downloadPartyDossierCsvButton.disabled = true;
+    downloadPartyDossierJsonButton.disabled = true;
+    partyDossierExportStatus.textContent =
+      "Exports are built only after the bounded dossier passes strict evidence and provenance validation.";
     detailBody.replaceChildren();
     decisionBriefBody.replaceChildren();
     decisionBriefStatus.textContent = "";
@@ -13155,12 +13885,21 @@ function boot() {
     state.partyBriefCoverage = new Map();
     state.partyBriefShortlistExport = null;
     state.partyBriefShortlistCsv = null;
+    state.partyDossierExport = null;
+    state.partyDossierCsv = null;
     state.partySearching = true;
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
     downloadPartyBriefShortlistButton.disabled = true;
     downloadPartyBriefShortlistCsvButton.disabled = true;
     partyBriefShortlistExportStatus.textContent = "";
+    partyDossierSection.hidden = true;
+    partyDossierSummary.replaceChildren();
+    partyDossierThemes.replaceChildren();
+    downloadPartyDossierCsvButton.disabled = true;
+    downloadPartyDossierJsonButton.disabled = true;
+    partyDossierExportStatus.textContent =
+      "Exports are built only after the bounded dossier passes strict evidence and provenance validation.";
     partySearchButton.disabled = true;
     partyBriefRankButton.disabled = true;
     partyPrevious.disabled = true;
@@ -13189,6 +13928,9 @@ function boot() {
 
   function renderPartyDossier(payload) {
     const root = record(record(payload).data);
+    const generatedAt = new Date().toISOString();
+    const dossierExport = buildPartyDossierExport(root, generatedAt);
+    const dossierCsv = serializePartyDossierMatrix(dossierExport);
     const scope = record(root.party_scope);
     const coverage = record(root.coverage);
     const familyCoverage = partyDossierFamilyCoverage(root);
@@ -13366,21 +14108,39 @@ function boot() {
     partyDossierStatus.textContent = scope.low_specificity_warning === true
       ? `${familySummary} This is a low-specificity observed name. Treat every result as ambiguous and inspect source evidence.`
       : `${familySummary} Family keys are unreviewed grouping hints, not unique deals. Identity resolution was not applied; theme counts are navigation aids, not market prevalence.`;
+    state.partyDossierExport = dossierExport;
+    state.partyDossierCsv = dossierCsv;
+    downloadPartyDossierCsvButton.disabled = false;
+    downloadPartyDossierJsonButton.disabled = false;
+    partyDossierExportStatus.textContent =
+      "Validated evidence JSON and spreadsheet-ready CSV are ready. Both preserve literal-party, theme-generation and family-key limitations without a bearer token or private Storage path.";
   }
 
   async function loadPartyDossier(partyName) {
     if (!state.token || state.partyDossierLoading) return;
     state.partyDossierLoading = true;
+    state.partyDossierExport = null;
+    state.partyDossierCsv = null;
     partyDossierSection.hidden = false;
     partyDossierTitle.textContent = `Observed-party dossier · ${partyName}`;
     partyDossierStatus.textContent = "Building a bounded evidence dossier…";
     partyDossierSummary.replaceChildren();
     partyDossierThemes.replaceChildren(element("div", "result-card skeleton"));
+    downloadPartyDossierCsvButton.disabled = true;
+    downloadPartyDossierJsonButton.disabled = true;
+    partyDossierExportStatus.textContent =
+      "Validating the bounded dossier before enabling either export…";
     partyDossierSection.scrollIntoView({ behavior: "smooth", block: "start" });
     try {
       const path = buildPartyDossierPath({ party: partyName });
       renderPartyDossier(await requestJson(path, state.token));
     } catch (error) {
+      state.partyDossierExport = null;
+      state.partyDossierCsv = null;
+      downloadPartyDossierCsvButton.disabled = true;
+      downloadPartyDossierJsonButton.disabled = true;
+      partyDossierExportStatus.textContent =
+        "No export is available because the dossier did not pass validation.";
       partyDossierThemes.replaceChildren();
       handleFailure(error, partyDossierStatus);
     } finally {
@@ -15126,6 +15886,47 @@ function boot() {
       "Shortlist CSV downloaded with one row per topic/evidence example, literal party-match provenance, evidence hashes, and spreadsheet-formula protection.";
   }
 
+  function downloadPartyDossierJson() {
+    if (!state.partyDossierExport) return;
+    const blob = new Blob(
+      [`${JSON.stringify(state.partyDossierExport, null, 2)}\n`],
+      { type: "application/json;charset=utf-8" },
+    );
+    const objectUrl = URL.createObjectURL(blob);
+    const link = element("a");
+    link.href = objectUrl;
+    link.download = `esheria-party-negotiation-dossier-${
+      state.partyDossierExport.generated_at.slice(0, 10)
+    }.json`;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    partyDossierExportStatus.textContent =
+      "Dossier JSON downloaded with bounded observed evidence and generated theme metadata kept separate; no bearer token or private Storage path was included.";
+  }
+
+  function downloadPartyDossierCsv() {
+    if (!state.partyDossierCsv || !state.partyDossierExport) return;
+    const blob = new Blob([state.partyDossierCsv], {
+      type: "text/csv;charset=utf-8",
+    });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = element("a");
+    link.href = objectUrl;
+    link.download = `esheria-party-negotiation-dossier-matrix-${
+      state.partyDossierExport.generated_at.slice(0, 10)
+    }.csv`;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    partyDossierExportStatus.textContent =
+      "Dossier CSV downloaded with one row per theme example, exact evidence identities, scope limits, and spreadsheet-formula protection.";
+  }
+
   function downloadDecisionBriefComparison() {
     if (!state.decisionBriefComparisonExport) return;
     const output = state.decisionBriefComparisonExport;
@@ -16182,6 +16983,14 @@ function boot() {
     "click",
     downloadPartyDecisionBriefShortlistCsv,
   );
+  downloadPartyDossierCsvButton.addEventListener(
+    "click",
+    downloadPartyDossierCsv,
+  );
+  downloadPartyDossierJsonButton.addEventListener(
+    "click",
+    downloadPartyDossierJson,
+  );
   exportPositionMatrixButton.addEventListener("click", exportPositionMatrix);
   exportTerminationMatrixButton.addEventListener(
     "click",
@@ -16322,9 +17131,15 @@ function boot() {
     performPartySearch();
   });
   byId("close-party-dossier").addEventListener("click", () => {
+    state.partyDossierExport = null;
+    state.partyDossierCsv = null;
     partyDossierSection.hidden = true;
     partyDossierSummary.replaceChildren();
     partyDossierThemes.replaceChildren();
+    downloadPartyDossierCsvButton.disabled = true;
+    downloadPartyDossierJsonButton.disabled = true;
+    partyDossierExportStatus.textContent =
+      "Exports are built only after the bounded dossier passes strict evidence and provenance validation.";
   });
 
   positionValueInput.addEventListener("change", () => {
@@ -16556,6 +17371,8 @@ function boot() {
     state.partyBriefCoverage.clear();
     state.partyBriefShortlistExport = null;
     state.partyBriefShortlistCsv = null;
+    state.partyDossierExport = null;
+    state.partyDossierCsv = null;
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
     state.decisionBriefComparisonSelection.clear();
