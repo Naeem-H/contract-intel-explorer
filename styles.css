@@ -405,6 +405,9 @@ select:focus {
 .brief-directory-form {
   grid-template-columns: minmax(190px, .8fr) 190px minmax(210px, 1fr) auto;
 }
+.amendment-change-form {
+  grid-template-columns: minmax(280px, 1fr) minmax(210px, .7fr) auto;
+}
 .search-note {
   margin: 11px 0 0;
   color: var(--muted);
@@ -493,6 +496,30 @@ select:focus {
 .family-proposal-card {
   display: grid;
   gap: 0.85rem;
+}
+
+.amendment-change-card {
+  display: grid;
+  gap: 0.75rem;
+  max-height: none;
+}
+
+.change-cue-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.change-cue-evidence {
+  padding: 0.85rem;
+  border: 1px solid #3f725a;
+  border-left: 3px solid var(--green);
+  border-radius: 9px;
+  background: #08130e;
+}
+
+.change-cue-evidence p:last-child {
+  margin-bottom: 0;
 }
 
 .brief-directory-card {

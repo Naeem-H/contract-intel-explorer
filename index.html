@@ -224,6 +224,55 @@
           </div>
         </section>
 
+        <section class="search-panel"
+          aria-labelledby="amendment-change-directory-title">
+          <p class="eyebrow">Amendment mechanics</p>
+          <h2
+            id="amendment-change-directory-title">Browse amendment change evidence</h2>
+          <p
+            class="search-note">Find published, nonduplicate amendment records with positive deterministic matches for amendment, replacement, addition, continuing-effect, unchanged-terms, effectiveness, waiver, or novation wording. Each result exposes exact observed support. A cue does not identify the changed instrument, establish amendment direction or relationship, or determine legal effect; OCR-corrupted wording may be missed.</p>
+          <form id="amendment-change-directory-form"
+            class="search-form amendment-change-form">
+            <label for="amendment-change-cue">Change wording</label>
+            <label for="amendment-change-source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <select id="amendment-change-cue" name="cue">
+              <option value="">Any detected change wording</option>
+              <option
+                value="express_amendment_language">Express amendment or modification</option>
+              <option
+                value="delete_and_replace_language">Deletion and replacement</option>
+              <option
+                value="addition_or_insertion_language">Addition or insertion</option>
+              <option
+                value="amended_and_restated_language">Amended and restated</option>
+              <option
+                value="continuing_effect_language">Continuing force and effect</option>
+              <option
+                value="unchanged_terms_language">Unchanged terms</option>
+              <option
+                value="amendment_effectiveness_language">Amendment effectiveness</option>
+              <option
+                value="no_waiver_or_novation_language">No waiver or novation</option>
+            </select>
+            <input id="amendment-change-source" name="source" type="text"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              placeholder="e.g. sec_edgar">
+            <button id="amendment-change-directory-submit"
+              class="button primary" type="submit">Browse evidence</button>
+          </form>
+          <p id="amendment-change-directory-status" class="muted"
+            role="status" aria-live="polite">Browse positive amendment wording with one exact representative cue per agreement.</p>
+          <div id="amendment-change-directory-results"
+            class="results amendment-change-results"></div>
+          <div class="pager">
+            <button id="amendment-change-directory-previous"
+              class="button secondary" type="button" disabled>Previous</button>
+            <button id="amendment-change-directory-next"
+              class="button secondary" type="button" disabled>Next</button>
+          </div>
+        </section>
+
         <section class="search-panel" aria-labelledby="position-library-title">
           <p class="eyebrow">Negotiation position library</p>
           <h2

@@ -28,6 +28,8 @@ export const AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT = 3;
 export const AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX = 5;
 export const AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT = 12;
 export const AGREEMENT_CHANGE_CUE_LIMIT_MAX = 20;
+export const AMENDMENT_CHANGE_DIRECTORY_PAGE_MAX = 20;
+export const AMENDMENT_CHANGE_DIRECTORY_OFFSET_MAX = 500;
 export const AGREEMENT_DECISION_BRIEF_SCHEMA =
   "esheria.agreement-decision-brief.v2";
 export const AGREEMENT_DECISION_BRIEF_COMPARISON_MIN = 2;
@@ -279,6 +281,34 @@ function isAllowedApiTarget(url) {
       offset !== null &&
       /^(0|[1-9]\d*)$/.test(offset) &&
       Number(offset) <= FAMILY_PROPOSAL_OFFSET_MAX
+    );
+  }
+  if (pathname === "/api/amendment-changes") {
+    const allowed = new Set(["cue", "source", "limit", "offset"]);
+    if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
+      return false;
+    }
+    const cues = url.searchParams.getAll("cue");
+    const sources = url.searchParams.getAll("source");
+    if (
+      cues.length > Object.keys(AGREEMENT_CHANGE_CUE_LABELS).length ||
+      sources.length > 25 ||
+      url.searchParams.getAll("limit").length !== 1 ||
+      url.searchParams.getAll("offset").length !== 1 ||
+      cues.some((cue) => !Object.hasOwn(AGREEMENT_CHANGE_CUE_LABELS, cue)) ||
+      sources.some((source) => !SOURCE_PATTERN.test(source))
+    ) {
+      return false;
+    }
+    const limit = url.searchParams.get("limit");
+    const offset = url.searchParams.get("offset");
+    return (
+      limit !== null &&
+      /^[1-9]\d*$/.test(limit) &&
+      Number(limit) <= AMENDMENT_CHANGE_DIRECTORY_PAGE_MAX &&
+      offset !== null &&
+      /^(0|[1-9]\d*)$/.test(offset) &&
+      Number(offset) <= AMENDMENT_CHANGE_DIRECTORY_OFFSET_MAX
     );
   }
   if (pathname === "/api/decision-briefs") {
@@ -787,6 +817,63 @@ export function buildFamilyProposalPath({ limit = 20, offset = 0 } = {}) {
   }`;
 }
 
+export function buildAmendmentChangeDirectoryPath({
+  cueKeys = [],
+  sourceSlugs = [],
+  limit = 12,
+  offset = 0,
+} = {}) {
+  if (!Array.isArray(cueKeys) || !Array.isArray(sourceSlugs)) {
+    throw new TypeError("Amendment change filters must be arrays");
+  }
+  const cues = [...new Set(cueKeys)];
+  if (
+    cues.length > Object.keys(AGREEMENT_CHANGE_CUE_LABELS).length ||
+    cues.some(
+      (cue) =>
+        typeof cue !== "string" ||
+        !Object.hasOwn(AGREEMENT_CHANGE_CUE_LABELS, cue),
+    )
+  ) {
+    throw new TypeError("Amendment change cue filter is invalid");
+  }
+  const sources = [...new Set(sourceSlugs.map((source) =>
+    typeof source === "string" ? source.trim().toLowerCase() : source
+  ))];
+  if (
+    sources.length > 25 ||
+    sources.some(
+      (source) => typeof source !== "string" || !SOURCE_PATTERN.test(source),
+    )
+  ) {
+    throw new TypeError("Amendment change source filter is invalid");
+  }
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > AMENDMENT_CHANGE_DIRECTORY_PAGE_MAX
+  ) {
+    throw new TypeError(
+      "Amendment change directory limit is outside the allowed range",
+    );
+  }
+  if (
+    !Number.isInteger(offset) ||
+    offset < 0 ||
+    offset > AMENDMENT_CHANGE_DIRECTORY_OFFSET_MAX
+  ) {
+    throw new TypeError(
+      "Amendment change directory offset is outside the allowed range",
+    );
+  }
+  const params = new URLSearchParams();
+  for (const cue of cues) params.append("cue", cue);
+  for (const source of sources) params.append("source", source);
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  return `/api/amendment-changes?${params.toString()}`;
+}
+
 export function buildPartyClauseSearchPath({ party, ...input }) {
   const partyPath = buildPartySearchPath({ query: party });
   const normalizedParty = new URL(
@@ -1086,6 +1173,71 @@ const AGREEMENT_CHANGE_CUE_EXACT_KEYS = Object.freeze({
     "one_match_per_rule_per_clause",
     "cues_truncated",
     "positive_matches_only",
+    "absence_is_not_evidence_of_absence",
+    "change_target_identified",
+    "amendment_direction_determined",
+    "agreement_relationship_established",
+    "legal_effect_determined",
+  ],
+});
+const AMENDMENT_CHANGE_DIRECTORY_LIMITATIONS = Object.freeze([
+  "This directory contains published amendment records with positive deterministic wording matches; it is not an exhaustive amendment inventory or market-prevalence measure.",
+  "Counts reflect the selected cue and source filters. A missing record or cue does not establish absence, particularly where source text is OCR-corrupted.",
+  "A cue does not identify which provision or document is changed and does not establish amendment direction, incorporation, supersession, novation or legal effect.",
+  "Open the complete change-cue packet, underlying instrument and related documents before relying on a result.",
+]);
+const AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS = Object.freeze({
+  root: [
+    "api_version",
+    "generated_at",
+    "items",
+    "page",
+    "filters",
+    "limits",
+    "limitations",
+  ],
+  item: [
+    "agreement",
+    "source",
+    "coverage",
+    "cue_summary",
+    "representative_cue",
+    "full_change_cues_available",
+  ],
+  agreement: [...AGREEMENT_CHANGE_CUE_EXACT_KEYS.agreement, "title_truncated"],
+  coverage: [
+    "current_clause_count",
+    "candidate_clause_count",
+    "matching_clause_count",
+    "matched_cue_count",
+    "matched_cue_class_count",
+    "clauses_truncated_for_scan",
+  ],
+  cueSummary: [
+    "cue_key",
+    "label",
+    "matching_clause_count",
+    "matched_cue_count",
+  ],
+  page: [
+    "limit",
+    "offset",
+    "returned_count",
+    "eligible_matching_amendments",
+    "has_more",
+  ],
+  filters: ["cue_keys", "source_slugs", "document_kind"],
+  limits: [
+    "maximum_page_size",
+    "maximum_offset",
+    "maximum_supported_cue_filters",
+    "maximum_supported_source_filters",
+    "supported_rule_count",
+    "maximum_clause_characters_scanned",
+    "one_match_per_rule_per_clause",
+    "one_representative_cue_per_agreement",
+    "positive_matches_only",
+    "full_evidence_revalidated_when_agreement_opens",
     "absence_is_not_evidence_of_absence",
     "change_target_identified",
     "amendment_direction_determined",
@@ -2133,6 +2285,287 @@ export function agreementChangeCueEvidence(
     source: { ...source, publisher, source_url: sourceUrl },
     cues,
     coverage: { ...coverage },
+    limits: { ...limits },
+    limitations: [...root.limitations],
+  };
+}
+
+export function amendmentChangeDirectoryEvidence(value, expected = {}) {
+  let normalizedPath;
+  try {
+    normalizedPath = buildAmendmentChangeDirectoryPath(expected);
+  } catch {
+    return null;
+  }
+  const expectedParams = new URL(
+    normalizedPath,
+    "https://route.invalid",
+  ).searchParams;
+  const expectedCueKeys = expectedParams.getAll("cue");
+  const expectedSourceSlugs = expectedParams.getAll("source");
+  const expectedLimit = Number(expectedParams.get("limit"));
+  const expectedOffset = Number(expectedParams.get("offset"));
+
+  const root = record(value);
+  const page = record(root.page);
+  const filters = record(root.filters);
+  const limits = record(root.limits);
+  const returnedCount = decisionBriefInteger(page.returned_count);
+  const eligibleCount = decisionBriefInteger(
+    page.eligible_matching_amendments,
+  );
+  if (
+    !hasExactKeys(root, AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.root) ||
+    root.api_version !== "amendment-change-directory-v1" ||
+    !isValidFamilyTimestamp(root.generated_at) ||
+    !Array.isArray(root.items) ||
+    !hasExactKeys(page, AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.page) ||
+    page.limit !== expectedLimit ||
+    page.offset !== expectedOffset ||
+    returnedCount === null ||
+    returnedCount !== root.items.length ||
+    returnedCount > expectedLimit ||
+    eligibleCount === null ||
+    page.has_more !== expectedOffset + returnedCount < eligibleCount ||
+    returnedCount !==
+      (expectedOffset >= eligibleCount
+        ? 0
+        : Math.min(expectedLimit, eligibleCount - expectedOffset)) ||
+    !hasExactKeys(filters, AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.filters) ||
+    !Array.isArray(filters.cue_keys) ||
+    !Array.isArray(filters.source_slugs) ||
+    JSON.stringify(filters.cue_keys) !== JSON.stringify(expectedCueKeys) ||
+    JSON.stringify(filters.source_slugs) !==
+      JSON.stringify(expectedSourceSlugs) ||
+    filters.document_kind !== "amendment" ||
+    !hasExactKeys(limits, AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.limits) ||
+    limits.maximum_page_size !== AMENDMENT_CHANGE_DIRECTORY_PAGE_MAX ||
+    limits.maximum_offset !== AMENDMENT_CHANGE_DIRECTORY_OFFSET_MAX ||
+    limits.maximum_supported_cue_filters !== 8 ||
+    limits.maximum_supported_source_filters !== 25 ||
+    limits.supported_rule_count !== 8 ||
+    limits.maximum_clause_characters_scanned !== 500_000 ||
+    limits.one_match_per_rule_per_clause !== true ||
+    limits.one_representative_cue_per_agreement !== true ||
+    limits.positive_matches_only !== true ||
+    limits.full_evidence_revalidated_when_agreement_opens !== true ||
+    limits.absence_is_not_evidence_of_absence !== true ||
+    limits.change_target_identified !== false ||
+    limits.amendment_direction_determined !== false ||
+    limits.agreement_relationship_established !== false ||
+    limits.legal_effect_determined !== false ||
+    !Array.isArray(root.limitations) ||
+    root.limitations.length !== AMENDMENT_CHANGE_DIRECTORY_LIMITATIONS.length ||
+    root.limitations.some(
+      (limitation, index) =>
+        limitation !== AMENDMENT_CHANGE_DIRECTORY_LIMITATIONS[index],
+    )
+  ) {
+    return null;
+  }
+
+  const items = [];
+  const agreementIds = new Set();
+  let previous = null;
+  for (const itemValue of root.items) {
+    const item = record(itemValue);
+    const agreement = record(item.agreement);
+    const coverage = record(item.coverage);
+    const currentClauseCount = decisionBriefInteger(
+      coverage.current_clause_count,
+      1,
+    );
+    const candidateClauseCount = decisionBriefInteger(
+      coverage.candidate_clause_count,
+      1,
+    );
+    const matchingClauseCount = decisionBriefInteger(
+      coverage.matching_clause_count,
+      1,
+    );
+    const matchedCueCount = decisionBriefInteger(
+      coverage.matched_cue_count,
+      1,
+    );
+    const matchedCueClassCount = decisionBriefInteger(
+      coverage.matched_cue_class_count,
+      1,
+    );
+    const truncatedClauseCount = decisionBriefInteger(
+      coverage.clauses_truncated_for_scan,
+    );
+    if (
+      !hasExactKeys(item, AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.item) ||
+      !hasExactKeys(
+        agreement,
+        AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.agreement,
+      ) ||
+      agreement.document_kind !== "amendment" ||
+      typeof agreement.title_truncated !== "boolean" ||
+      (agreement.title === null && agreement.title_truncated) ||
+      (agreement.title_truncated &&
+        Array.from(agreement.title ?? "").length !== 500) ||
+      !hasExactKeys(
+        coverage,
+        AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.coverage,
+      ) ||
+      currentClauseCount === null ||
+      candidateClauseCount === null ||
+      matchingClauseCount === null ||
+      matchedCueCount === null ||
+      matchedCueClassCount === null ||
+      truncatedClauseCount === null ||
+      candidateClauseCount > currentClauseCount ||
+      matchingClauseCount > candidateClauseCount ||
+      matchingClauseCount > matchedCueCount ||
+      matchedCueClassCount > matchedCueCount ||
+      matchedCueClassCount > Object.keys(AGREEMENT_CHANGE_CUE_LABELS).length ||
+      truncatedClauseCount > currentClauseCount ||
+      item.full_change_cues_available !== true ||
+      !Array.isArray(item.cue_summary) ||
+      item.cue_summary.length !== matchedCueClassCount ||
+      agreementIds.has(agreement.agreement_id)
+    ) {
+      return null;
+    }
+
+    const cueSummary = [];
+    const summarizedCueKeys = new Set();
+    let previousCueOrdinal = -1;
+    let summarizedCueCount = 0;
+    for (const summaryValue of item.cue_summary) {
+      const summary = record(summaryValue);
+      const ordinal = AGREEMENT_CHANGE_CUE_ORDER.get(summary.cue_key);
+      const cueClauseCount = decisionBriefInteger(
+        summary.matching_clause_count,
+        1,
+      );
+      const cueCount = decisionBriefInteger(summary.matched_cue_count, 1);
+      if (
+        !hasExactKeys(
+          summary,
+          AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.cueSummary,
+        ) ||
+        ordinal === undefined ||
+        ordinal <= previousCueOrdinal ||
+        summarizedCueKeys.has(summary.cue_key) ||
+        summary.label !== AGREEMENT_CHANGE_CUE_LABELS[summary.cue_key] ||
+        cueClauseCount === null ||
+        cueCount === null ||
+        cueClauseCount !== cueCount ||
+        cueClauseCount > matchingClauseCount ||
+        (expectedCueKeys.length > 0 &&
+          !expectedCueKeys.includes(summary.cue_key))
+      ) {
+        return null;
+      }
+      previousCueOrdinal = ordinal;
+      summarizedCueKeys.add(summary.cue_key);
+      summarizedCueCount += cueCount;
+      cueSummary.push({ ...summary });
+    }
+    if (summarizedCueCount !== matchedCueCount) return null;
+
+    const { title_truncated: titleTruncated, ...cueAgreement } = agreement;
+    const representativePacket = agreementChangeCueEvidence(
+      {
+        api_version: "agreement-change-cues-v1",
+        agreement: cueAgreement,
+        source: item.source,
+        cues: [item.representative_cue],
+        coverage: {
+          current_clause_count: currentClauseCount,
+          candidate_clause_count: candidateClauseCount,
+          matching_clause_count: 1,
+          matched_cue_count: 1,
+          returned_cue_count: 1,
+          supported_rule_count: 8,
+          clauses_truncated_for_scan: truncatedClauseCount,
+        },
+        limits: {
+          maximum_returned_cues: 1,
+          maximum_supported_limit: AGREEMENT_CHANGE_CUE_LIMIT_MAX,
+          maximum_clause_characters_scanned: 500_000,
+          one_match_per_rule_per_clause: true,
+          cues_truncated: false,
+          positive_matches_only: true,
+          absence_is_not_evidence_of_absence: true,
+          change_target_identified: false,
+          amendment_direction_determined: false,
+          agreement_relationship_established: false,
+          legal_effect_determined: false,
+        },
+        limitations: AGREEMENT_CHANGE_CUE_LIMITATIONS,
+      },
+      agreement.agreement_id,
+      1,
+    );
+    if (
+      representativePacket === null ||
+      !summarizedCueKeys.has(
+        representativePacket.cues[0]?.cue_key,
+      ) ||
+      (expectedSourceSlugs.length > 0 &&
+        !expectedSourceSlugs.includes(representativePacket.source.slug))
+    ) {
+      return null;
+    }
+
+    const projected = {
+      agreement: {
+        ...representativePacket.agreement,
+        title_truncated: titleTruncated,
+      },
+      source: representativePacket.source,
+      coverage: { ...coverage },
+      cue_summary: cueSummary,
+      representative_cue: representativePacket.cues[0],
+      full_change_cues_available: true,
+    };
+    if (previous !== null) {
+      const previousCoverage = previous.coverage;
+      const previousPublished = previous.source.observed_published_at;
+      const currentPublished = projected.source.observed_published_at;
+      const sameCounts =
+        previousCoverage.matched_cue_class_count === matchedCueClassCount &&
+        previousCoverage.matched_cue_count === matchedCueCount;
+      const datesOutOfOrder = sameCounts && (
+        (previousPublished === null && currentPublished !== null) ||
+        (previousPublished !== null &&
+          currentPublished !== null &&
+          Date.parse(previousPublished) < Date.parse(currentPublished))
+      );
+      const sameDate = previousPublished === currentPublished ||
+        (previousPublished !== null &&
+          currentPublished !== null &&
+          Date.parse(previousPublished) === Date.parse(currentPublished));
+      if (
+        previousCoverage.matched_cue_class_count < matchedCueClassCount ||
+        (previousCoverage.matched_cue_class_count === matchedCueClassCount &&
+          previousCoverage.matched_cue_count < matchedCueCount) ||
+        datesOutOfOrder ||
+        (sameCounts &&
+          sameDate &&
+          previous.agreement.agreement_id >= agreement.agreement_id)
+      ) {
+        return null;
+      }
+    }
+    agreementIds.add(agreement.agreement_id);
+    items.push(projected);
+    previous = projected;
+  }
+
+  return {
+    api_version: root.api_version,
+    generated_at: root.generated_at,
+    items,
+    page: { ...page },
+    filters: {
+      cue_keys: [...filters.cue_keys],
+      source_slugs: [...filters.source_slugs],
+      document_kind: filters.document_kind,
+    },
     limits: { ...limits },
     limitations: [...root.limitations],
   };
@@ -7051,6 +7484,12 @@ function boot() {
     familyProposalLimit: FAMILY_PROPOSAL_PAGE_MAX,
     familyProposalHasMore: false,
     familyProposalLoading: false,
+    amendmentChangeCue: "",
+    amendmentChangeSource: "",
+    amendmentChangeOffset: 0,
+    amendmentChangeLimit: 12,
+    amendmentChangeHasMore: false,
+    amendmentChangeLoading: false,
     decisionBriefDirectoryMinimumTopics: 3,
     decisionBriefDirectoryKind: "",
     decisionBriefDirectorySource: "",
@@ -7126,6 +7565,14 @@ function boot() {
   const familyProposalResults = byId("family-proposals-results");
   const familyProposalPrevious = byId("family-proposals-previous");
   const familyProposalNext = byId("family-proposals-next");
+  const amendmentChangeForm = byId("amendment-change-directory-form");
+  const amendmentChangeCueInput = byId("amendment-change-cue");
+  const amendmentChangeSourceInput = byId("amendment-change-source");
+  const amendmentChangeButton = byId("amendment-change-directory-submit");
+  const amendmentChangeStatus = byId("amendment-change-directory-status");
+  const amendmentChangeResults = byId("amendment-change-directory-results");
+  const amendmentChangePrevious = byId("amendment-change-directory-previous");
+  const amendmentChangeNext = byId("amendment-change-directory-next");
   const decisionBriefDirectoryForm = byId("decision-brief-directory-form");
   const decisionBriefMinimumTopicsInput = byId(
     "decision-brief-minimum-topics",
@@ -7310,6 +7757,11 @@ function boot() {
     state.familyProposalOffset = 0;
     state.familyProposalHasMore = false;
     state.familyProposalLoading = false;
+    state.amendmentChangeCue = "";
+    state.amendmentChangeSource = "";
+    state.amendmentChangeOffset = 0;
+    state.amendmentChangeHasMore = false;
+    state.amendmentChangeLoading = false;
     state.decisionBriefDirectoryMinimumTopics = 3;
     state.decisionBriefDirectoryKind = "";
     state.decisionBriefDirectorySource = "";
@@ -7366,6 +7818,13 @@ function boot() {
     familyProposalStatus.textContent =
       "Load the current publication-gated proposal set. Candidate generation is bounded and is not exhaustive.";
     familyProposalResults.replaceChildren();
+    amendmentChangeForm.reset();
+    amendmentChangeButton.disabled = false;
+    amendmentChangePrevious.disabled = true;
+    amendmentChangeNext.disabled = true;
+    amendmentChangeStatus.textContent =
+      "Browse positive amendment wording with one exact representative cue per agreement.";
+    amendmentChangeResults.replaceChildren();
     partyPrevious.disabled = true;
     partyNext.disabled = true;
     partyBriefRankButton.disabled = true;
@@ -10248,6 +10707,301 @@ function boot() {
       familyProposalNext.disabled = !state.familyProposalHasMore ||
         state.familyProposalOffset + state.familyProposalLimit >
           FAMILY_PROPOSAL_OFFSET_MAX;
+    }
+  }
+
+  function changeCueMarkedEvidence(cue) {
+    const evidence = cue.observed_evidence;
+    const characters = Array.from(evidence.excerpt);
+    const relativeStart = evidence.matched_clause_char_start -
+      evidence.clause_char_start;
+    const relativeEnd = evidence.matched_clause_char_end -
+      evidence.clause_char_start;
+    const paragraph = element(
+      "p",
+      "brief-comparison-evidence change-cue-marked-evidence",
+    );
+    paragraph.append(
+      document.createTextNode(characters.slice(0, relativeStart).join("")),
+      element("mark", "", characters.slice(relativeStart, relativeEnd).join("")),
+      document.createTextNode(characters.slice(relativeEnd).join("")),
+    );
+    return paragraph;
+  }
+
+  function changeCueEvidenceDetails(cue, open = false) {
+    const details = element("details", "brief-comparison-more");
+    details.open = open;
+    append(
+      details,
+      element("summary", "", cue.label),
+      element("span", "badge basis-generated", "Generated change cue"),
+      element(
+        "p",
+        "muted",
+        `Exact observed match: “${cue.observed_evidence.matched_text}”`,
+      ),
+      changeCueMarkedEvidence(cue),
+      element(
+        "p",
+        "muted tiny",
+        `Clause ${count(cue.clause.sequence)}${
+          cue.clause.heading ? ` · ${cue.clause.heading}` : ""
+        } · rule ${cue.rule_id} · observed support SHA-256 ${
+          cue.observed_evidence.sha256
+        }`,
+      ),
+    );
+    return details;
+  }
+
+  function amendmentChangeDirectoryCard(item) {
+    const card = element("article", "result-card amendment-change-card");
+    const heading = element("div");
+    append(
+      heading,
+      element(
+        "span",
+        "badge basis-generated",
+        `${count(item.coverage.matched_cue_class_count)} change cue class(es)`,
+      ),
+      element(
+        "h3",
+        "",
+        displayText(item.agreement.title, "Untitled amendment"),
+      ),
+    );
+    const top = element("div", "result-top");
+    append(
+      top,
+      heading,
+      element("span", "badge basis-observed", "Observed source text"),
+    );
+
+    const metadata = element("div", "meta");
+    append(
+      metadata,
+      element("span", "", displayText(item.source.name, "Unknown source")),
+      element("span", "", item.source.slug),
+      item.source.observed_published_at
+        ? element(
+          "span",
+          "",
+          `Observed publication ${date(item.source.observed_published_at)}`,
+        )
+        : null,
+      element("span", "", `Source record ${item.source.external_id}`),
+    );
+
+    const summaries = element("div", "change-cue-summary");
+    for (const summary of item.cue_summary) {
+      summaries.append(
+        element(
+          "span",
+          "badge basis-generated",
+          `${summary.label}: ${count(summary.matched_cue_count)}`,
+        ),
+      );
+    }
+
+    const evidence = element("section", "change-cue-evidence");
+    append(
+      evidence,
+      element("h4", "", "Representative exact observed cue"),
+      element(
+        "p",
+        "muted",
+        `Exact detector match: “${
+          item.representative_cue.observed_evidence.matched_text
+        }”`,
+      ),
+      changeCueMarkedEvidence(item.representative_cue),
+      element(
+        "p",
+        "muted tiny",
+        `Clause ${count(item.representative_cue.clause.sequence)}${
+          item.representative_cue.clause.heading
+            ? ` · ${item.representative_cue.clause.heading}`
+            : ""
+        } · ${item.representative_cue.rule_id} · observed support SHA-256 ${
+          item.representative_cue.observed_evidence.sha256
+        }`,
+      ),
+    );
+
+    const fullEvidence = element("div");
+    const actions = element("div", "result-actions");
+    const inspectCues = element(
+      "button",
+      "button primary amendment-change-inspect-cues",
+      "Inspect all bounded change cues",
+    );
+    inspectCues.type = "button";
+    inspectCues.setAttribute("aria-expanded", "false");
+    inspectCues.addEventListener("click", async () => {
+      if (!state.token || inspectCues.disabled) return;
+      inspectCues.disabled = true;
+      fullEvidence.replaceChildren(
+        element("p", "muted", "Loading the complete bounded cue packet…"),
+      );
+      try {
+        const packet = await fetchAgreementChangeCues(
+          item.agreement.agreement_id,
+          state.token,
+          AGREEMENT_CHANGE_CUE_LIMIT_MAX,
+        );
+        const cueList = element("div", "change-cue-full-list");
+        for (const cue of packet.cues) {
+          cueList.append(changeCueEvidenceDetails(cue));
+        }
+        fullEvidence.replaceChildren(
+          element(
+            "p",
+            "focus-note",
+            `${count(packet.coverage.returned_cue_count)} of ${
+              count(packet.coverage.matched_cue_count)
+            } bounded positive cue(s) revalidated from the current observed extraction. Cues do not establish the changed instrument, direction, relationship, or legal effect.`,
+          ),
+          cueList,
+        );
+        inspectCues.textContent = "Change cues loaded";
+        inspectCues.setAttribute("aria-expanded", "true");
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          handleFailure(error, amendmentChangeStatus);
+          return;
+        }
+        const requestSuffix = error instanceof ApiError && error.requestId
+          ? ` Request ID: ${error.requestId}`
+          : "";
+        fullEvidence.replaceChildren(
+          element(
+            "p",
+            "status error",
+            `${
+              error instanceof Error ? error.message : "The request failed."
+            }${requestSuffix}`,
+          ),
+        );
+        inspectCues.disabled = false;
+      }
+    });
+    const inspectAgreement = element(
+      "button",
+      "text-button",
+      "Inspect agreement →",
+    );
+    inspectAgreement.type = "button";
+    inspectAgreement.addEventListener(
+      "click",
+      () => loadAgreement(item.agreement.agreement_id),
+    );
+    append(
+      actions,
+      inspectCues,
+      inspectAgreement,
+      sourceLink(item.source.source_url, "Open recorded source ↗"),
+    );
+
+    append(
+      card,
+      top,
+      item.agreement.title_truncated
+        ? element(
+          "p",
+          "muted",
+          "Displayed observed title was source-truncated to 500 characters.",
+        )
+        : null,
+      metadata,
+      summaries,
+      element(
+        "p",
+        "focus-note",
+        `${count(item.coverage.matched_cue_count)} positive cue(s) across ${
+          count(item.coverage.matching_clause_count)
+        } matching clause(s). Counts reflect the selected filters and are not market prevalence or legal conclusions.`,
+      ),
+      evidence,
+      actions,
+      fullEvidence,
+    );
+    return card;
+  }
+
+  function renderAmendmentChangeDirectory(value) {
+    const response = amendmentChangeDirectoryEvidence(record(value).data, {
+      cueKeys: state.amendmentChangeCue ? [state.amendmentChangeCue] : [],
+      sourceSlugs: state.amendmentChangeSource
+        ? [state.amendmentChangeSource]
+        : [],
+      limit: state.amendmentChangeLimit,
+      offset: state.amendmentChangeOffset,
+    });
+    if (response === null) {
+      throw new ApiError(
+        "The amendment change directory did not match its evidence disclosure contract.",
+      );
+    }
+    state.amendmentChangeHasMore = response.page.has_more;
+    amendmentChangePrevious.disabled = state.amendmentChangeOffset === 0;
+    amendmentChangeNext.disabled = !state.amendmentChangeHasMore ||
+      state.amendmentChangeOffset + state.amendmentChangeLimit >
+        AMENDMENT_CHANGE_DIRECTORY_OFFSET_MAX;
+    amendmentChangeResults.replaceChildren(
+      ...(response.items.length
+        ? response.items.map(amendmentChangeDirectoryCard)
+        : [
+          element(
+            "p",
+            "empty",
+            "No published amendment with a positive supported cue matched this page. This is not evidence that change wording is absent.",
+          ),
+        ]),
+    );
+    const start = response.items.length ? state.amendmentChangeOffset + 1 : 0;
+    const end = state.amendmentChangeOffset + response.items.length;
+    amendmentChangeStatus.textContent = response.items.length
+      ? `Showing amendment evidence ${start}–${end} of ${
+        count(response.page.eligible_matching_amendments)
+      } positive-match record(s). Ordering reflects cue coverage, not importance or market prevalence.`
+      : response.page.eligible_matching_amendments > 0
+      ? `No amendment appears at this offset; ${
+        count(response.page.eligible_matching_amendments)
+      } positive-match record(s) meet the selected filters.`
+      : "No published amendment matched the selected deterministic cue filters. OCR and corpus coverage remain incomplete.";
+  }
+
+  async function performAmendmentChangeBrowse() {
+    if (!state.token || state.amendmentChangeLoading) return;
+    state.amendmentChangeLoading = true;
+    state.amendmentChangeHasMore = false;
+    amendmentChangeButton.disabled = true;
+    amendmentChangePrevious.disabled = true;
+    amendmentChangeNext.disabled = true;
+    statusMessage(
+      amendmentChangeStatus,
+      "Finding publication-gated amendment records with exact change wording…",
+    );
+    try {
+      const path = buildAmendmentChangeDirectoryPath({
+        cueKeys: state.amendmentChangeCue ? [state.amendmentChangeCue] : [],
+        sourceSlugs: state.amendmentChangeSource
+          ? [state.amendmentChangeSource]
+          : [],
+        limit: state.amendmentChangeLimit,
+        offset: state.amendmentChangeOffset,
+      });
+      renderAmendmentChangeDirectory(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, amendmentChangeStatus);
+    } finally {
+      state.amendmentChangeLoading = false;
+      amendmentChangeButton.disabled = false;
+      amendmentChangePrevious.disabled = state.amendmentChangeOffset === 0;
+      amendmentChangeNext.disabled = !state.amendmentChangeHasMore ||
+        state.amendmentChangeOffset + state.amendmentChangeLimit >
+          AMENDMENT_CHANGE_DIRECTORY_OFFSET_MAX;
     }
   }
 
@@ -13520,6 +14274,33 @@ function boot() {
     }
     state.familyProposalOffset += state.familyProposalLimit;
     performFamilyProposalBrowse();
+  });
+
+  amendmentChangeForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.amendmentChangeCue = amendmentChangeCueInput.value;
+    state.amendmentChangeSource = amendmentChangeSourceInput.value.trim()
+      .toLowerCase();
+    state.amendmentChangeOffset = 0;
+    performAmendmentChangeBrowse();
+  });
+  amendmentChangePrevious.addEventListener("click", () => {
+    state.amendmentChangeOffset = Math.max(
+      0,
+      state.amendmentChangeOffset - state.amendmentChangeLimit,
+    );
+    performAmendmentChangeBrowse();
+  });
+  amendmentChangeNext.addEventListener("click", () => {
+    if (
+      !state.amendmentChangeHasMore ||
+      state.amendmentChangeOffset + state.amendmentChangeLimit >
+        AMENDMENT_CHANGE_DIRECTORY_OFFSET_MAX
+    ) {
+      return;
+    }
+    state.amendmentChangeOffset += state.amendmentChangeLimit;
+    performAmendmentChangeBrowse();
   });
 
   decisionBriefDirectoryForm.addEventListener("submit", (event) => {
