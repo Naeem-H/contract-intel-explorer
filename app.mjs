@@ -34,6 +34,8 @@ export const AGREEMENT_DECISION_BRIEF_COMPARISON_EXAMPLES =
   AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX;
 export const AGREEMENT_DECISION_BRIEF_COMPARISON_SCHEMA =
   "esheria.agreement-decision-brief-comparison.v1";
+export const PARTY_DECISION_BRIEF_SCAN_CONCURRENCY = 3;
+export const PARTY_DECISION_BRIEF_SCAN_EXAMPLES = 1;
 export const PARTY_DOSSIER_SCHEMA =
   "observed-party-negotiation-dossier-v4";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
@@ -1701,6 +1703,120 @@ export function agreementDecisionBriefEvidence(
     limits: { ...limits },
     limitations: [...root.limitations],
   };
+}
+
+export function partyDecisionBriefCoverage(value, expectedAgreementId) {
+  const brief = record(value);
+  const agreement = record(brief.agreement);
+  if (
+    brief.api_version !== "agreement-decision-brief-v2" ||
+    typeof expectedAgreementId !== "string" ||
+    !UUID_PATTERN.test(expectedAgreementId) ||
+    agreement.agreement_id !== expectedAgreementId ||
+    !Array.isArray(brief.topics) ||
+    brief.topics.length !== AGREEMENT_DECISION_BRIEF_TOPICS.length
+  ) {
+    return null;
+  }
+
+  let matchingClauseCount = 0;
+  let signalCount = 0;
+  const matchedTopics = [];
+  for (
+    let index = 0;
+    index < AGREEMENT_DECISION_BRIEF_TOPICS.length;
+    index += 1
+  ) {
+    const expectedTopic = AGREEMENT_DECISION_BRIEF_TOPICS[index];
+    const topic = record(brief.topics[index]);
+    const clauses = decisionBriefInteger(topic.exact_matching_clause_count);
+    const totalMatches = decisionBriefInteger(topic.total_matches);
+    const signals = decisionBriefInteger(topic.total_signal_matches);
+    if (
+      topic.topic_key !== expectedTopic.topicKey ||
+      topic.label !== expectedTopic.label ||
+      topic.detector_version !== expectedTopic.detectorVersion ||
+      clauses === null ||
+      totalMatches === null ||
+      totalMatches !== clauses ||
+      signals === null ||
+      signals < clauses ||
+      (clauses === 0 && signals !== 0)
+    ) {
+      return null;
+    }
+    matchingClauseCount += clauses;
+    signalCount += signals;
+    if (clauses > 0) {
+      matchedTopics.push({
+        topicKey: expectedTopic.topicKey,
+        label: expectedTopic.label,
+        matchingClauseCount: clauses,
+        signalCount: signals,
+      });
+    }
+  }
+
+  return {
+    agreementId: expectedAgreementId,
+    matchedTopicCount: matchedTopics.length,
+    matchingClauseCount,
+    signalCount,
+    matchedTopics,
+  };
+}
+
+export function rankPartyResultsByDecisionBriefCoverage(
+  values,
+  coverageValues,
+) {
+  if (!Array.isArray(values) || !Array.isArray(coverageValues)) {
+    throw new TypeError("Party brief ranking inputs must be arrays");
+  }
+  const resultIds = new Set();
+  const indexed = values.map((value, index) => {
+    const agreementId = record(value).agreement_id;
+    if (
+      typeof agreementId !== "string" ||
+      !UUID_PATTERN.test(agreementId) ||
+      resultIds.has(agreementId)
+    ) {
+      throw new TypeError("Party brief ranking contains an invalid result");
+    }
+    resultIds.add(agreementId);
+    return { value, index, agreementId };
+  });
+
+  const coverageByAgreement = new Map();
+  for (const value of coverageValues) {
+    const coverage = record(value);
+    if (
+      typeof coverage.agreementId !== "string" ||
+      !resultIds.has(coverage.agreementId) ||
+      coverageByAgreement.has(coverage.agreementId) ||
+      decisionBriefInteger(coverage.matchedTopicCount) === null ||
+      coverage.matchedTopicCount > AGREEMENT_DECISION_BRIEF_TOPICS.length ||
+      decisionBriefInteger(coverage.matchingClauseCount) === null ||
+      decisionBriefInteger(coverage.signalCount) === null ||
+      coverage.signalCount < coverage.matchingClauseCount
+    ) {
+      throw new TypeError("Party brief ranking contains invalid coverage");
+    }
+    coverageByAgreement.set(coverage.agreementId, coverage);
+  }
+
+  indexed.sort((left, right) => {
+    const leftCoverage = coverageByAgreement.get(left.agreementId);
+    const rightCoverage = coverageByAgreement.get(right.agreementId);
+    if (leftCoverage && !rightCoverage) return -1;
+    if (!leftCoverage && rightCoverage) return 1;
+    if (!leftCoverage && !rightCoverage) return left.index - right.index;
+    return rightCoverage.matchedTopicCount - leftCoverage.matchedTopicCount ||
+      rightCoverage.signalCount - leftCoverage.signalCount ||
+      rightCoverage.matchingClauseCount - leftCoverage.matchingClauseCount ||
+      left.index - right.index;
+  });
+  return indexed.map((entry) => entry.value);
 }
 
 export function buildAgreementDecisionBriefExport(
@@ -5973,6 +6089,10 @@ function boot() {
     partyLimit: 20,
     partyHasMore: false,
     partySearching: false,
+    partyPageResults: [],
+    partyBriefCoverage: new Map(),
+    partyBriefScanGeneration: 0,
+    partyBriefScanLoading: false,
     partyDossierLoading: false,
     positionSignal: "",
     positionFeature: "",
@@ -6111,6 +6231,8 @@ function boot() {
   const partySourceInput = byId("party-source");
   const partySearchButton = byId("party-search-submit");
   const partySearchStatus = byId("party-search-status");
+  const partyBriefRankButton = byId("party-rank-decision-briefs");
+  const partyBriefRankStatus = byId("party-decision-brief-rank-status");
   const partyDecisionBriefComparisonStatus = byId(
     "party-decision-brief-comparison-status",
   );
@@ -6212,6 +6334,10 @@ function boot() {
     state.partyOffset = 0;
     state.partyHasMore = false;
     state.partySearching = false;
+    state.partyPageResults = [];
+    state.partyBriefCoverage.clear();
+    state.partyBriefScanGeneration += 1;
+    state.partyBriefScanLoading = false;
     state.partyDossierLoading = false;
     state.positionSignal = "";
     state.positionFeature = "";
@@ -6298,8 +6424,12 @@ function boot() {
     familyProposalResults.replaceChildren();
     partyPrevious.disabled = true;
     partyNext.disabled = true;
+    partyBriefRankButton.disabled = true;
     partySearchStatus.textContent =
       "Enter an observed buyer, supplier, filing entity, or stated party name.";
+    partyBriefRankStatus.className = "muted";
+    partyBriefRankStatus.textContent =
+      "Run a party search, then validate and rank its visible contract or amendment records by five-topic evidence coverage.";
     syncGuideSelection("");
     results.replaceChildren(
       element("p", "empty", "Sign in to search published evidence."),
@@ -8401,6 +8531,9 @@ function boot() {
 
   function partyResultCard(itemValue) {
     const item = record(itemValue);
+    const agreementId = typeof item.agreement_id === "string"
+      ? item.agreement_id
+      : "";
     const card = element("article", "result-card");
     const top = element("div", "result-top");
     const headingGroup = element("div");
@@ -8466,6 +8599,48 @@ function boot() {
       element("span", "", `${count(item.clause_count)} clauses`),
     );
 
+    const briefCoverage = state.partyBriefCoverage.get(agreementId);
+    let briefCoveragePanel = null;
+    if (briefCoverage) {
+      card.setAttribute(
+        "data-brief-matched-topics",
+        String(briefCoverage.matchedTopicCount),
+      );
+      briefCoveragePanel = element("div", "party-brief-coverage");
+      append(
+        briefCoveragePanel,
+        element("span", "badge basis-generated", "Generated coverage order"),
+        element(
+          "p",
+          "",
+          `${count(briefCoverage.matchedTopicCount)} of 5 topics · ${
+            count(briefCoverage.matchingClauseCount)
+          } matching clause(s) · ${
+            count(briefCoverage.signalCount)
+          } positive signal(s)`,
+        ),
+      );
+      if (briefCoverage.matchedTopics.length) {
+        for (const topic of briefCoverage.matchedTopics) {
+          briefCoveragePanel.append(
+            element(
+              "span",
+              "badge basis-generated",
+              `${topic.label}: ${count(topic.matchingClauseCount)}`,
+            ),
+          );
+        }
+      } else {
+        briefCoveragePanel.append(
+          element(
+            "p",
+            "muted tiny",
+            "No positive match in this detector surface; this is not evidence that a provision or consequence is absent.",
+          ),
+        );
+      }
+    }
+
     const parties = array(item.agreement_parties).slice(0, 10);
     const partyList = element("div", "party-list");
     partyList.append(
@@ -8506,9 +8681,6 @@ function boot() {
         : null;
 
     const actions = element("div", "result-actions");
-    const agreementId = typeof item.agreement_id === "string"
-      ? item.agreement_id
-      : "";
     if (UUID_PATTERN.test(agreementId)) {
       const inspect = element(
         "button",
@@ -8568,7 +8740,16 @@ function boot() {
       actions.append(dossier);
     }
     append(actions, sourceLink(item.source_url));
-    append(card, top, title, metadata, partyEvidence, partyList, actions);
+    append(
+      card,
+      top,
+      title,
+      metadata,
+      briefCoveragePanel,
+      partyEvidence,
+      partyList,
+      actions,
+    );
     return card;
   }
 
@@ -9093,13 +9274,7 @@ function boot() {
     }
   }
 
-  function renderPartySearch(payload) {
-    const root = record(payload);
-    const rows = array(root.results).slice(0, state.partyLimit);
-    const pagination = record(root.pagination);
-    state.partyHasMore = pagination.has_more === true;
-    partyPrevious.disabled = state.partyOffset === 0;
-    partyNext.disabled = !state.partyHasMore;
+  function renderPartyResultRows(rows) {
     partyResults.replaceChildren(
       ...(rows.length ? rows.map(partyResultCard) : [
         element(
@@ -9109,6 +9284,19 @@ function boot() {
         ),
       ]),
     );
+    updateDecisionBriefComparisonControls();
+  }
+
+  function renderPartySearch(payload) {
+    const root = record(payload);
+    const rows = array(root.results).slice(0, state.partyLimit);
+    const pagination = record(root.pagination);
+    state.partyPageResults = rows;
+    state.partyBriefCoverage = new Map();
+    state.partyHasMore = pagination.has_more === true;
+    partyPrevious.disabled = state.partyOffset === 0;
+    partyNext.disabled = !state.partyHasMore;
+    renderPartyResultRows(rows);
     const start = rows.length ? state.partyOffset + 1 : 0;
     const end = state.partyOffset + rows.length;
     const total = Number(pagination.total_matching_agreements);
@@ -9117,16 +9305,152 @@ function boot() {
         Number.isSafeInteger(total) ? ` of ${total}` : ""
       }. Names are observations, not resolved entity identities or a complete portfolio.`
       : "No result returned. Party extraction and corpus coverage are incomplete.";
-    updateDecisionBriefComparisonControls();
+    const eligibleCount = rows.filter((value) => {
+      const item = record(value);
+      return UUID_PATTERN.test(item.agreement_id) &&
+        DECISION_BRIEF_DOCUMENT_KINDS.has(item.document_kind);
+    }).length;
+    partyBriefRankButton.disabled = eligibleCount === 0;
+    partyBriefRankStatus.className = "muted";
+    partyBriefRankStatus.textContent = eligibleCount
+      ? `Validate and rank ${count(eligibleCount)} visible contract or amendment record(s) by positive evidence across the five tracked topics.`
+      : "No visible contract or amendment record is eligible for a strict five-topic brief.";
+  }
+
+  async function rankVisiblePartyDecisionBriefs() {
+    if (!state.token || state.partyBriefScanLoading) return;
+    const candidates = state.partyPageResults.filter((value) => {
+      const item = record(value);
+      return UUID_PATTERN.test(item.agreement_id) &&
+        DECISION_BRIEF_DOCUMENT_KINDS.has(item.document_kind);
+    });
+    if (!candidates.length) return;
+
+    const generation = state.partyBriefScanGeneration + 1;
+    state.partyBriefScanGeneration = generation;
+    state.partyBriefScanLoading = true;
+    state.partyBriefCoverage = new Map();
+    const token = state.token;
+    partyBriefRankButton.disabled = true;
+    statusMessage(
+      partyBriefRankStatus,
+      `Validating 0 of ${count(candidates.length)} strict five-topic briefs…`,
+    );
+
+    const coverage = [];
+    let failureCount = 0;
+    try {
+      for (
+        let offset = 0;
+        offset < candidates.length;
+        offset += PARTY_DECISION_BRIEF_SCAN_CONCURRENCY
+      ) {
+        const batch = candidates.slice(
+          offset,
+          offset + PARTY_DECISION_BRIEF_SCAN_CONCURRENCY,
+        );
+        const settled = await Promise.allSettled(
+          batch.map(async (itemValue) => {
+            const item = record(itemValue);
+            const agreementId = item.agreement_id;
+            const brief = await fetchAgreementDecisionBrief(
+              agreementId,
+              token,
+              PARTY_DECISION_BRIEF_SCAN_EXAMPLES,
+            );
+            const summary = partyDecisionBriefCoverage(brief, agreementId);
+            if (summary === null) {
+              throw new ApiError(
+                "The strict brief could not be summarized safely.",
+              );
+            }
+            return summary;
+          }),
+        );
+        if (
+          state.token !== token ||
+          state.partyBriefScanGeneration !== generation
+        ) {
+          return;
+        }
+        const unauthorized = settled.find((outcome) =>
+          outcome.status === "rejected" &&
+          outcome.reason instanceof ApiError &&
+          outcome.reason.status === 401
+        );
+        if (unauthorized) {
+          signOut(
+            "The token was not accepted or has changed. Enter the current explorer token.",
+          );
+          return;
+        }
+        for (const outcome of settled) {
+          if (outcome.status === "fulfilled") coverage.push(outcome.value);
+          else failureCount += 1;
+        }
+        statusMessage(
+          partyBriefRankStatus,
+          `Validated ${count(Math.min(offset + batch.length, candidates.length))} of ${
+            count(candidates.length)
+          } strict five-topic briefs…`,
+        );
+      }
+
+      state.partyBriefCoverage = new Map(
+        coverage.map((item) => [item.agreementId, item]),
+      );
+      const ranked = rankPartyResultsByDecisionBriefCoverage(
+        state.partyPageResults,
+        coverage,
+      );
+      renderPartyResultRows(ranked);
+      const positiveCount = coverage.filter((item) =>
+        item.matchedTopicCount > 0
+      ).length;
+      const zeroCount = coverage.length - positiveCount;
+      statusMessage(
+        partyBriefRankStatus,
+        `Ranked ${count(coverage.length)} validated visible brief(s): ${
+          count(positiveCount)
+        } with positive five-topic evidence and ${
+          count(zeroCount)
+        } with no positive match.${
+          failureCount
+            ? ` ${count(failureCount)} record(s) could not be validated and remain unranked.`
+            : ""
+        } This is generated page-level navigation, not a risk score, prevalence measure or finding of absence.`,
+        failureCount ? "error" : "success",
+      );
+    } catch (error) {
+      if (
+        state.token === token &&
+        state.partyBriefScanGeneration === generation
+      ) {
+        handleFailure(error, partyBriefRankStatus);
+      }
+    } finally {
+      if (state.partyBriefScanGeneration === generation) {
+        state.partyBriefScanLoading = false;
+        partyBriefRankButton.disabled = !state.token || !candidates.length;
+      }
+    }
   }
 
   async function performPartySearch() {
     if (!state.token || state.partySearching) return;
+    state.partyBriefScanGeneration += 1;
+    state.partyBriefScanLoading = false;
+    state.partyPageResults = [];
+    state.partyBriefCoverage = new Map();
     state.partySearching = true;
     partySearchButton.disabled = true;
+    partyBriefRankButton.disabled = true;
     partyPrevious.disabled = true;
     partyNext.disabled = true;
     partySearchStatus.textContent = "Searching published party observations…";
+    partyBriefRankStatus.className = "muted";
+    partyBriefRankStatus.textContent =
+      "Waiting for the current party-result page before scanning strict briefs.";
     try {
       const path = buildPartySearchPath({
         query: state.partyQuery,
@@ -11870,6 +12194,10 @@ function boot() {
     performDecisionBriefDirectoryBrowse();
   });
 
+  partyBriefRankButton.addEventListener(
+    "click",
+    rankVisiblePartyDecisionBriefs,
+  );
   partySearchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     state.partyQuery = partyQueryInput.value.trim();
@@ -12118,6 +12446,8 @@ function boot() {
   // Scrub the bearer before the page is cached and reset the UI if restored.
   window.addEventListener("pagehide", () => {
     state.token = null;
+    state.partyBriefScanGeneration += 1;
+    state.partyBriefCoverage.clear();
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
     state.decisionBriefComparisonSelection.clear();

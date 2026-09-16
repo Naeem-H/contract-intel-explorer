@@ -589,6 +589,19 @@ select:focus {
 .party-list p {
   margin: 4px 0;
 }
+.party-brief-coverage {
+  margin: 11px 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--green);
+  color: #cbd4ce;
+  background: rgb(18 54 38 / 42%);
+}
+.party-brief-coverage p {
+  margin: 0 0 7px;
+}
+.party-brief-coverage .badge {
+  margin: 0 5px 5px 0;
+}
 .dossier-theme {
   display: grid;
   gap: 12px;
