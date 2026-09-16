@@ -7,6 +7,8 @@
     <meta name="robots" content="noindex, nofollow, noarchive">
     <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://aiuwscxsbsgaeunyhiak.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+    <link rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23112a20'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='Georgia,serif' font-size='21' fill='%237ce1ad'%3EE%3C/text%3E%3C/svg%3E">
     <title>Esheria Contract Intelligence</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
@@ -172,7 +174,7 @@
               <option value="amendment">Amendments</option>
             </select>
             <input id="decision-brief-source" name="source" type="text"
-              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_\-]{1,62}"
               placeholder="e.g. uk_find_a_tender">
             <button id="decision-brief-directory-submit"
               class="button primary" type="submit">Find briefs</button>
@@ -256,7 +258,7 @@
                 value="no_waiver_or_novation_language">No waiver or novation</option>
             </select>
             <input id="amendment-change-source" name="source" type="text"
-              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_\-]{1,62}"
               placeholder="e.g. sec_edgar">
             <button id="amendment-change-directory-submit"
               class="button primary" type="submit">Browse evidence</button>
@@ -339,7 +341,7 @@
               <option value="other">Other</option>
             </select>
             <input id="position-source" name="source" type="text" maxlength="63"
-              pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              pattern="[a-z0-9][a-z0-9_\-]{1,62}"
               placeholder="e.g. uk_find_a_tender">
             <button id="position-submit" class="button primary"
               type="submit">Browse positions</button>
@@ -401,7 +403,7 @@
               <option value="amendment">Amendments</option>
             </select>
             <input id="termination-source" name="source" type="text"
-              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_\-]{1,62}"
               placeholder="e.g. uk_find_a_tender">
             <button id="termination-submit" class="button primary"
               type="submit">Browse termination</button>
@@ -463,7 +465,7 @@
               <option value="amendment">Amendments</option>
             </select>
             <input id="assignment-source" name="source" type="text"
-              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_\-]{1,62}"
               placeholder="e.g. sec_edgar">
             <button id="assignment-submit" class="button primary"
               type="submit">Browse assignment</button>
@@ -512,7 +514,7 @@
               <option value="amendment">Amendments</option>
             </select>
             <input id="governing-law-source" name="source" type="text"
-              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_\-]{1,62}"
               placeholder="e.g. sec_edgar">
             <button id="governing-law-submit" class="button primary"
               type="submit">Browse law and forum</button>
@@ -573,7 +575,7 @@
               <option value="amendment">Amendments</option>
             </select>
             <input id="indemnity-source" name="source" type="text"
-              maxlength="63" pattern="[a-z0-9][a-z0-9_-]{1,62}"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_\-]{1,62}"
               placeholder="e.g. sec_edgar">
             <button id="indemnity-submit" class="button primary"
               type="submit">Browse indemnity</button>
@@ -607,7 +609,7 @@
               <option value="other">Other</option>
             </select>
             <input id="party-source" name="source" type="text" maxlength="63"
-              pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="uk_find_a_tender">
+              pattern="[a-z0-9][a-z0-9_\-]{1,62}" placeholder="uk_find_a_tender">
             <button id="party-search-submit" class="button primary"
               type="submit">Find agreements</button>
           </form>
@@ -715,7 +717,7 @@
               <option value="other">Other</option>
             </select>
             <input id="source" name="source" type="text" maxlength="63"
-              pattern="[a-z0-9][a-z0-9_-]{1,62}" placeholder="sec_edgar">
+              pattern="[a-z0-9][a-z0-9_\-]{1,62}" placeholder="sec_edgar">
             <button id="search-submit" class="button primary"
               type="submit">Search</button>
           </form>
