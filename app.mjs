@@ -86,6 +86,64 @@ export const EXPLORER_ACCESS_SUMMARY_SCHEMA =
   "explorer-api-access-summary-v1";
 export const EXPLORER_ACCESS_SUMMARY_HOURS = 24;
 export const EXPLORER_ACCESS_SUMMARY_HOURS_MAX = 168;
+export const ANCHOR_THEME_EVIDENCE_SCHEMA =
+  "anchor-clause-theme-evidence-v1";
+export const ANCHOR_THEME_EVIDENCE_MAX = 20;
+
+const ANCHOR_THEME_EVIDENCE_ROOT_KEYS = Object.freeze([
+  "api_version",
+  "agreement_id",
+  "anchor_clause_id",
+  "anchor_clause_sha256",
+  "themes",
+  "coverage",
+  "limits",
+]);
+const ANCHOR_THEME_EVIDENCE_THEME_KEYS = Object.freeze([
+  "theme",
+  "basis",
+  "confidence",
+  "taxonomy_version",
+  "generated_by",
+  "support",
+]);
+const ANCHOR_THEME_EXACT_SUPPORT_KEYS = Object.freeze([
+  "availability",
+  "origin",
+  "theme",
+  "observed_text",
+  "observed_text_sha256",
+  "clause_relative_start",
+  "clause_relative_end",
+  "document_char_start",
+  "document_char_end",
+  "method",
+  "text_basis",
+  "database_validated_against_clause",
+]);
+const ANCHOR_THEME_UNAVAILABLE_SUPPORT_KEYS = Object.freeze([
+  "availability",
+  "origin",
+  "reason",
+]);
+const ANCHOR_THEME_EVIDENCE_COVERAGE_KEYS = Object.freeze([
+  "theme_count",
+  "returned_theme_count",
+  "exact_detector_support_count",
+  "without_exact_detector_support",
+  "omitted_theme_count",
+  "truncated",
+]);
+const ANCHOR_THEME_EVIDENCE_LIMIT_KEYS = Object.freeze([
+  "maximum_themes",
+  "support_maximum_characters",
+  "theme_order",
+  "offset_basis",
+  "exact_support_origin",
+  "generated_theme_labels_are_legal_conclusions",
+  "support_spans_establish_legal_effect",
+  "missing_exact_support_establishes_theme_absence",
+]);
 
 const EXPLORER_ACCESS_SUMMARY_EXACT_KEYS = Object.freeze([
   "api_version",
@@ -6444,6 +6502,209 @@ export function formatEvidenceLocation(value) {
   return parts.join(" · ") || "Location unavailable";
 }
 
+export function anchorClauseThemeEvidence(
+  value,
+  expectedAgreementId,
+  anchorClause,
+) {
+  const packet = record(value);
+  const clause = record(anchorClause);
+  const clauseText = typeof clause.observed_text === "string"
+    ? Array.from(clause.observed_text)
+    : null;
+  const clauseStart = decisionBriefInteger(clause.char_start);
+  const clauseEnd = decisionBriefInteger(clause.char_end, 1);
+  const coverage = record(packet.coverage);
+  const limits = record(packet.limits);
+  const themeCount = decisionBriefInteger(coverage.theme_count);
+  const returnedThemeCount = decisionBriefInteger(
+    coverage.returned_theme_count,
+  );
+  const exactSupportCount = decisionBriefInteger(
+    coverage.exact_detector_support_count,
+  );
+  const withoutExactSupport = decisionBriefInteger(
+    coverage.without_exact_detector_support,
+  );
+  const omittedThemeCount = decisionBriefInteger(
+    coverage.omitted_theme_count,
+  );
+  if (
+    typeof expectedAgreementId !== "string" ||
+    !UUID_PATTERN.test(expectedAgreementId) ||
+    clauseText === null ||
+    typeof clause.id !== "string" ||
+    !UUID_PATTERN.test(clause.id) ||
+    !DECISION_BRIEF_HASH_PATTERN.test(clause.observed_text_sha256) ||
+    clauseStart === null ||
+    clauseEnd === null ||
+    clauseEnd - clauseStart !== clauseText.length ||
+    !hasExactKeys(packet, ANCHOR_THEME_EVIDENCE_ROOT_KEYS) ||
+    packet.api_version !== ANCHOR_THEME_EVIDENCE_SCHEMA ||
+    packet.agreement_id !== expectedAgreementId ||
+    packet.anchor_clause_id !== clause.id ||
+    packet.anchor_clause_sha256 !== clause.observed_text_sha256 ||
+    !Array.isArray(packet.themes) ||
+    !hasExactKeys(coverage, ANCHOR_THEME_EVIDENCE_COVERAGE_KEYS) ||
+    !hasExactKeys(limits, ANCHOR_THEME_EVIDENCE_LIMIT_KEYS) ||
+    themeCount === null ||
+    returnedThemeCount === null ||
+    exactSupportCount === null ||
+    withoutExactSupport === null ||
+    omittedThemeCount === null ||
+    returnedThemeCount !== packet.themes.length ||
+    returnedThemeCount > ANCHOR_THEME_EVIDENCE_MAX ||
+    themeCount < returnedThemeCount ||
+    omittedThemeCount !== themeCount - returnedThemeCount ||
+    exactSupportCount + withoutExactSupport !== returnedThemeCount ||
+    typeof coverage.truncated !== "boolean" ||
+    coverage.truncated !== (omittedThemeCount > 0) ||
+    limits.maximum_themes !== ANCHOR_THEME_EVIDENCE_MAX ||
+    limits.support_maximum_characters !== 1_000 ||
+    limits.theme_order !== "theme_ascending" ||
+    limits.offset_basis !== "zero_based_half_open_unicode_code_points" ||
+    limits.exact_support_origin !== PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+    limits.generated_theme_labels_are_legal_conclusions !== false ||
+    limits.support_spans_establish_legal_effect !== false ||
+    limits.missing_exact_support_establishes_theme_absence !== false
+  ) {
+    return null;
+  }
+
+  const themes = [];
+  const seenThemes = new Set();
+  let observedExactSupportCount = 0;
+  for (const themeValue of packet.themes) {
+    const theme = record(themeValue);
+    const themeKey = decisionBriefString(theme.theme, 200);
+    const basis = theme.basis;
+    const confidence = theme.confidence === null
+      ? null
+      : typeof theme.confidence === "number" &&
+          Number.isFinite(theme.confidence) &&
+          theme.confidence >= 0 && theme.confidence <= 1
+      ? theme.confidence
+      : undefined;
+    const taxonomyVersion = theme.taxonomy_version === null
+      ? null
+      : decisionBriefString(theme.taxonomy_version, 200);
+    const generatedBy = theme.generated_by === null
+      ? null
+      : decisionBriefString(theme.generated_by, 200);
+    const support = record(theme.support);
+    if (
+      !hasExactKeys(theme, ANCHOR_THEME_EVIDENCE_THEME_KEYS) ||
+      themeKey === undefined ||
+      seenThemes.has(themeKey) ||
+      !DECISION_BRIEF_BASES.has(basis) ||
+      confidence === undefined ||
+      taxonomyVersion === undefined ||
+      generatedBy === undefined
+    ) {
+      return null;
+    }
+    seenThemes.add(themeKey);
+
+    let projectedSupport;
+    if (support.availability === "unavailable") {
+      const expectedReason = basis === "generated"
+        ? "stored_exact_theme_support_unavailable"
+        : "exact_detector_support_not_applicable_to_non_generated_theme";
+      if (
+        !hasExactKeys(support, ANCHOR_THEME_UNAVAILABLE_SUPPORT_KEYS) ||
+        support.origin !== PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+        support.reason !== expectedReason
+      ) {
+        return null;
+      }
+      projectedSupport = {
+        availability: "unavailable",
+        origin: PARTY_DOSSIER_THEME_SUPPORT_ORIGIN,
+        reason: expectedReason,
+      };
+    } else {
+      const supportText = decisionBriefString(support.observed_text, 1_000);
+      const relativeStart = decisionBriefInteger(
+        support.clause_relative_start,
+      );
+      const relativeEnd = decisionBriefInteger(
+        support.clause_relative_end,
+        1,
+      );
+      const documentStart = decisionBriefInteger(support.document_char_start);
+      const documentEnd = decisionBriefInteger(support.document_char_end, 1);
+      const method = decisionBriefString(support.method, 100);
+      if (
+        basis !== "generated" ||
+        !hasExactKeys(support, ANCHOR_THEME_EXACT_SUPPORT_KEYS) ||
+        support.availability !== "exact_detector_span" ||
+        support.origin !== PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+        support.theme !== themeKey ||
+        supportText === undefined ||
+        relativeStart === null ||
+        relativeEnd === null ||
+        relativeEnd <= relativeStart ||
+        relativeEnd - relativeStart !== Array.from(supportText).length ||
+        relativeEnd > clauseText.length ||
+        clauseText.slice(relativeStart, relativeEnd).join("") !== supportText ||
+        !DECISION_BRIEF_HASH_PATTERN.test(support.observed_text_sha256) ||
+        documentStart === null ||
+        documentEnd === null ||
+        documentStart !== clauseStart + relativeStart ||
+        documentEnd !== clauseStart + relativeEnd ||
+        documentEnd > clauseEnd ||
+        method === undefined ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,99}$/.test(method) ||
+        support.text_basis !== "observed" ||
+        support.database_validated_against_clause !== true
+      ) {
+        return null;
+      }
+      observedExactSupportCount += 1;
+      projectedSupport = {
+        availability: "exact_detector_span",
+        origin: PARTY_DOSSIER_THEME_SUPPORT_ORIGIN,
+        theme: themeKey,
+        observedText: supportText,
+        observedTextSha256: support.observed_text_sha256,
+        clauseRelativeStart: relativeStart,
+        clauseRelativeEnd: relativeEnd,
+        documentCharStart: documentStart,
+        documentCharEnd: documentEnd,
+        method,
+        textBasis: "observed",
+        databaseValidatedAgainstClause: true,
+      };
+    }
+
+    themes.push({
+      theme: themeKey,
+      basis,
+      confidence,
+      taxonomyVersion,
+      generatedBy,
+      support: projectedSupport,
+    });
+  }
+
+  if (observedExactSupportCount !== exactSupportCount) return null;
+  return {
+    apiVersion: ANCHOR_THEME_EVIDENCE_SCHEMA,
+    agreementId: expectedAgreementId,
+    anchorClauseId: clause.id,
+    anchorClauseSha256: clause.observed_text_sha256,
+    themes,
+    coverage: {
+      themeCount,
+      returnedThemeCount,
+      exactDetectorSupportCount: exactSupportCount,
+      withoutExactDetectorSupport: withoutExactSupport,
+      omittedThemeCount,
+      truncated: coverage.truncated,
+    },
+  };
+}
+
 export function comparisonEvidence(payload, expectedClauseId) {
   if (
     typeof expectedClauseId !== "string" ||
@@ -6464,6 +6725,16 @@ export function comparisonEvidence(payload, expectedClauseId) {
   if (!anchor || typeof anchor.observed_text !== "string") {
     throw new ApiError("The selected clause wording was not returned.");
   }
+  const anchorThemeEvidence = anchorClauseThemeEvidence(
+    data.anchor_theme_evidence,
+    record(data.agreement).id,
+    anchor,
+  );
+  if (!anchorThemeEvidence) {
+    throw new ApiError(
+      "The matched clause theme evidence did not match its expected contract.",
+    );
+  }
   return {
     agreement: record(data.agreement),
     source: record(data.source),
@@ -6474,6 +6745,7 @@ export function comparisonEvidence(payload, expectedClauseId) {
       .slice(0, 20)
       .map(record),
     anchorContext: record(data.anchor_context),
+    anchorThemeEvidence,
     commercialPosition: record(data.commercial_position),
     terminationPosition: record(data.termination_position),
     assignmentPosition: record(data.assignment_position),
@@ -7314,6 +7586,183 @@ function citationInteger(value) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function citationAnchorThemeEvidence(
+  value,
+  expectedAgreementId,
+  anchorClause,
+) {
+  const evidence = record(value);
+  const clause = record(anchorClause);
+  const clauseText = typeof clause.observed_text === "string"
+    ? Array.from(clause.observed_text)
+    : null;
+  const clauseStart = citationInteger(clause.char_start);
+  const clauseEnd = citationInteger(clause.char_end);
+  const coverage = record(evidence.coverage);
+  const themeCount = citationInteger(coverage.themeCount);
+  const returnedThemeCount = citationInteger(coverage.returnedThemeCount);
+  const exactSupportCount = citationInteger(
+    coverage.exactDetectorSupportCount,
+  );
+  const withoutExactSupport = citationInteger(
+    coverage.withoutExactDetectorSupport,
+  );
+  const omittedThemeCount = citationInteger(coverage.omittedThemeCount);
+  if (
+    evidence.apiVersion !== ANCHOR_THEME_EVIDENCE_SCHEMA ||
+    evidence.agreementId !== expectedAgreementId ||
+    evidence.anchorClauseId !== clause.id ||
+    evidence.anchorClauseSha256 !== clause.observed_text_sha256 ||
+    clauseText === null ||
+    clauseStart === null ||
+    clauseEnd === null ||
+    clauseEnd - clauseStart !== clauseText.length ||
+    !Array.isArray(evidence.themes) ||
+    evidence.themes.length > ANCHOR_THEME_EVIDENCE_MAX ||
+    themeCount === null ||
+    returnedThemeCount !== evidence.themes.length ||
+    exactSupportCount === null ||
+    withoutExactSupport === null ||
+    exactSupportCount + withoutExactSupport !== returnedThemeCount ||
+    omittedThemeCount === null ||
+    themeCount - returnedThemeCount !== omittedThemeCount ||
+    typeof coverage.truncated !== "boolean" ||
+    coverage.truncated !== (omittedThemeCount > 0)
+  ) {
+    return null;
+  }
+
+  let observedExactSupportCount = 0;
+  const seenThemes = new Set();
+  const themes = [];
+  for (const themeValue of evidence.themes) {
+    const theme = record(themeValue);
+    const themeKey = decisionBriefString(theme.theme, 200);
+    const confidence = theme.confidence === null
+      ? null
+      : typeof theme.confidence === "number" &&
+          Number.isFinite(theme.confidence) &&
+          theme.confidence >= 0 && theme.confidence <= 1
+      ? theme.confidence
+      : undefined;
+    const taxonomyVersion = theme.taxonomyVersion === null
+      ? null
+      : decisionBriefString(theme.taxonomyVersion, 200);
+    const generatedBy = theme.generatedBy === null
+      ? null
+      : decisionBriefString(theme.generatedBy, 200);
+    if (
+      themeKey === undefined ||
+      seenThemes.has(themeKey) ||
+      !DECISION_BRIEF_BASES.has(theme.basis) ||
+      confidence === undefined ||
+      taxonomyVersion === undefined ||
+      generatedBy === undefined
+    ) {
+      return null;
+    }
+    seenThemes.add(themeKey);
+
+    const support = record(theme.support);
+    let projectedSupport;
+    if (support.availability === "unavailable") {
+      const expectedReason = theme.basis === "generated"
+        ? "stored_exact_theme_support_unavailable"
+        : "exact_detector_support_not_applicable_to_non_generated_theme";
+      if (
+        support.origin !== PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+        support.reason !== expectedReason
+      ) {
+        return null;
+      }
+      projectedSupport = {
+        availability: "unavailable",
+        origin: PARTY_DOSSIER_THEME_SUPPORT_ORIGIN,
+        reason: expectedReason,
+      };
+    } else {
+      const observedText = decisionBriefString(support.observedText, 1_000);
+      const relativeStart = citationInteger(support.clauseRelativeStart);
+      const relativeEnd = citationInteger(support.clauseRelativeEnd);
+      const documentStart = citationInteger(support.documentCharStart);
+      const documentEnd = citationInteger(support.documentCharEnd);
+      const method = decisionBriefString(support.method, 100);
+      if (
+        theme.basis !== "generated" ||
+        support.availability !== "exact_detector_span" ||
+        support.origin !== PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+        support.theme !== themeKey ||
+        observedText === undefined ||
+        relativeStart === null ||
+        relativeEnd === null ||
+        relativeEnd <= relativeStart ||
+        relativeEnd - relativeStart !== Array.from(observedText).length ||
+        relativeEnd > clauseText.length ||
+        clauseText.slice(relativeStart, relativeEnd).join("") !== observedText ||
+        !DECISION_BRIEF_HASH_PATTERN.test(support.observedTextSha256) ||
+        documentStart !== clauseStart + relativeStart ||
+        documentEnd !== clauseStart + relativeEnd ||
+        documentEnd > clauseEnd ||
+        method === undefined ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,99}$/.test(method) ||
+        support.textBasis !== "observed" ||
+        support.databaseValidatedAgainstClause !== true
+      ) {
+        return null;
+      }
+      observedExactSupportCount += 1;
+      projectedSupport = {
+        availability: "exact_detector_span",
+        origin: PARTY_DOSSIER_THEME_SUPPORT_ORIGIN,
+        theme: themeKey,
+        observed_text: observedText,
+        observed_text_sha256: support.observedTextSha256,
+        clause_relative_start: relativeStart,
+        clause_relative_end: relativeEnd,
+        document_char_start: documentStart,
+        document_char_end: documentEnd,
+        method,
+        text_basis: "observed",
+        database_validated_against_clause: true,
+      };
+    }
+    themes.push({
+      theme: themeKey,
+      basis: theme.basis,
+      confidence,
+      taxonomy_version: taxonomyVersion,
+      generated_by: generatedBy,
+      support: projectedSupport,
+    });
+  }
+  if (observedExactSupportCount !== exactSupportCount) return null;
+
+  return {
+    schema: "esheria.anchor-clause-theme-evidence.v1",
+    source_api_version: ANCHOR_THEME_EVIDENCE_SCHEMA,
+    agreement_id: expectedAgreementId,
+    anchor_clause_id: clause.id,
+    anchor_clause_sha256: clause.observed_text_sha256,
+    themes,
+    coverage: {
+      theme_count: themeCount,
+      returned_theme_count: returnedThemeCount,
+      exact_detector_support_count: exactSupportCount,
+      without_exact_detector_support: withoutExactSupport,
+      omitted_theme_count: omittedThemeCount,
+      truncated: coverage.truncated,
+    },
+    limits: {
+      maximum_themes: ANCHOR_THEME_EVIDENCE_MAX,
+      support_maximum_characters: 1_000,
+      offset_basis: "zero_based_half_open_unicode_code_points",
+      generated_theme_labels_are_legal_conclusions: false,
+      support_spans_establish_legal_effect: false,
+      missing_exact_support_establishes_theme_absence: false,
+    },
+  };
 }
 
 function citationAnchorContext(value) {
@@ -8261,6 +8710,20 @@ export function buildCitationManifest({
         "Citation evidence does not match its selected agreement",
       );
     }
+    const anchorThemeEvidence = citationAnchorThemeEvidence(
+      evidence.anchorThemeEvidence,
+      selection.agreement_id,
+      evidence.anchor,
+    );
+    if (
+      evidence.anchorThemeEvidence !== undefined &&
+      evidence.anchorThemeEvidence !== null &&
+      anchorThemeEvidence === null
+    ) {
+      throw new TypeError(
+        "Citation theme evidence does not match its selected clause",
+      );
+    }
     const sourceRecord = record(evidence.source);
     const context = array(evidence.context).slice(
       0,
@@ -8341,6 +8804,7 @@ export function buildCitationManifest({
         },
       },
       matched_clause: citationClause(evidence.anchor),
+      anchor_theme_evidence: anchorThemeEvidence,
       bounded_context: {
         is_complete_agreement: evidence.truncated !== true,
         response_truncated: evidence.truncated === true,
@@ -8365,7 +8829,7 @@ export function buildCitationManifest({
   });
 
   return {
-    schema: "esheria.contract-citations.v9",
+    schema: "esheria.contract-citations.v10",
     generated_at: timestamp.toISOString(),
     retrieval_scope: {
       query: normalizedQuery || null,
@@ -8376,6 +8840,7 @@ export function buildCitationManifest({
     limitations: [
       "This export contains only the selected published evidence and bounded context; it is not a representative market sample.",
       "Observed wording is evidence. Generated classifications, themes, summaries and date types are interpretations, not source facts.",
+      "Exact theme-detector support spans explain lexical matches only; they do not establish meaning, legal effect or the absence of unlisted themes.",
       "Definition-use matching and target resolution are generated navigation aids; unresolved references are preserved rather than guessed.",
       "Commercial, termination, assignment/change-of-control, governing-law/forum and indemnity position signals are generated clause-level pattern matches, not legal conclusions; absence is not evidence of absence.",
       "Cap-value candidates are exact lexical tokens from bounded observed support, not normalized amounts or interpreted liability caps.",
@@ -11547,6 +12012,106 @@ function boot() {
     return formatEvidenceLocation(clause);
   }
 
+  function anchorThemeEvidencePanel(evidence, collapsed = false) {
+    if (!evidence) return null;
+    const container = collapsed
+      ? element("details", "comparison-context theme-evidence")
+      : section("Why this clause was tagged");
+    if (collapsed) {
+      container.append(
+        element(
+          "summary",
+          "",
+          `Theme evidence · ${
+            count(evidence.coverage.exactDetectorSupportCount)
+          }/${count(evidence.coverage.returnedThemeCount)} exact`,
+        ),
+      );
+    }
+    container.append(
+      element(
+        "p",
+        "focus-note",
+        "Theme labels are generated or reviewed metadata. Exact detector support spans explain a lexical match only; they do not establish meaning, legal effect, or that unlisted themes are absent.",
+      ),
+    );
+    if (!evidence.themes.length) {
+      container.append(
+        element("p", "muted", "No stored theme labels were returned."),
+      );
+      return container;
+    }
+    for (const theme of evidence.themes) {
+      const card = element("article", "relationship theme-support");
+      const basisClass = theme.basis === "generated"
+        ? "generated"
+        : theme.basis === "reviewed"
+        ? "basis-reviewed"
+        : "observed";
+      append(
+        card,
+        element(
+          "span",
+          `badge ${basisClass}`,
+          `${displayText(theme.basis)} theme label`,
+        ),
+        element("h4", "", theme.theme.replaceAll("_", " ")),
+        element(
+          "p",
+          "muted",
+          `Confidence ${
+            theme.confidence === null
+              ? "not stated"
+              : `${Math.round(theme.confidence * 100)}%`
+          } · taxonomy ${displayText(theme.taxonomyVersion, "not stated")} · generator ${
+            displayText(theme.generatedBy, "not stated")
+          }`,
+        ),
+      );
+      if (theme.support.availability === "exact_detector_span") {
+        append(
+          card,
+          element("span", "badge observed", "Observed detector support"),
+          element("p", "observed-text", theme.support.observedText),
+          element(
+            "p",
+            "muted",
+            `Clause characters ${theme.support.clauseRelativeStart}–${
+              theme.support.clauseRelativeEnd
+            } · document characters ${theme.support.documentCharStart}–${
+              theme.support.documentCharEnd
+            } · SHA-256 ${theme.support.observedTextSha256}`,
+          ),
+        );
+      } else {
+        card.append(
+          element(
+            "p",
+            "muted",
+            theme.basis === "generated"
+              ? "This historical generated label has no stored exact detector span; inspect the complete clause wording."
+              : "Exact detector support does not apply to this non-generated label; inspect its recorded basis and the complete clause wording.",
+          ),
+        );
+      }
+      container.append(card);
+    }
+    if (evidence.coverage.truncated) {
+      container.append(
+        element(
+          "p",
+          "muted",
+          `Showing ${count(evidence.coverage.returnedThemeCount)} of ${
+            count(evidence.coverage.themeCount)
+          } stored theme labels; ${
+            count(evidence.coverage.omittedThemeCount)
+          } omitted by the ${ANCHOR_THEME_EVIDENCE_MAX}-theme response bound.`,
+        ),
+      );
+    }
+    return container;
+  }
+
   function commercialPositionPanel(value, collapsed = false) {
     const position = commercialPositionEvidence(value);
     if (!position?.applicable) return null;
@@ -12203,6 +12768,12 @@ function boot() {
       );
       column.append(generated);
     }
+
+    const themeEvidence = anchorThemeEvidencePanel(
+      evidence.anchorThemeEvidence,
+      true,
+    );
+    if (themeEvidence) column.append(themeEvidence);
 
     const commercialPosition = commercialPositionPanel(
       evidence.commercialPosition,
@@ -17097,6 +17668,22 @@ function boot() {
         UUID_PATTERN.test(data.anchor_clause_id)
       ? data.anchor_clause_id
       : null;
+    const clauses = array(data.clauses).slice(0, 40);
+    const anchorClause = anchorClauseId === null
+      ? null
+      : clauses.find((clauseValue) => record(clauseValue).id === anchorClauseId);
+    const anchorThemeEvidence = anchorClauseId === null
+      ? null
+      : anchorClauseThemeEvidence(
+        data.anchor_theme_evidence,
+        agreement.id,
+        anchorClause,
+      );
+    if (anchorClauseId !== null && !anchorThemeEvidence) {
+      throw new Error(
+        "The matched clause theme evidence did not match its expected contract.",
+      );
+    }
     const fragment = document.createDocumentFragment();
     fragment.append(
       element(
@@ -17271,6 +17858,9 @@ function boot() {
       }
       fragment.append(partySection);
     }
+
+    const themeEvidencePanel = anchorThemeEvidencePanel(anchorThemeEvidence);
+    if (themeEvidencePanel) fragment.append(themeEvidencePanel);
 
     const commercialPosition = commercialPositionPanel(
       data.commercial_position,
@@ -17498,7 +18088,6 @@ function boot() {
       fragment.append(contextSection);
     }
 
-    const clauses = array(data.clauses).slice(0, 40);
     const clauseSection = section("Agreement clauses");
     if (anchorClauseId && clauseWindow.mode === "anchored") {
       const first = displayText(clauseWindow.first_sequence, "?");
