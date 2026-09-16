@@ -62,11 +62,11 @@ export const PARTY_DECISION_BRIEF_SHORTLIST_SCHEMA =
 export const PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_SCHEMA =
   "esheria.party-decision-brief-shortlist-matrix.v1";
 export const PARTY_DOSSIER_SCHEMA =
-  "observed-party-negotiation-dossier-v4";
+  "observed-party-negotiation-dossier-v5";
 export const PARTY_DOSSIER_EXPORT_SCHEMA =
-  "esheria.observed-party-negotiation-dossier.v1";
+  "esheria.observed-party-negotiation-dossier.v2";
 export const PARTY_DOSSIER_MATRIX_SCHEMA =
-  "esheria.observed-party-negotiation-dossier-matrix.v1";
+  "esheria.observed-party-negotiation-dossier-matrix.v2";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
 export const DECISION_BRIEF_DIRECTORY_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
@@ -4967,6 +4967,35 @@ function partyDossierCountMap(value, allowedKeys = null) {
   return output;
 }
 
+function partyDossierThemeSupportCoverage(value) {
+  const coverage = record(value);
+  const returnedExamples = decisionBriefInteger(coverage.returned_examples);
+  const exactExamples = decisionBriefInteger(
+    coverage.exact_detector_span_examples,
+  );
+  const unavailableExamples = decisionBriefInteger(
+    coverage.without_exact_detector_span,
+  );
+  if (
+    !hasExactKeys(coverage, [
+      "returned_examples",
+      "exact_detector_span_examples",
+      "without_exact_detector_span",
+    ]) ||
+    returnedExamples === null ||
+    exactExamples === null ||
+    unavailableExamples === null ||
+    exactExamples + unavailableExamples !== returnedExamples
+  ) {
+    return null;
+  }
+  return {
+    returned_examples: returnedExamples,
+    exact_detector_span_examples: exactExamples,
+    without_exact_detector_span: unavailableExamples,
+  };
+}
+
 function partyDossierStringList(value, maximumItems = 20) {
   if (!Array.isArray(value) || value.length > maximumItems) return null;
   const items = value.map((item) => decisionBriefString(item, 200));
@@ -4991,6 +5020,106 @@ function partyDossierNormalizedName(value) {
   return typeof value === "string"
     ? value.trim().replace(/\s+/gu, " ").toLowerCase()
     : null;
+}
+
+const PARTY_DOSSIER_THEME_SUPPORT_ORIGIN =
+  "clause.generated_fields.theme_support";
+
+function partyDossierThemeSupport(
+  value,
+  theme,
+  charStart,
+  charEnd,
+  excerpt,
+  excerptTruncated,
+) {
+  const support = record(value);
+  if (support.availability === "unavailable") {
+    if (
+      !hasExactKeys(support, ["availability", "origin", "reason"]) ||
+      support.origin !== PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+      support.reason !== "stored_exact_theme_support_unavailable"
+    ) {
+      return null;
+    }
+    return {
+      availability: "unavailable",
+      origin: PARTY_DOSSIER_THEME_SUPPORT_ORIGIN,
+      reason: support.reason,
+      excerpt_replay_available: false,
+    };
+  }
+
+  const expectedKeys = [
+    "availability",
+    "origin",
+    "theme",
+    "observed_text",
+    "observed_text_sha256",
+    "clause_relative_start",
+    "clause_relative_end",
+    "document_char_start",
+    "document_char_end",
+    "method",
+    "text_basis",
+    "database_validated_against_clause",
+  ];
+  const relativeStart = decisionBriefInteger(support.clause_relative_start);
+  const relativeEnd = decisionBriefInteger(support.clause_relative_end, 1);
+  const documentStart = decisionBriefInteger(support.document_char_start);
+  const documentEnd = decisionBriefInteger(support.document_char_end, 1);
+  const observedText = typeof support.observed_text === "string"
+    ? Array.from(support.observed_text)
+    : null;
+  const excerptCharacters = typeof excerpt === "string" ? Array.from(excerpt) : [];
+  const replayAvailable = relativeEnd !== null &&
+    relativeEnd <= excerptCharacters.length;
+  if (
+    !hasExactKeys(support, expectedKeys) ||
+    support.availability !== "exact_detector_span" ||
+    support.origin !== PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+    support.theme !== theme ||
+    observedText === null ||
+    observedText.length < 1 ||
+    observedText.length > 1_000 ||
+    relativeStart === null ||
+    relativeEnd === null ||
+    relativeEnd <= relativeStart ||
+    relativeEnd - relativeStart !== observedText.length ||
+    documentStart === null ||
+    documentEnd === null ||
+    charStart === null ||
+    charEnd === null ||
+    documentStart !== charStart + relativeStart ||
+    documentEnd !== charStart + relativeEnd ||
+    documentEnd > charEnd ||
+    (replayAvailable &&
+      excerptCharacters.slice(relativeStart, relativeEnd).join("") !==
+        support.observed_text) ||
+    (!excerptTruncated && !replayAvailable) ||
+    !DECISION_BRIEF_HASH_PATTERN.test(support.observed_text_sha256) ||
+    typeof support.method !== "string" ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,99}$/.test(support.method) ||
+    support.text_basis !== "observed" ||
+    support.database_validated_against_clause !== true
+  ) {
+    return null;
+  }
+  return {
+    availability: "exact_detector_span",
+    origin: PARTY_DOSSIER_THEME_SUPPORT_ORIGIN,
+    theme,
+    observed_text: support.observed_text,
+    observed_text_sha256: support.observed_text_sha256,
+    clause_relative_start: relativeStart,
+    clause_relative_end: relativeEnd,
+    document_char_start: documentStart,
+    document_char_end: documentEnd,
+    method: support.method,
+    text_basis: "observed",
+    database_validated_against_clause: true,
+    excerpt_replay_available: replayAvailable,
+  };
 }
 
 function partyDossierExample(value, theme, confidenceMinimum, confidenceMaximum) {
@@ -5025,6 +5154,14 @@ function partyDossierExample(value, theme, confidenceMinimum, confidenceMaximum)
   const themeConfidence = partyDossierConfidence(
     example.theme_confidence,
     true,
+  );
+  const themeSupport = partyDossierThemeSupport(
+    example.theme_support,
+    theme,
+    charStart,
+    charEnd,
+    example.observed_text_excerpt,
+    example.observed_text_excerpt_truncated,
   );
   if (
     typeof example.agreement_id !== "string" ||
@@ -5070,7 +5207,8 @@ function partyDossierExample(value, theme, confidenceMinimum, confidenceMaximum)
     typeof example.source_external_id_truncated !== "boolean" ||
     sourceUrl === null ||
     !DECISION_BRIEF_HASH_PATTERN.test(example.artifact_sha256) ||
-    example.text_basis !== "observed"
+    example.text_basis !== "observed" ||
+    themeSupport === null
   ) {
     return null;
   }
@@ -5105,6 +5243,7 @@ function partyDossierExample(value, theme, confidenceMinimum, confidenceMaximum)
     observed_published_at: observedPublishedAt,
     artifact_sha256: example.artifact_sha256,
     theme,
+    theme_support: themeSupport,
   };
 }
 
@@ -5117,6 +5256,9 @@ export function buildPartyDossierExport(
   const coverage = record(root.coverage);
   const limits = record(root.limits);
   const familyCoverage = partyDossierFamilyCoverage(root);
+  const exampleThemeSupport = partyDossierThemeSupportCoverage(
+    coverage.example_theme_support,
+  );
   const query = decisionBriefString(scope.query, 200);
   const normalizedQuery = decisionBriefString(scope.normalized_query, 200);
   const matchedPartyRecords = decisionBriefInteger(scope.matched_party_records);
@@ -5187,6 +5329,7 @@ export function buildPartyDossierExport(
     root.api_version !== PARTY_DOSSIER_SCHEMA ||
     !isValidFamilyTimestamp(generatedAt) ||
     familyCoverage === null ||
+    exampleThemeSupport === null ||
     query === undefined ||
     normalizedQuery === undefined ||
     partyDossierNormalizedName(query) !== normalizedQuery ||
@@ -5239,7 +5382,14 @@ export function buildPartyDossierExport(
     limits.complete_party_portfolio_claimed !== false ||
     limits.theme_counts_are_market_prevalence !== false ||
     limits.document_records_are_unique_relationships !== false ||
-    limits.generated_theme_labels_are_legal_conclusions !== false
+    limits.generated_theme_labels_are_legal_conclusions !== false ||
+    limits.example_theme_support_scope !== "returned_examples_only" ||
+    limits.exact_theme_support_origin !==
+      PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+    limits.exact_theme_support_offsets !==
+      "zero_based_half_open_unicode_code_points" ||
+    limits.exact_theme_support_is_legal_conclusion !== false ||
+    limits.missing_exact_theme_support_establishes_theme_absence !== false
   ) {
     throw new TypeError("Party dossier export is invalid");
   }
@@ -5270,6 +5420,9 @@ export function buildPartyDossierExport(
       true,
     );
     const qualityWarning = partyDossierOptionalText(theme.quality_warning, 1_000);
+    const themeSupportCoverage = partyDossierThemeSupportCoverage(
+      theme.example_theme_support,
+    );
     const examples = array(theme.examples).map((example) =>
       partyDossierExample(
         example,
@@ -5300,9 +5453,14 @@ export function buildPartyDossierExport(
       ((confidenceMinimum === null) !== (confidenceMaximum === null)) ||
       (confidenceMinimum !== null && confidenceMinimum > confidenceMaximum) ||
       qualityWarning === undefined ||
+      themeSupportCoverage === null ||
       !Array.isArray(theme.examples) ||
       examples.length !== Math.min(limits.examples_per_theme, themeDocumentRecords) ||
       examples.some((example) => example === null) ||
+      themeSupportCoverage.returned_examples !== examples.length ||
+      themeSupportCoverage.exact_detector_span_examples !== examples.filter(
+        (example) => example?.theme_support.availability === "exact_detector_span",
+      ).length ||
       new Set(examples.map((example) => example?.agreement_id)).size !==
         examples.length ||
       examples.some((example) =>
@@ -5340,10 +5498,24 @@ export function buildPartyDossierExport(
       detector_confidence_min: confidenceMinimum,
       detector_confidence_max: confidenceMaximum,
       quality_warning: qualityWarning,
+      example_theme_support: themeSupportCoverage,
       examples,
     });
   }
-  if (documentRecords === 0 && (themes.length || observedClauses !== 0)) {
+  const returnedExampleCount = themes.reduce(
+    (total, theme) => total + theme.example_theme_support.returned_examples,
+    0,
+  );
+  const exactSupportCount = themes.reduce(
+    (total, theme) =>
+      total + theme.example_theme_support.exact_detector_span_examples,
+    0,
+  );
+  if (
+    (documentRecords === 0 && (themes.length || observedClauses !== 0)) ||
+    exampleThemeSupport.returned_examples !== returnedExampleCount ||
+    exampleThemeSupport.exact_detector_span_examples !== exactSupportCount
+  ) {
     throw new TypeError("Party dossier export is invalid");
   }
   return {
@@ -5372,6 +5544,7 @@ export function buildPartyDossierExport(
       observed_roles: observedRoles,
       capture_methods: captureMethods,
       party_resolution_statuses: resolutionStatuses,
+      example_theme_support: exampleThemeSupport,
       recorded_family_groups: familyCoverage.recordedFamilyGroups,
       document_records_with_recorded_family_key:
         familyCoverage.documentsWithFamily,
@@ -5398,6 +5571,11 @@ export function buildPartyDossierExport(
       recorded_family_keys_are_reviewed_relationships: false,
       recorded_family_keys_are_unique_deals: false,
       raw_family_keys_exposed: false,
+      example_theme_support_scope: limits.example_theme_support_scope,
+      exact_theme_support_origin: limits.exact_theme_support_origin,
+      exact_theme_support_offsets: limits.exact_theme_support_offsets,
+      exact_theme_support_is_legal_conclusion: false,
+      missing_exact_theme_support_establishes_theme_absence: false,
     },
     themes,
     quality_observations: qualityObservations,
@@ -5405,6 +5583,7 @@ export function buildPartyDossierExport(
       "The party scope is an exact normalized observed-name match, not entity resolution or a complete portfolio.",
       "Document records and recorded family keys are not unique deals or reviewed relationships.",
       "Theme labels, counts and commercial-priority order are generated navigation, not market prevalence, risk scores or legal conclusions.",
+      "Exact theme-support spans explain stored detector matches only; unavailable support is disclosed and does not establish absence.",
       "Examples are bounded observed excerpts; inspect complete agreements, definitions, schedules, amendments and related documents before relying on them.",
       "A missing theme or example does not establish that wording, a right or a legal consequence is absent.",
     ],
@@ -5495,6 +5674,9 @@ const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "coverage_observed_roles_json",
   "coverage_capture_methods_json",
   "coverage_party_resolution_statuses_json",
+  "coverage_returned_examples",
+  "coverage_exact_detector_span_examples",
+  "coverage_without_exact_detector_span",
   "recorded_family_groups",
   "documents_with_recorded_family_key",
   "documents_without_recorded_family_key",
@@ -5504,6 +5686,11 @@ const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "recorded_family_keys_are_reviewed_relationships",
   "recorded_family_keys_are_unique_deals",
   "raw_family_keys_exposed",
+  "example_theme_support_scope",
+  "exact_theme_support_origin",
+  "exact_theme_support_offsets",
+  "exact_theme_support_is_legal_conclusion",
+  "missing_exact_theme_support_establishes_theme_absence",
   "theme_limit",
   "theme_selection",
   "examples_per_theme",
@@ -5523,6 +5710,9 @@ const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "detector_confidence_min",
   "detector_confidence_max",
   "theme_quality_warning",
+  "theme_returned_examples",
+  "theme_exact_detector_span_examples",
+  "theme_without_exact_detector_span",
   "example_row_present",
   "example_number",
   "agreement_id",
@@ -5554,6 +5744,19 @@ const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "source_url",
   "observed_published_at",
   "artifact_sha256",
+  "theme_support_availability",
+  "theme_support_reason",
+  "theme_support_observed_text",
+  "theme_support_observed_text_sha256",
+  "theme_support_clause_relative_start",
+  "theme_support_clause_relative_end",
+  "theme_support_document_char_start",
+  "theme_support_document_char_end",
+  "theme_support_method",
+  "theme_support_origin",
+  "theme_support_text_basis",
+  "theme_support_database_validated_against_clause",
+  "theme_support_excerpt_replay_available",
   "exact_observed_name_scope_only",
   "complete_party_portfolio_claimed",
   "document_records_are_unique_relationships",
@@ -5606,6 +5809,12 @@ function serializePartyDossierMatrix(output) {
         coverage_party_resolution_statuses_json: JSON.stringify(
           output.coverage.party_resolution_statuses,
         ),
+        coverage_returned_examples:
+          output.coverage.example_theme_support.returned_examples,
+        coverage_exact_detector_span_examples:
+          output.coverage.example_theme_support.exact_detector_span_examples,
+        coverage_without_exact_detector_span:
+          output.coverage.example_theme_support.without_exact_detector_span,
         recorded_family_groups: output.coverage.recorded_family_groups,
         documents_with_recorded_family_key:
           output.coverage.document_records_with_recorded_family_key,
@@ -5619,6 +5828,12 @@ function serializePartyDossierMatrix(output) {
         recorded_family_keys_are_reviewed_relationships: "FALSE",
         recorded_family_keys_are_unique_deals: "FALSE",
         raw_family_keys_exposed: "FALSE",
+        example_theme_support_scope:
+          output.limits.example_theme_support_scope,
+        exact_theme_support_origin: output.limits.exact_theme_support_origin,
+        exact_theme_support_offsets: output.limits.exact_theme_support_offsets,
+        exact_theme_support_is_legal_conclusion: "FALSE",
+        missing_exact_theme_support_establishes_theme_absence: "FALSE",
         theme_limit: output.limits.theme_limit,
         theme_selection: output.limits.theme_selection,
         examples_per_theme: output.limits.examples_per_theme,
@@ -5640,6 +5855,12 @@ function serializePartyDossierMatrix(output) {
         detector_confidence_min: theme?.detector_confidence_min,
         detector_confidence_max: theme?.detector_confidence_max,
         theme_quality_warning: theme?.quality_warning,
+        theme_returned_examples:
+          theme?.example_theme_support.returned_examples,
+        theme_exact_detector_span_examples:
+          theme?.example_theme_support.exact_detector_span_examples,
+        theme_without_exact_detector_span:
+          theme?.example_theme_support.without_exact_detector_span,
         example_row_present: matrixBoolean(example !== null),
         example_number: example === null ? null : exampleIndex + 1,
         agreement_id: example?.agreement_id,
@@ -5675,6 +5896,30 @@ function serializePartyDossierMatrix(output) {
         source_url: example?.source_url,
         observed_published_at: example?.observed_published_at,
         artifact_sha256: example?.artifact_sha256,
+        theme_support_availability: example?.theme_support.availability,
+        theme_support_reason: example?.theme_support.reason,
+        theme_support_observed_text: example?.theme_support.observed_text,
+        theme_support_observed_text_sha256:
+          example?.theme_support.observed_text_sha256,
+        theme_support_clause_relative_start:
+          example?.theme_support.clause_relative_start,
+        theme_support_clause_relative_end:
+          example?.theme_support.clause_relative_end,
+        theme_support_document_char_start:
+          example?.theme_support.document_char_start,
+        theme_support_document_char_end:
+          example?.theme_support.document_char_end,
+        theme_support_method: example?.theme_support.method,
+        theme_support_origin: example?.theme_support.origin,
+        theme_support_text_basis: example?.theme_support.text_basis,
+        theme_support_database_validated_against_clause: example === null
+          ? null
+          : matrixBoolean(
+            example.theme_support.database_validated_against_clause === true,
+          ),
+        theme_support_excerpt_replay_available: example === null
+          ? null
+          : matrixBoolean(example.theme_support.excerpt_replay_available),
         exact_observed_name_scope_only: "TRUE",
         complete_party_portfolio_claimed: "FALSE",
         document_records_are_unique_relationships: "FALSE",
@@ -14069,6 +14314,13 @@ function boot() {
           count(familyCoverage.largestFamilyDocuments)
         } · not reviewed deals`,
       ),
+      metric(
+        "Exact theme supports",
+        `${count(
+          coverage.example_theme_support.exact_detector_span_examples,
+        )}/${count(coverage.example_theme_support.returned_examples)}`,
+        "Returned examples only · detector evidence",
+      ),
       metric("Sources", count(sources.length), "Rights-gated source systems"),
     );
     partyDossierThemes.replaceChildren();
@@ -14101,7 +14353,14 @@ function boot() {
             count(
               theme.document_records,
             )
-          } document records · not a prevalence measure`,
+          } document records · ${
+            count(
+              record(theme.example_theme_support)
+                .exact_detector_span_examples,
+            )
+          }/${
+            count(record(theme.example_theme_support).returned_examples)
+          } returned examples have exact detector spans · not a prevalence measure`,
         ),
       );
       top.append(
@@ -14164,6 +14423,43 @@ function boot() {
             }`,
           ),
         );
+        const themeSupport = record(example.theme_support);
+        if (themeSupport.availability === "exact_detector_span") {
+          append(
+            exampleCard,
+            element(
+              "span",
+              "badge basis-generated",
+              "Exact detector support",
+            ),
+            element(
+              "p",
+              "excerpt",
+              boundedText(themeSupport.observed_text, 1_000),
+            ),
+            element(
+              "p",
+              "muted tiny",
+              `Clause characters ${
+                count(themeSupport.clause_relative_start)
+              }–${count(themeSupport.clause_relative_end)} · document characters ${
+                count(themeSupport.document_char_start)
+              }–${count(themeSupport.document_char_end)} · ${
+                displayText(themeSupport.method, "method unavailable")
+              } · support SHA-256 ${
+                displayText(themeSupport.observed_text_sha256)
+              }`,
+            ),
+          );
+        } else {
+          exampleCard.append(
+            element(
+              "p",
+              "muted tiny",
+              "Exact stored detector support is unavailable for this example; the surrounding observed clause remains available for inspection.",
+            ),
+          );
+        }
         const actions = element("div", "result-actions");
         if (
           typeof example.agreement_id === "string" &&
