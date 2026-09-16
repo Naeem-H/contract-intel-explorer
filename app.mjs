@@ -6055,6 +6055,15 @@ function boot() {
   const partySourceInput = byId("party-source");
   const partySearchButton = byId("party-search-submit");
   const partySearchStatus = byId("party-search-status");
+  const partyDecisionBriefComparisonStatus = byId(
+    "party-decision-brief-comparison-status",
+  );
+  const partyClearDecisionBriefComparisonButton = byId(
+    "party-clear-decision-brief-comparison",
+  );
+  const partyOpenDecisionBriefComparisonButton = byId(
+    "party-open-decision-brief-comparison",
+  );
   const partyResults = byId("party-results");
   const partyPrevious = byId("party-previous");
   const partyNext = byId("party-next");
@@ -8304,6 +8313,36 @@ function boot() {
     }
   }
 
+  function partyDecisionBriefComparisonChoice(item, agreementId) {
+    const button = element(
+      "button",
+      "button secondary party-brief-compare-button",
+      "Add to brief comparison",
+    );
+    button.type = "button";
+    button.setAttribute("data-agreement-id", agreementId);
+    button.setAttribute(
+      "data-agreement-title",
+      displayText(item.observed_title, "Untitled agreement"),
+    );
+    button.addEventListener("click", () => {
+      const selected = !state.decisionBriefComparisonSelection.has(
+        agreementId,
+      );
+      setDecisionBriefComparisonSelection(
+        {
+          agreementId,
+          title: displayText(item.observed_title, "Untitled agreement"),
+          source: {
+            name: displayText(item.source_name, "Unknown source"),
+          },
+        },
+        selected,
+      );
+    });
+    return button;
+  }
+
   function partyResultCard(itemValue) {
     const item = record(itemValue);
     const card = element("article", "result-card");
@@ -8423,6 +8462,11 @@ function boot() {
       inspect.type = "button";
       inspect.addEventListener("click", () => loadAgreement(agreementId));
       actions.append(inspect);
+      if (["contract", "amendment"].includes(item.document_kind)) {
+        actions.append(
+          partyDecisionBriefComparisonChoice(item, agreementId),
+        );
+      }
     }
     if (typeof item.observed_party_name === "string") {
       const useParty = element(
@@ -8456,18 +8500,7 @@ function boot() {
 
   function updateDecisionBriefComparisonControls(message = null, kind = "") {
     const selected = state.decisionBriefComparisonSelection.size;
-    clearDecisionBriefComparisonButton.disabled = selected === 0 ||
-      state.decisionBriefComparing;
-    openDecisionBriefComparisonButton.disabled =
-      selected < AGREEMENT_DECISION_BRIEF_COMPARISON_MIN ||
-      selected > AGREEMENT_DECISION_BRIEF_COMPARISON_MAX ||
-      state.decisionBriefComparing;
-    downloadDecisionBriefComparisonButton.disabled =
-      state.decisionBriefComparing || state.decisionBriefComparison === null;
-    decisionBriefComparisonStatus.className = kind === "error"
-      ? "status error"
-      : "muted";
-    decisionBriefComparisonStatus.textContent = message ??
+    const selectionMessage = message ??
       (selected === 0
         ? "Select 2–3 agreements to compare the same five positive-detector topics."
         : selected === 1
@@ -8475,6 +8508,35 @@ function boot() {
         : selected === AGREEMENT_DECISION_BRIEF_COMPARISON_MAX
         ? "3 agreements selected (maximum). Ready to compare."
         : "2 agreements selected. Ready to compare.");
+    for (
+      const button of [
+        clearDecisionBriefComparisonButton,
+        partyClearDecisionBriefComparisonButton,
+      ]
+    ) {
+      button.disabled = selected === 0 || state.decisionBriefComparing;
+    }
+    for (
+      const button of [
+        openDecisionBriefComparisonButton,
+        partyOpenDecisionBriefComparisonButton,
+      ]
+    ) {
+      button.disabled = selected < AGREEMENT_DECISION_BRIEF_COMPARISON_MIN ||
+        selected > AGREEMENT_DECISION_BRIEF_COMPARISON_MAX ||
+        state.decisionBriefComparing;
+    }
+    downloadDecisionBriefComparisonButton.disabled =
+      state.decisionBriefComparing || state.decisionBriefComparison === null;
+    for (
+      const status of [
+        decisionBriefComparisonStatus,
+        partyDecisionBriefComparisonStatus,
+      ]
+    ) {
+      status.className = kind === "error" ? "status error" : "muted";
+      status.textContent = selectionMessage;
+    }
 
     for (
       const input of decisionBriefDirectoryResults.querySelectorAll(
@@ -8492,6 +8554,33 @@ function boot() {
         ? "The brief comparison already has three agreements"
         : "";
     }
+    for (
+      const button of partyResults.querySelectorAll(
+        ".party-brief-compare-button",
+      )
+    ) {
+      const agreementId = button.getAttribute("data-agreement-id") ?? "";
+      const agreementTitle = button.getAttribute("data-agreement-title") ??
+        "this agreement";
+      const selectedHere = state.decisionBriefComparisonSelection.has(
+        agreementId,
+      );
+      button.textContent = selectedHere
+        ? "Remove from brief comparison"
+        : "Add to brief comparison";
+      button.setAttribute("aria-pressed", String(selectedHere));
+      button.setAttribute(
+        "aria-label",
+        `${selectedHere ? "Remove" : "Add"} ${agreementTitle} ${
+          selectedHere ? "from" : "to"
+        } agreement brief comparison`,
+      );
+      button.disabled = state.decisionBriefComparing ||
+        (selected >= AGREEMENT_DECISION_BRIEF_COMPARISON_MAX && !selectedHere);
+      button.title = button.disabled && !selectedHere
+        ? "The brief comparison already has three agreements"
+        : "";
+    }
   }
 
   function clearDecisionBriefComparison() {
@@ -8506,20 +8595,20 @@ function boot() {
     updateDecisionBriefComparisonControls();
   }
 
-  function toggleDecisionBriefComparison(item, input) {
+  function setDecisionBriefComparisonSelection(item, selected) {
     const agreementId = item.agreementId;
-    if (!UUID_PATTERN.test(agreementId)) return;
-    if (input.checked) {
+    if (!UUID_PATTERN.test(agreementId)) return false;
+    if (selected) {
       if (
+        !state.decisionBriefComparisonSelection.has(agreementId) &&
         state.decisionBriefComparisonSelection.size >=
           AGREEMENT_DECISION_BRIEF_COMPARISON_MAX
       ) {
-        input.checked = false;
         updateDecisionBriefComparisonControls(
           "A brief comparison can contain at most three agreements. Remove one before adding another.",
           "error",
         );
-        return;
+        return false;
       }
       state.decisionBriefComparisonSelection.set(agreementId, item);
     } else {
@@ -8529,6 +8618,13 @@ function boot() {
     decisionBriefComparisonDialogStatus.textContent =
       "Selection changed; compare again before exporting.";
     updateDecisionBriefComparisonControls();
+    return true;
+  }
+
+  function toggleDecisionBriefComparison(item, input) {
+    if (!setDecisionBriefComparisonSelection(item, input.checked)) {
+      input.checked = false;
+    }
   }
 
   function decisionBriefComparisonChoice(item) {
@@ -8947,6 +9043,7 @@ function boot() {
         Number.isSafeInteger(total) ? ` of ${total}` : ""
       }. Names are observations, not resolved entity identities or a complete portfolio.`
       : "No result returned. Party extraction and corpus coverage are incomplete.";
+    updateDecisionBriefComparisonControls();
   }
 
   async function performPartySearch() {
@@ -11578,7 +11675,15 @@ function boot() {
     "click",
     clearDecisionBriefComparison,
   );
+  partyClearDecisionBriefComparisonButton.addEventListener(
+    "click",
+    clearDecisionBriefComparison,
+  );
   openDecisionBriefComparisonButton.addEventListener(
+    "click",
+    compareSelectedDecisionBriefs,
+  );
+  partyOpenDecisionBriefComparisonButton.addEventListener(
     "click",
     compareSelectedDecisionBriefs,
   );

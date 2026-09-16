@@ -564,6 +564,22 @@
           </form>
           <p id="party-search-status" class="muted" role="status"
             aria-live="polite">Enter an observed buyer, supplier, filing entity, or stated party name.</p>
+          <div id="party-decision-brief-comparison-toolbar"
+            class="comparison-toolbar brief-comparison-toolbar"
+            aria-labelledby="party-decision-brief-comparison-toolbar-title">
+            <div>
+              <strong
+                id="party-decision-brief-comparison-toolbar-title">Compare party agreements</strong>
+              <span id="party-decision-brief-comparison-status" class="muted"
+                role="status" aria-live="polite">Add 2–3 contract or amendment results to compare their five-topic evidence briefs.</span>
+            </div>
+            <div class="comparison-actions">
+              <button id="party-clear-decision-brief-comparison"
+                class="button secondary" type="button" disabled>Clear selection</button>
+              <button id="party-open-decision-brief-comparison"
+                class="button primary" type="button" disabled>Compare selected briefs</button>
+            </div>
+          </div>
           <div id="party-results" class="results"></div>
           <div class="pager">
             <button id="party-previous" class="button secondary" type="button"
