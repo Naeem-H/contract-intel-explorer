@@ -38,6 +38,8 @@ export const AGREEMENT_DECISION_BRIEF_COMPARISON_EXAMPLES =
   AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX;
 export const AGREEMENT_DECISION_BRIEF_COMPARISON_SCHEMA =
   "esheria.agreement-decision-brief-comparison.v1";
+export const AGREEMENT_DECISION_BRIEF_MATRIX_SCHEMA =
+  "esheria.agreement-decision-brief-matrix.v1";
 export const FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA =
   "esheria.family-proposal-brief-comparison.v1";
 export const FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA =
@@ -3808,6 +3810,338 @@ export function buildAgreementDecisionBriefComparison(
       bearer_token_included: false,
     },
   };
+}
+
+const AGREEMENT_DECISION_BRIEF_MATRIX_COLUMNS = Object.freeze([
+  "matrix_schema",
+  "generated_at",
+  "selection_basis",
+  "candidate_id",
+  "proposal_only",
+  "human_review_status",
+  "human_review_current_decision_count",
+  "human_review_conflicting",
+  "same_family_established_by_candidate",
+  "amendment_direction_determined",
+  "relationship_materialized",
+  "legal_effect_determined",
+  "agreement_count",
+  "agreement_number",
+  "agreement_id",
+  "agreement_family_key",
+  "agreement_title",
+  "agreement_document_kind",
+  "agreement_document_kind_basis",
+  "agreement_recorded_execution_date",
+  "agreement_execution_date_basis",
+  "agreement_execution_date_rule_id",
+  "agreement_execution_date_evidence_id",
+  "agreement_recorded_effective_date",
+  "agreement_effective_date_basis",
+  "agreement_effective_date_rule_id",
+  "agreement_effective_date_evidence_id",
+  "agreement_recorded_termination_date",
+  "agreement_termination_date_basis",
+  "agreement_termination_date_rule_id",
+  "agreement_termination_date_evidence_id",
+  "agreement_published_at",
+  "agreement_artifact_sha256",
+  "extraction_id",
+  "extraction_method",
+  "extraction_version",
+  "extraction_confidence",
+  "extracted_text_sha256",
+  "agreement_text_basis",
+  "agreement_clause_count",
+  "source_slug",
+  "source_name",
+  "source_publisher",
+  "source_external_id",
+  "source_url",
+  "source_observed_published_at",
+  "source_terms_url",
+  "source_publication_permitted",
+  "source_redistribution_allowed",
+  "topic_number",
+  "topic_key",
+  "topic_label",
+  "topic_detector_version",
+  "topic_positive_match_present",
+  "topic_matching_clause_count",
+  "topic_total_signal_matches",
+  "topic_returned_examples",
+  "topic_examples_truncated",
+  "topic_omitted_matching_clause_count",
+  "evidence_row_present",
+  "evidence_row_number",
+  "clause_id",
+  "clause_ordinal",
+  "clause_heading",
+  "page_start",
+  "page_end",
+  "clause_char_start",
+  "clause_char_end",
+  "matched_signal_count",
+  "signal_keys",
+  "generated_signal_key",
+  "generated_signal_label",
+  "generated_signal_basis",
+  "generated_signal_confidence",
+  "generated_signal_detector_version",
+  "generated_signal_rule_id",
+  "generated_signal_attributes_json",
+  "observed_support_excerpt",
+  "observed_support_text_basis",
+  "observed_support_sha256",
+  "observed_support_clause_char_start",
+  "observed_support_clause_char_end",
+  "observed_support_document_char_start",
+  "observed_support_document_char_end",
+  "observed_matched_text",
+  "observed_matched_text_sha256",
+  "observed_matched_clause_char_start",
+  "observed_matched_clause_char_end",
+  "observed_support_is_bounded_excerpt",
+  "observed_duration_candidates_json",
+  "observed_value_candidates_json",
+  "positive_matches_only",
+  "absence_is_not_evidence_of_absence",
+  "counts_are_normalized_scores",
+  "selected_set_is_representative_market_sample",
+  "risk_score_provided",
+  "comparison_legal_effect_determined",
+  "brief_limitations",
+  "comparison_limitations",
+]);
+
+function decisionBriefMatrixDateFields(agreement, dateType) {
+  const value = agreement[`observed_${dateType}_date`];
+  const selection = record(agreement.agreement_date_selections)[dateType];
+  return {
+    value,
+    basis: value === null ? null : selection ? "generated" : "observed",
+    ruleId: selection?.rule_id ?? null,
+    evidenceId: selection?.evidence_id ?? null,
+  };
+}
+
+function serializeAgreementDecisionBriefMatrix(
+  comparison,
+  selectionContext = null,
+) {
+  const context = selectionContext === null
+    ? null
+    : record(selectionContext);
+  const review = record(context?.human_review);
+  const claims = record(context?.claims);
+  const rows = [];
+  for (
+    let agreementIndex = 0;
+    agreementIndex < comparison.decision_briefs.length;
+    agreementIndex += 1
+  ) {
+    const brief = comparison.decision_briefs[agreementIndex];
+    const agreement = brief.agreement;
+    const source = brief.source;
+    const execution = decisionBriefMatrixDateFields(agreement, "execution");
+    const effective = decisionBriefMatrixDateFields(agreement, "effective");
+    const termination = decisionBriefMatrixDateFields(
+      agreement,
+      "termination",
+    );
+    for (
+      let topicIndex = 0;
+      topicIndex < brief.topics.length;
+      topicIndex += 1
+    ) {
+      const topic = brief.topics[topicIndex];
+      const exampleRows = topic.examples.length ? topic.examples : [null];
+      for (let exampleIndex = 0; exampleIndex < exampleRows.length; exampleIndex += 1) {
+        const exampleValue = exampleRows[exampleIndex];
+        const example = record(exampleValue);
+        const observed = record(example.observed_evidence);
+        const generated = record(example.generated_signal);
+        rows.push({
+          matrix_schema: AGREEMENT_DECISION_BRIEF_MATRIX_SCHEMA,
+          generated_at: comparison.generated_at,
+          selection_basis: context?.basis ?? "user_selected",
+          candidate_id: context?.candidate_id ?? null,
+          proposal_only: context === null
+            ? "FALSE"
+            : matrixBoolean(context.proposal_only),
+          human_review_status: context === null ? null : review.status,
+          human_review_current_decision_count: context === null
+            ? null
+            : review.current_decision_count,
+          human_review_conflicting: context === null
+            ? null
+            : matrixBoolean(review.conflicting),
+          same_family_established_by_candidate: context === null
+            ? null
+            : matrixBoolean(claims.same_family_established_by_candidate),
+          amendment_direction_determined: matrixBoolean(
+            context === null ? false : claims.amendment_direction_determined,
+          ),
+          relationship_materialized: context === null
+            ? null
+            : matrixBoolean(claims.relationship_materialized),
+          legal_effect_determined: matrixBoolean(
+            context === null ? false : claims.legal_effect_determined,
+          ),
+          agreement_count: comparison.scope.agreement_count,
+          agreement_number: agreementIndex + 1,
+          agreement_id: agreement.agreement_id,
+          agreement_family_key: agreement.family_key,
+          agreement_title: agreement.title,
+          agreement_document_kind: agreement.document_kind,
+          agreement_document_kind_basis: agreement.document_kind_basis,
+          agreement_recorded_execution_date: execution.value,
+          agreement_execution_date_basis: execution.basis,
+          agreement_execution_date_rule_id: execution.ruleId,
+          agreement_execution_date_evidence_id: execution.evidenceId,
+          agreement_recorded_effective_date: effective.value,
+          agreement_effective_date_basis: effective.basis,
+          agreement_effective_date_rule_id: effective.ruleId,
+          agreement_effective_date_evidence_id: effective.evidenceId,
+          agreement_recorded_termination_date: termination.value,
+          agreement_termination_date_basis: termination.basis,
+          agreement_termination_date_rule_id: termination.ruleId,
+          agreement_termination_date_evidence_id: termination.evidenceId,
+          agreement_published_at: agreement.published_at,
+          agreement_artifact_sha256: agreement.artifact_sha256,
+          extraction_id: agreement.extraction_id,
+          extraction_method: agreement.extraction_method,
+          extraction_version: agreement.extraction_version,
+          extraction_confidence: agreement.extraction_confidence,
+          extracted_text_sha256: agreement.extracted_text_sha256,
+          agreement_text_basis: agreement.text_basis,
+          agreement_clause_count: agreement.clause_count,
+          source_slug: source.slug,
+          source_name: source.name,
+          source_publisher: source.publisher,
+          source_external_id: source.external_id,
+          source_url: source.source_url,
+          source_observed_published_at: source.observed_published_at,
+          source_terms_url: source.observed_terms_url,
+          source_publication_permitted: matrixBoolean(
+            source.publication_permitted,
+          ),
+          source_redistribution_allowed: matrixBoolean(
+            source.redistribution_allowed,
+          ),
+          topic_number: topicIndex + 1,
+          topic_key: topic.topic_key,
+          topic_label: topic.label,
+          topic_detector_version: topic.detector_version,
+          topic_positive_match_present: matrixBoolean(
+            topic.total_matches > 0,
+          ),
+          topic_matching_clause_count: topic.exact_matching_clause_count,
+          topic_total_signal_matches: topic.total_signal_matches,
+          topic_returned_examples: topic.returned_examples,
+          topic_examples_truncated: matrixBoolean(topic.examples_truncated),
+          topic_omitted_matching_clause_count:
+            topic.total_matches - topic.returned_examples,
+          evidence_row_present: matrixBoolean(exampleValue !== null),
+          evidence_row_number: exampleValue === null ? null : exampleIndex + 1,
+          clause_id: example.clause_id,
+          clause_ordinal: example.clause_ordinal,
+          clause_heading: example.clause_heading,
+          page_start: example.page_start,
+          page_end: example.page_end,
+          clause_char_start: example.clause_char_start,
+          clause_char_end: example.clause_char_end,
+          matched_signal_count: example.matched_signal_count,
+          signal_keys: array(example.signal_keys).join(" | "),
+          generated_signal_key: generated.signal_key,
+          generated_signal_label: generated.label,
+          generated_signal_basis: generated.basis,
+          generated_signal_confidence: generated.confidence,
+          generated_signal_detector_version: generated.detector_version,
+          generated_signal_rule_id: generated.rule_id,
+          generated_signal_attributes_json: exampleValue === null
+            ? null
+            : JSON.stringify(generated.attributes),
+          observed_support_excerpt: observed.excerpt,
+          observed_support_text_basis: observed.text_basis,
+          observed_support_sha256: observed.sha256,
+          observed_support_clause_char_start: observed.clause_char_start,
+          observed_support_clause_char_end: observed.clause_char_end,
+          observed_support_document_char_start: observed.document_char_start,
+          observed_support_document_char_end: observed.document_char_end,
+          observed_matched_text: observed.matched_text,
+          observed_matched_text_sha256: observed.matched_text_sha256,
+          observed_matched_clause_char_start:
+            observed.matched_clause_char_start,
+          observed_matched_clause_char_end: observed.matched_clause_char_end,
+          observed_support_is_bounded_excerpt: exampleValue === null
+            ? null
+            : matrixBoolean(observed.bounded_excerpt),
+          observed_duration_candidates_json:
+            observed.observed_duration_candidates === null ||
+              observed.observed_duration_candidates === undefined
+              ? null
+              : JSON.stringify(observed.observed_duration_candidates),
+          observed_value_candidates_json:
+            observed.observed_value_candidates === null ||
+              observed.observed_value_candidates === undefined
+              ? null
+              : JSON.stringify(observed.observed_value_candidates),
+          positive_matches_only: matrixBoolean(
+            brief.limits.positive_matches_only,
+          ),
+          absence_is_not_evidence_of_absence: matrixBoolean(
+            brief.limits.absence_is_not_evidence_of_absence,
+          ),
+          counts_are_normalized_scores: "FALSE",
+          selected_set_is_representative_market_sample: "FALSE",
+          risk_score_provided: matrixBoolean(
+            brief.limits.risk_score_provided,
+          ),
+          comparison_legal_effect_determined: matrixBoolean(
+            brief.limits.legal_effect_determined,
+          ),
+          brief_limitations: brief.limitations.join(" | "),
+          comparison_limitations: comparison.limitations.join(" | "),
+        });
+      }
+    }
+  }
+  return "\uFEFF" +
+    [
+      AGREEMENT_DECISION_BRIEF_MATRIX_COLUMNS.map(csvCell).join(","),
+      ...rows.map((row) =>
+        AGREEMENT_DECISION_BRIEF_MATRIX_COLUMNS.map((column) =>
+          csvCell(row[column])
+        ).join(",")
+      ),
+    ].join("\r\n") +
+    "\r\n";
+}
+
+export function buildAgreementDecisionBriefComparisonCsv(
+  values,
+  generatedAt = new Date().toISOString(),
+) {
+  return serializeAgreementDecisionBriefMatrix(
+    buildAgreementDecisionBriefComparison(values, generatedAt),
+  );
+}
+
+export function buildFamilyProposalDecisionBriefComparisonCsv(
+  proposalValue,
+  briefValues,
+  generatedAt = new Date().toISOString(),
+) {
+  const packet = buildFamilyProposalBriefComparison(
+    proposalValue,
+    briefValues,
+    generatedAt,
+  );
+  return serializeAgreementDecisionBriefMatrix(
+    packet.decision_brief_comparison,
+    packet.selection_context,
+  );
 }
 
 function familyProposalComparisonDocument(value) {
@@ -8290,6 +8624,7 @@ function boot() {
     decisionBriefComparisonSelection: new Map(),
     decisionBriefComparison: null,
     decisionBriefComparisonExport: null,
+    decisionBriefComparisonCsv: null,
     decisionBriefComparing: false,
     decisionBrief: null,
     decisionBriefAgreementId: null,
@@ -8476,6 +8811,9 @@ function boot() {
   const downloadDecisionBriefComparisonButton = byId(
     "download-decision-brief-comparison",
   );
+  const downloadDecisionBriefComparisonCsvButton = byId(
+    "download-decision-brief-comparison-csv",
+  );
   const comparisonDialog = byId("comparison-dialog");
   const comparisonBody = byId("comparison-body");
   const guideButtons = [
@@ -8573,6 +8911,7 @@ function boot() {
     state.decisionBriefComparisonSelection.clear();
     state.decisionBriefComparison = null;
     state.decisionBriefComparisonExport = null;
+    state.decisionBriefComparisonCsv = null;
     state.decisionBriefComparing = false;
     state.decisionBrief = null;
     state.decisionBriefAgreementId = null;
@@ -8588,6 +8927,7 @@ function boot() {
     decisionBriefComparisonBody.replaceChildren();
     decisionBriefComparisonDialogStatus.textContent = "";
     downloadDecisionBriefComparisonButton.disabled = true;
+    downloadDecisionBriefComparisonCsvButton.disabled = true;
     positionForm.reset();
     positionFacets.replaceChildren(element("span", "", "Available evidence:"));
     positionStatus.textContent =
@@ -10997,6 +11337,9 @@ function boot() {
     downloadDecisionBriefComparisonButton.disabled =
       state.decisionBriefComparing ||
       state.decisionBriefComparisonExport === null;
+    downloadDecisionBriefComparisonCsvButton.disabled =
+      state.decisionBriefComparing ||
+      state.decisionBriefComparisonCsv === null;
     for (
       const status of [
         decisionBriefComparisonStatus,
@@ -11065,9 +11408,11 @@ function boot() {
     state.decisionBriefComparisonSelection.clear();
     state.decisionBriefComparison = null;
     state.decisionBriefComparisonExport = null;
+    state.decisionBriefComparisonCsv = null;
     decisionBriefComparisonBody.replaceChildren();
     decisionBriefComparisonDialogStatus.textContent = "";
     downloadDecisionBriefComparisonButton.disabled = true;
+    downloadDecisionBriefComparisonCsvButton.disabled = true;
     if (decisionBriefComparisonDialog.hasAttribute("open")) {
       closeDialog(decisionBriefComparisonDialog);
     }
@@ -11095,6 +11440,7 @@ function boot() {
     }
     state.decisionBriefComparison = null;
     state.decisionBriefComparisonExport = null;
+    state.decisionBriefComparisonCsv = null;
     decisionBriefComparisonDialogStatus.textContent =
       "Selection changed; compare again before exporting.";
     updateDecisionBriefComparisonControls();
@@ -14291,7 +14637,15 @@ function boot() {
     }
     table.append(body);
     scroll.append(table);
-    fragment.append(scroll);
+    append(
+      fragment,
+      scroll,
+      element(
+        "p",
+        "muted tiny",
+        "The CSV contains one row per returned evidence example and an explicit coverage row for each topic with zero positive detector matches. Those zero rows are not evidence that wording is absent.",
+      ),
+    );
 
     if (changeCuePackets.length) {
       append(
@@ -14397,9 +14751,10 @@ function boot() {
           (total, packet) => total + packet.cues.length,
           0,
         )
-      } bounded change cue(s) loaded from the proposal-only pair.`
-      : `${briefs.length} independently validated briefs loaded.`;
+      } bounded change cue(s) loaded from the proposal-only pair; JSON and five-topic CSV are ready.`
+      : `${briefs.length} independently validated briefs loaded; JSON and five-topic CSV are ready.`;
     downloadDecisionBriefComparisonButton.disabled = false;
+    downloadDecisionBriefComparisonCsvButton.disabled = false;
   }
 
   async function compareDecisionBriefSelections(selected, proposal = null) {
@@ -14415,7 +14770,9 @@ function boot() {
     state.decisionBriefComparing = true;
     state.decisionBriefComparison = null;
     state.decisionBriefComparisonExport = null;
+    state.decisionBriefComparisonCsv = null;
     downloadDecisionBriefComparisonButton.disabled = true;
+    downloadDecisionBriefComparisonCsvButton.disabled = true;
     updateDecisionBriefComparisonControls(
       proposal
         ? "Loading exact decision briefs and document-change cues…"
@@ -14477,17 +14834,23 @@ function boot() {
       if (failure?.status === "rejected") throw failure.reason;
       const briefValues = settled.map((result) => result.value);
       const cueValues = cueSettled.map((result) => result.value);
+      const generatedAt = new Date().toISOString();
       const proposalPacket = proposal === null
         ? null
         : buildFamilyProposalLifecycleComparison(
           proposal,
           briefValues,
           cueValues,
+          generatedAt,
         );
       const comparison = proposalPacket?.decision_brief_comparison ??
-        buildAgreementDecisionBriefComparison(briefValues);
+        buildAgreementDecisionBriefComparison(briefValues, generatedAt);
       state.decisionBriefComparison = comparison;
       state.decisionBriefComparisonExport = proposalPacket ?? comparison;
+      state.decisionBriefComparisonCsv = serializeAgreementDecisionBriefMatrix(
+        comparison,
+        proposalPacket?.selection_context ?? null,
+      );
       renderDecisionBriefComparison(
         comparison,
         proposalPacket?.selection_context ?? null,
@@ -14542,6 +14905,7 @@ function boot() {
     }
     state.decisionBriefComparison = null;
     state.decisionBriefComparisonExport = null;
+    state.decisionBriefComparisonCsv = null;
     updateDecisionBriefComparisonControls(
       "The proposal pair replaced the prior selection; loading strict evidence briefs…",
     );
@@ -14602,6 +14966,38 @@ function boot() {
         : output.schema === FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA
         ? "Proposal-only comparison JSON downloaded with the generated-candidate boundary and without a bearer token or private Storage path."
         : "Comparison JSON downloaded without a bearer token or private Storage path.";
+  }
+
+  function downloadDecisionBriefComparisonCsv() {
+    if (
+      !state.decisionBriefComparisonCsv ||
+      !state.decisionBriefComparisonExport
+    ) {
+      return;
+    }
+    const output = state.decisionBriefComparisonExport;
+    const proposalOnly = output.schema ===
+        FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA ||
+      output.schema === FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA;
+    const blob = new Blob([state.decisionBriefComparisonCsv], {
+      type: "text/csv;charset=utf-8",
+    });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = element("a");
+    link.href = objectUrl;
+    link.download = `${
+      proposalOnly
+        ? "esheria-family-proposal-brief-matrix"
+        : "esheria-agreement-brief-matrix"
+    }-${output.generated_at.slice(0, 10)}.csv`;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    decisionBriefComparisonDialogStatus.textContent = proposalOnly
+      ? "Proposal-only five-topic CSV downloaded with spreadsheet-formula protection and explicit non-relationship boundaries."
+      : "Five-topic comparison CSV downloaded with evidence hashes, zero-match caveats, and spreadsheet-formula protection.";
   }
 
   async function loadAgreementDecisionBrief(agreementId) {
@@ -15584,6 +15980,10 @@ function boot() {
     "click",
     downloadDecisionBriefComparison,
   );
+  downloadDecisionBriefComparisonCsvButton.addEventListener(
+    "click",
+    downloadDecisionBriefComparisonCsv,
+  );
   downloadPartyBriefShortlistButton.addEventListener(
     "click",
     downloadPartyDecisionBriefShortlist,
@@ -15966,6 +16366,7 @@ function boot() {
     state.decisionBriefComparisonSelection.clear();
     state.decisionBriefComparison = null;
     state.decisionBriefComparisonExport = null;
+    state.decisionBriefComparisonCsv = null;
     tokenInput.value = "";
   });
   window.addEventListener("pageshow", (event) => {
