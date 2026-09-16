@@ -38,6 +38,8 @@ export const PARTY_DECISION_BRIEF_SCAN_CONCURRENCY = 3;
 export const PARTY_DECISION_BRIEF_SCAN_EXAMPLES = 1;
 export const PARTY_DECISION_BRIEF_SCAN_MAX = 50;
 export const PARTY_DECISION_BRIEF_SHORTLIST_MAX = 10;
+export const PARTY_DECISION_BRIEF_SHORTLIST_SCHEMA =
+  "esheria.party-decision-brief-shortlist.v1";
 export const PARTY_DOSSIER_SCHEMA =
   "observed-party-negotiation-dossier-v4";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
@@ -936,6 +938,18 @@ const DECISION_BRIEF_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const DECISION_BRIEF_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DECISION_BRIEF_BASES = new Set(["observed", "reviewed", "generated"]);
 const DECISION_BRIEF_DOCUMENT_KINDS = new Set(["contract", "amendment"]);
+const PARTY_CAPTURE_METHODS = new Set([
+  "source_structured_metadata",
+  "generated_extraction_with_observed_quote",
+  "source_filing_metadata",
+]);
+const PARTY_RESOLUTION_STATUSES = new Set([
+  "unresolved",
+  "generated",
+  "reviewed",
+  "rejected",
+]);
+const PARTY_MATCH_KINDS = new Set(["exact", "prefix", "contains"]);
 const DECISION_BRIEF_EXACT_KEYS = Object.freeze({
   root: [
     "api_version",
@@ -1848,6 +1862,225 @@ export function partyDecisionBriefShortlist(
       return coverage && coverage.matchedTopicCount > 0;
     })
     .slice(0, limit);
+}
+
+export function buildPartyDecisionBriefShortlistExport(
+  value = {},
+  generatedAt = new Date().toISOString(),
+) {
+  const input = record(value);
+  const query = typeof input.query === "string" ? input.query.trim() : "";
+  const documentKind = typeof input.documentKind === "string"
+    ? input.documentKind
+    : "";
+  const sourceSlug = typeof input.sourceSlug === "string"
+    ? input.sourceSlug.trim().toLowerCase()
+    : "";
+  const matchingRecordCount = decisionBriefInteger(
+    input.matchingRecordCount,
+  );
+  const totalMatchingRecords = input.totalMatchingRecords === null
+    ? null
+    : decisionBriefInteger(input.totalMatchingRecords);
+  const candidates = array(input.candidates);
+  const briefValues = array(input.briefs);
+  if (
+    query.length < 2 ||
+    query.length > 200 ||
+    !/[\p{L}\p{N}]/u.test(query) ||
+    (documentKind && !DOCUMENT_KINDS.has(documentKind)) ||
+    (sourceSlug && !SOURCE_PATTERN.test(sourceSlug)) ||
+    matchingRecordCount === null ||
+    matchingRecordCount < 1 ||
+    matchingRecordCount > PARTY_DECISION_BRIEF_SCAN_MAX ||
+    !("totalMatchingRecords" in input) ||
+    (totalMatchingRecords !== null &&
+      totalMatchingRecords < matchingRecordCount) ||
+    typeof input.matchingSetTruncated !== "boolean" ||
+    (totalMatchingRecords !== null &&
+      input.matchingSetTruncated !==
+        (totalMatchingRecords > matchingRecordCount)) ||
+    candidates.length < 1 ||
+    candidates.length > matchingRecordCount ||
+    !Array.isArray(input.candidates) ||
+    !Array.isArray(input.briefs) ||
+    briefValues.length > candidates.length ||
+    !isValidFamilyTimestamp(generatedAt)
+  ) {
+    throw new TypeError("Party decision brief shortlist export is invalid");
+  }
+
+  const candidateByAgreement = new Map();
+  for (const candidateValue of candidates) {
+    const candidate = record(candidateValue);
+    const agreementId = candidate.agreement_id;
+    const observedName = candidate.observed_party_name;
+    const observedRole = candidate.observed_party_role;
+    const evidenceQuote = candidate.party_evidence_quote;
+    const evidenceSource = candidate.party_evidence_source;
+    const candidateSourceUrl = safeExternalUrl(candidate.source_url);
+    if (
+      typeof agreementId !== "string" ||
+      !UUID_PATTERN.test(agreementId) ||
+      candidateByAgreement.has(agreementId) ||
+      !DECISION_BRIEF_DOCUMENT_KINDS.has(candidate.document_kind) ||
+      (documentKind && candidate.document_kind !== documentKind) ||
+      typeof observedName !== "string" ||
+      observedName.length < 1 ||
+      observedName.length > 1_000 ||
+      !observedName.toLowerCase().includes(query.toLowerCase()) ||
+      !(
+        observedRole === null ||
+        (typeof observedRole === "string" && observedRole.length <= 300)
+      ) ||
+      !PARTY_CAPTURE_METHODS.has(candidate.party_capture_method) ||
+      !PARTY_RESOLUTION_STATUSES.has(candidate.party_resolution_status) ||
+      !PARTY_MATCH_KINDS.has(candidate.match_kind) ||
+      !(
+        evidenceQuote === null ||
+        (typeof evidenceQuote === "string" && evidenceQuote.length <= 500)
+      ) ||
+      !(
+        evidenceSource === null ||
+        (typeof evidenceSource === "string" && evidenceSource.length <= 100)
+      ) ||
+      typeof candidate.source_slug !== "string" ||
+      !SOURCE_PATTERN.test(candidate.source_slug) ||
+      (sourceSlug && candidate.source_slug !== sourceSlug) ||
+      candidateSourceUrl === null ||
+      !DECISION_BRIEF_HASH_PATTERN.test(candidate.artifact_sha256)
+    ) {
+      throw new TypeError("Party decision brief shortlist export is invalid");
+    }
+    if (
+      (candidate.party_capture_method ===
+          "generated_extraction_with_observed_quote" &&
+        !(typeof evidenceQuote === "string" && evidenceQuote.length > 0)) ||
+      (candidate.party_capture_method !==
+          "generated_extraction_with_observed_quote" &&
+        evidenceQuote !== null) ||
+      (candidate.party_capture_method === "source_structured_metadata" &&
+        evidenceSource !== "ocds_release") ||
+      (candidate.party_capture_method !== "source_structured_metadata" &&
+        evidenceSource !== null)
+    ) {
+      throw new TypeError("Party decision brief shortlist export is invalid");
+    }
+    candidateByAgreement.set(agreementId, {
+      partyMatch: {
+        observed_name: observedName,
+        observed_role: observedRole,
+        capture_method: candidate.party_capture_method,
+        resolution_status: candidate.party_resolution_status,
+        match_kind: candidate.match_kind,
+        evidence_quote: evidenceQuote,
+        evidence_source: evidenceSource,
+      },
+      documentKind: candidate.document_kind,
+      sourceSlug: candidate.source_slug,
+      sourceUrl: candidateSourceUrl,
+      artifactSha256: candidate.artifact_sha256,
+    });
+  }
+
+  const validatedBriefByAgreement = new Map();
+  const coverage = [];
+  for (const briefValue of briefValues) {
+    const agreementId = record(record(briefValue).agreement).agreement_id;
+    const candidate = candidateByAgreement.get(agreementId);
+    const brief = agreementDecisionBriefEvidence(
+      briefValue,
+      agreementId,
+      PARTY_DECISION_BRIEF_SCAN_EXAMPLES,
+    );
+    const summary = partyDecisionBriefCoverage(brief, agreementId);
+    if (
+      !candidate ||
+      brief === null ||
+      summary === null ||
+      validatedBriefByAgreement.has(agreementId) ||
+      brief.agreement.document_kind !== candidate.documentKind ||
+      brief.agreement.artifact_sha256 !== candidate.artifactSha256 ||
+      brief.source.slug !== candidate.sourceSlug ||
+      brief.source.source_url !== candidate.sourceUrl
+    ) {
+      throw new TypeError("Party decision brief shortlist export is invalid");
+    }
+    validatedBriefByAgreement.set(agreementId, brief);
+    coverage.push(summary);
+  }
+
+  const shortlist = partyDecisionBriefShortlist(candidates, coverage);
+  const positiveBriefCount = coverage.filter((item) =>
+    item.matchedTopicCount > 0
+  ).length;
+  const coverageByAgreement = new Map(
+    coverage.map((item) => [item.agreementId, item]),
+  );
+  return {
+    schema: PARTY_DECISION_BRIEF_SHORTLIST_SCHEMA,
+    generated_at: generatedAt,
+    scope: {
+      party_query: query,
+      document_kind_filter: documentKind || null,
+      source_filter: sourceSlug || null,
+      matching_records_returned: matchingRecordCount,
+      total_matching_records: totalMatchingRecords,
+      matching_set_truncated: input.matchingSetTruncated,
+      maximum_matching_records: PARTY_DECISION_BRIEF_SCAN_MAX,
+      eligible_briefs_attempted: candidates.length,
+      validated_briefs: coverage.length,
+      validation_failures: candidates.length - coverage.length,
+      positive_briefs: positiveBriefCount,
+      zero_match_briefs: coverage.length - positiveBriefCount,
+      maximum_shortlist_records: PARTY_DECISION_BRIEF_SHORTLIST_MAX,
+      shortlist_records: shortlist.length,
+    },
+    ranking: {
+      basis:
+        "positive_topic_count_then_signal_count_then_matching_clause_count_v1",
+      basis_type: "generated",
+      normalized_score_provided: false,
+    },
+    results: shortlist.map((candidateValue, index) => {
+      const agreementId = record(candidateValue).agreement_id;
+      const candidate = candidateByAgreement.get(agreementId);
+      const brief = validatedBriefByAgreement.get(agreementId);
+      const summary = coverageByAgreement.get(agreementId);
+      return {
+        rank: index + 1,
+        observed_party_match: candidate.partyMatch,
+        generated_coverage: {
+          matched_topic_count: summary.matchedTopicCount,
+          matching_clause_count: summary.matchingClauseCount,
+          signal_count: summary.signalCount,
+          matched_topics: summary.matchedTopics.map((topic) => ({
+            topic_key: topic.topicKey,
+            label: topic.label,
+            matching_clause_count: topic.matchingClauseCount,
+            signal_count: topic.signalCount,
+          })),
+        },
+        decision_brief: brief,
+      };
+    }),
+    limitations: [
+      "Party matching is literal observed-name retrieval, not entity resolution or a complete portfolio.",
+      "Only the first 50 matching records are fetched; matching_set_truncated declares whether the API reported more.",
+      "Only positive deterministic detector matches appear in the shortlist; zero matches do not establish absence.",
+      "Ordering is generated navigation, not a risk, quality, recommendation, market-prevalence or legal-effect score.",
+      "Each embedded brief contains at most one validated evidence example per topic; inspect the source, complete agreement and related documents before relying on it.",
+    ],
+    export_safety: {
+      format: "application/json",
+      observed_text_preserved_verbatim: true,
+      spreadsheet_formula_execution: false,
+      private_storage_paths_included: false,
+      bearer_token_included: false,
+      spreadsheet_import_warning:
+        "JSON does not execute formula-like source text. If converting evidence to a spreadsheet, neutralize formula-leading cells before opening the file.",
+    },
+  };
 }
 
 export function buildAgreementDecisionBriefExport(
@@ -6122,6 +6355,7 @@ function boot() {
     partySearching: false,
     partyPageResults: [],
     partyBriefCoverage: new Map(),
+    partyBriefShortlistExport: null,
     partyBriefScanGeneration: 0,
     partyBriefScanLoading: false,
     partyDossierLoading: false,
@@ -6271,6 +6505,12 @@ function boot() {
   const partyBriefShortlistResults = byId(
     "party-decision-brief-shortlist-results",
   );
+  const downloadPartyBriefShortlistButton = byId(
+    "download-party-decision-brief-shortlist",
+  );
+  const partyBriefShortlistExportStatus = byId(
+    "party-decision-brief-shortlist-export-status",
+  );
   const partyDecisionBriefComparisonStatus = byId(
     "party-decision-brief-comparison-status",
   );
@@ -6374,6 +6614,7 @@ function boot() {
     state.partySearching = false;
     state.partyPageResults = [];
     state.partyBriefCoverage.clear();
+    state.partyBriefShortlistExport = null;
     state.partyBriefScanGeneration += 1;
     state.partyBriefScanLoading = false;
     state.partyDossierLoading = false;
@@ -6470,6 +6711,8 @@ function boot() {
       "Run a party search, then build a bounded evidence-bearing shortlist from up to 50 matching records.";
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
+    downloadPartyBriefShortlistButton.disabled = true;
+    partyBriefShortlistExportStatus.textContent = "";
     syncGuideSelection("");
     results.replaceChildren(
       element("p", "empty", "Sign in to search published evidence."),
@@ -9335,8 +9578,11 @@ function boot() {
     const pagination = record(root.pagination);
     state.partyPageResults = rows;
     state.partyBriefCoverage = new Map();
+    state.partyBriefShortlistExport = null;
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
+    downloadPartyBriefShortlistButton.disabled = true;
+    partyBriefShortlistExportStatus.textContent = "";
     state.partyHasMore = pagination.has_more === true;
     partyPrevious.disabled = state.partyOffset === 0;
     partyNext.disabled = !state.partyHasMore;
@@ -9375,8 +9621,11 @@ function boot() {
     state.partyBriefScanGeneration = generation;
     state.partyBriefScanLoading = true;
     state.partyBriefCoverage = new Map();
+    state.partyBriefShortlistExport = null;
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
+    downloadPartyBriefShortlistButton.disabled = true;
+    partyBriefShortlistExportStatus.textContent = "";
     const token = state.token;
     const query = state.partyQuery;
     const kind = state.partyKind;
@@ -9388,6 +9637,7 @@ function boot() {
     );
 
     const coverage = [];
+    const validatedBriefs = [];
     let failureCount = 0;
     let candidates = [];
     try {
@@ -9453,7 +9703,7 @@ function boot() {
                 "The strict brief could not be summarized safely.",
               );
             }
-            return summary;
+            return { brief, summary };
           }),
         );
         if (
@@ -9474,8 +9724,10 @@ function boot() {
           return;
         }
         for (const outcome of settled) {
-          if (outcome.status === "fulfilled") coverage.push(outcome.value);
-          else failureCount += 1;
+          if (outcome.status === "fulfilled") {
+            coverage.push(outcome.value.summary);
+            validatedBriefs.push(outcome.value.brief);
+          } else failureCount += 1;
         }
         statusMessage(
           partyBriefRankStatus,
@@ -9517,6 +9769,27 @@ function boot() {
       const total = Number(pagination.total_matching_agreements);
       const scanWasTruncated = pagination.has_more === true ||
         (Number.isSafeInteger(total) && total > scanRows.length);
+      const totalMatchingRecords = Number.isSafeInteger(total) &&
+          total >= scanRows.length
+        ? total
+        : null;
+      state.partyBriefShortlistExport = shortlist.length
+        ? buildPartyDecisionBriefShortlistExport({
+          query,
+          documentKind: kind,
+          sourceSlug: source,
+          matchingRecordCount: scanRows.length,
+          totalMatchingRecords,
+          matchingSetTruncated: scanWasTruncated,
+          candidates,
+          briefs: validatedBriefs,
+        })
+        : null;
+      downloadPartyBriefShortlistButton.disabled =
+        state.partyBriefShortlistExport === null;
+      partyBriefShortlistExportStatus.textContent = shortlist.length
+        ? "Sanitized evidence JSON is ready. It contains no bearer token or private Storage path."
+        : "No positive-evidence brief is available to export.";
       statusMessage(
         partyBriefRankStatus,
         `Validated ${count(coverage.length)} eligible brief(s) across ${
@@ -9558,9 +9831,12 @@ function boot() {
     state.partyBriefScanLoading = false;
     state.partyPageResults = [];
     state.partyBriefCoverage = new Map();
+    state.partyBriefShortlistExport = null;
     state.partySearching = true;
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
+    downloadPartyBriefShortlistButton.disabled = true;
+    partyBriefShortlistExportStatus.textContent = "";
     partySearchButton.disabled = true;
     partyBriefRankButton.disabled = true;
     partyPrevious.disabled = true;
@@ -11228,6 +11504,27 @@ function boot() {
     }
   }
 
+  function downloadPartyDecisionBriefShortlist() {
+    if (!state.partyBriefShortlistExport) return;
+    const blob = new Blob(
+      [`${JSON.stringify(state.partyBriefShortlistExport, null, 2)}\n`],
+      { type: "application/json;charset=utf-8" },
+    );
+    const objectUrl = URL.createObjectURL(blob);
+    const link = element("a");
+    link.href = objectUrl;
+    link.download = `esheria-party-brief-shortlist-${
+      state.partyBriefShortlistExport.generated_at.slice(0, 10)
+    }.json`;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    partyBriefShortlistExportStatus.textContent =
+      "Shortlist JSON downloaded with bounded observed evidence and generated coverage kept separate; no bearer token or private Storage path was included.";
+  }
+
   function downloadDecisionBriefComparison() {
     if (!state.decisionBriefComparison) return;
     const blob = new Blob(
@@ -12229,6 +12526,10 @@ function boot() {
     "click",
     downloadDecisionBriefComparison,
   );
+  downloadPartyBriefShortlistButton.addEventListener(
+    "click",
+    downloadPartyDecisionBriefShortlist,
+  );
   exportPositionMatrixButton.addEventListener("click", exportPositionMatrix);
   exportTerminationMatrixButton.addEventListener(
     "click",
@@ -12566,6 +12867,7 @@ function boot() {
     state.token = null;
     state.partyBriefScanGeneration += 1;
     state.partyBriefCoverage.clear();
+    state.partyBriefShortlistExport = null;
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
     state.decisionBriefComparisonSelection.clear();

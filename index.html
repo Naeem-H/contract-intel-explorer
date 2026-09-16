@@ -585,11 +585,18 @@
                 <h3 id="party-decision-brief-shortlist-title">
                   Evidence-bearing matching records</h3>
               </div>
+              <button id="download-party-decision-brief-shortlist"
+                class="button secondary" type="button" disabled>
+                Download shortlist JSON</button>
             </div>
             <p class="focus-note">This shortlist ranks validated positive
               detector coverage only. It does not resolve entities, score risk,
               prove absence, or represent a complete portfolio when the
               matching set exceeds the stated bound.</p>
+            <p id="party-decision-brief-shortlist-export-status" class="muted"
+              role="status" aria-live="polite">The JSON export includes the
+              validated bounded evidence already loaded for each shortlisted
+              agreement, without the access token or a private Storage path.</p>
             <div id="party-decision-brief-shortlist-results"
               class="results"></div>
           </section>
