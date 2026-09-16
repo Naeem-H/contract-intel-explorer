@@ -399,7 +399,8 @@ select:focus {
   grid-template-columns: minmax(230px, 1.2fr) 190px 135px 145px auto;
 }
 .governing-law-search-form,
-.indemnity-search-form {
+.indemnity-search-form,
+.theme-search-form {
   grid-template-columns: minmax(260px, 1.2fr) 155px 155px auto;
 }
 .brief-directory-form {

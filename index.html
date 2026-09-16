@@ -604,6 +604,49 @@
             aria-live="polite">Browse positive wording matches across published, nonduplicate contracts and amendments.</p>
         </section>
 
+        <section class="search-panel" aria-labelledby="theme-library-title">
+          <p class="eyebrow">Complete theme directory</p>
+          <h2 id="theme-library-title">Browse all contract themes</h2>
+          <p class="search-note">Explore the complete 14-theme taxonomy using stored labels and exact observed detector wording where available. Identical clause text is shown once with filter-scoped reuse counts; neither labels nor counts determine meaning, legal effect, or market prevalence.</p>
+          <form id="theme-form" class="search-form theme-search-form">
+            <label for="theme-key">Contract theme</label>
+            <label for="theme-kind">Document class</label>
+            <label for="theme-source">Source slug</label>
+            <span aria-hidden="true"></span>
+            <select id="theme-key" name="theme" required>
+              <option value="">Choose a theme</option>
+              <option value="termination">Termination</option>
+              <option value="indemnity">Indemnity</option>
+              <option value="limitation_of_liability">Limitation of liability</option>
+              <option value="assignment_change_control">Assignment / change of control</option>
+              <option value="governing_law_forum">Governing law / forum</option>
+              <option value="confidentiality">Confidentiality</option>
+              <option value="data_protection">Data protection</option>
+              <option value="force_majeure">Force majeure</option>
+              <option value="intellectual_property">Intellectual property</option>
+              <option value="payment_pricing">Payment / pricing</option>
+              <option value="warranties">Warranties</option>
+              <option value="representations">Representations</option>
+              <option value="dispute_resolution">Dispute resolution</option>
+              <option value="audit">Audit</option>
+            </select>
+            <select id="theme-kind" name="kind">
+              <option value="">Contracts and amendments</option>
+              <option value="contract">Contracts</option>
+              <option value="amendment">Amendments</option>
+            </select>
+            <input id="theme-source" name="source" type="text"
+              maxlength="63" pattern="[a-z0-9][a-z0-9_\-]{1,62}"
+              placeholder="e.g. sec_edgar">
+            <button id="theme-submit" class="button primary"
+              type="submit">Browse theme</button>
+          </form>
+          <div id="theme-facets" class="quick"
+            aria-label="Available theme evidence"><span>Available themes:</span></div>
+          <p id="theme-status" class="muted" role="status"
+            aria-live="polite">Choose a theme to inspect distinct observed wording and exact detector support.</p>
+        </section>
+
         <section class="search-panel" aria-labelledby="party-search-title">
           <p class="eyebrow">Vendor and counterparty trail</p>
           <h2 id="party-search-title">Find published agreements by party</h2>

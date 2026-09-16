@@ -89,6 +89,143 @@ export const EXPLORER_ACCESS_SUMMARY_HOURS_MAX = 168;
 export const ANCHOR_THEME_EVIDENCE_SCHEMA =
   "anchor-clause-theme-evidence-v1";
 export const ANCHOR_THEME_EVIDENCE_MAX = 20;
+export const CONTRACT_THEME_SUMMARY_SCHEMA =
+  "contract-theme-directory-summary-v1";
+export const CONTRACT_THEME_EVIDENCE_SCHEMA = "contract-theme-evidence-v1";
+export const CONTRACT_THEME_KEYS = Object.freeze([
+  "termination",
+  "indemnity",
+  "limitation_of_liability",
+  "assignment_change_control",
+  "governing_law_forum",
+  "confidentiality",
+  "data_protection",
+  "force_majeure",
+  "intellectual_property",
+  "payment_pricing",
+  "warranties",
+  "representations",
+  "dispute_resolution",
+  "audit",
+]);
+export const CONTRACT_THEME_LABELS = Object.freeze({
+  termination: "Termination",
+  indemnity: "Indemnity",
+  limitation_of_liability: "Limitation of liability",
+  assignment_change_control: "Assignment / change of control",
+  governing_law_forum: "Governing law / forum",
+  confidentiality: "Confidentiality",
+  data_protection: "Data protection",
+  force_majeure: "Force majeure",
+  intellectual_property: "Intellectual property",
+  payment_pricing: "Payment / pricing",
+  warranties: "Warranties",
+  representations: "Representations",
+  dispute_resolution: "Dispute resolution",
+  audit: "Audit",
+});
+const CONTRACT_THEME_SUMMARY_ROOT_KEYS = Object.freeze([
+  "api_version",
+  "generated_at",
+  "coverage",
+  "themes",
+  "limits",
+]);
+const CONTRACT_THEME_SUMMARY_COVERAGE_KEYS = Object.freeze([
+  "supported_theme_count",
+  "theme_assignments",
+  "distinct_themed_clauses",
+  "document_records",
+  "distinct_artifacts",
+  "exact_detector_support_matches",
+  "without_exact_detector_support",
+  "contract_records",
+  "amendment_records",
+  "source_count",
+]);
+const CONTRACT_THEME_SUMMARY_THEME_KEYS = Object.freeze([
+  "theme",
+  "label",
+  "clause_matches",
+  "distinct_clause_texts",
+  "distinct_clauses",
+  "document_records",
+  "distinct_artifacts",
+  "exact_detector_support_matches",
+  "without_exact_detector_support",
+  "detector_confidence_min",
+  "detector_confidence_max",
+  "basis_counts",
+  "document_kind_counts",
+  "source_counts",
+  "taxonomy_versions",
+  "generated_by",
+]);
+const CONTRACT_THEME_SUMMARY_LIMIT_KEYS = Object.freeze([
+  "taxonomy_version",
+  "supported_themes",
+  "eligible_document_kinds",
+  "current_observed_extractions_only",
+  "published_nonduplicate_documents_only",
+  "source_publication_and_redistribution_gates_required",
+  "theme_labels_are_observed_contract_wording",
+  "theme_counts_are_market_prevalence",
+  "missing_theme_establishes_clause_absence",
+  "exact_support_establishes_legal_effect",
+]);
+const CONTRACT_THEME_EVIDENCE_ROOT_KEYS = Object.freeze([
+  "api_version",
+  "agreement_id",
+  "clause_id",
+  "theme",
+  "basis",
+  "confidence",
+  "taxonomy_version",
+  "generated_by",
+  "clause_observed_text_sha256",
+  "support",
+  "exact_clause_text_reuse",
+  "limits",
+]);
+const CONTRACT_THEME_EXACT_SUPPORT_KEYS = Object.freeze([
+  "availability",
+  "origin",
+  "theme",
+  "observed_text",
+  "observed_text_sha256",
+  "clause_relative_start",
+  "clause_relative_end",
+  "document_char_start",
+  "document_char_end",
+  "method",
+  "text_basis",
+  "database_validated_against_clause",
+  "highlighted_excerpt_replay_available",
+]);
+const CONTRACT_THEME_UNAVAILABLE_SUPPORT_KEYS = Object.freeze([
+  "availability",
+  "origin",
+  "reason",
+  "highlighted_excerpt_replay_available",
+]);
+const CONTRACT_THEME_REUSE_KEYS = Object.freeze([
+  "clause_matches",
+  "document_records",
+  "source_records",
+  "scope",
+  "identity_basis",
+  "market_prevalence",
+  "legal_equivalence",
+]);
+const CONTRACT_THEME_EVIDENCE_LIMIT_KEYS = Object.freeze([
+  "taxonomy_version",
+  "offset_basis",
+  "maximum_support_characters",
+  "maximum_excerpt_characters_before_markers",
+  "generated_theme_label_is_legal_conclusion",
+  "exact_support_establishes_legal_effect",
+  "missing_exact_support_establishes_theme_absence",
+]);
 
 const ANCHOR_THEME_EVIDENCE_ROOT_KEYS = Object.freeze([
   "api_version",
@@ -185,6 +322,8 @@ const EXPLORER_ACCESS_SUMMARY_ROUTES = new Set([
   "/api/search",
   "/api/summary",
   "/api/termination-positions",
+  "/api/theme-evidence",
+  "/api/theme-summary",
   "/api/agreements/:agreement_id",
   "/api/agreements/:agreement_id/change-cues",
   "/api/agreements/:agreement_id/decision-brief",
@@ -490,9 +629,40 @@ function isAllowedApiTarget(url) {
     pathname === "/api/summary" ||
     pathname === "/api/metrics" ||
     pathname === "/api/governing-law-summary" ||
-    pathname === "/api/indemnity-summary"
+    pathname === "/api/indemnity-summary" ||
+    pathname === "/api/theme-summary"
   ) {
     return url.search === "";
+  }
+  if (pathname === "/api/theme-evidence") {
+    const allowed = new Set(["theme", "limit", "offset", "kind", "source"]);
+    if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
+      return false;
+    }
+    if (
+      ["theme", "limit", "offset", "kind", "source"].some(
+        (key) => url.searchParams.getAll(key).length > 1,
+      )
+    ) {
+      return false;
+    }
+    const theme = url.searchParams.get("theme");
+    const limit = url.searchParams.get("limit");
+    const offset = url.searchParams.get("offset");
+    const kind = url.searchParams.get("kind");
+    const source = url.searchParams.get("source");
+    return (
+      theme !== null &&
+      CONTRACT_THEME_KEYS.includes(theme) &&
+      limit !== null &&
+      /^[1-9]\d*$/.test(limit) &&
+      Number(limit) <= 50 &&
+      offset !== null &&
+      /^(0|[1-9]\d*)$/.test(offset) &&
+      Number(offset) <= 5_000 &&
+      (kind === null || ["contract", "amendment"].includes(kind)) &&
+      (source === null || SOURCE_PATTERN.test(source))
+    );
   }
   if (
     pathname === "/api/search" ||
@@ -943,6 +1113,42 @@ export function buildIndemnityPositionPath({
   if (kind) params.set("kind", kind);
   if (normalizedSource) params.set("source", normalizedSource);
   return `/api/indemnity-positions?${params.toString()}`;
+}
+
+export function buildContractThemeEvidencePath({
+  theme,
+  kind = "",
+  source = "",
+  limit = 20,
+  offset = 0,
+} = {}) {
+  if (!CONTRACT_THEME_KEYS.includes(theme)) {
+    throw new TypeError("Contract theme is not supported");
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new TypeError("Theme evidence limit is outside the allowed range");
+  }
+  if (!Number.isInteger(offset) || offset < 0 || offset > 5_000) {
+    throw new TypeError("Theme evidence offset is outside the allowed range");
+  }
+  if (kind && !["contract", "amendment"].includes(kind)) {
+    throw new TypeError("Theme evidence document class is not supported");
+  }
+  const normalizedSource = typeof source === "string"
+    ? source.trim().toLowerCase()
+    : "";
+  if (normalizedSource && !SOURCE_PATTERN.test(normalizedSource)) {
+    throw new TypeError("Source slug is invalid");
+  }
+
+  const params = new URLSearchParams({
+    theme,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (kind) params.set("kind", kind);
+  if (normalizedSource) params.set("source", normalizedSource);
+  return `/api/theme-evidence?${params.toString()}`;
 }
 
 export function buildFamilyProposalPath({ limit = 20, offset = 0 } = {}) {
@@ -1717,6 +1923,355 @@ function decisionBriefString(value, maximum, nullable = false) {
     return undefined;
   }
   return value;
+}
+
+function contractThemeCountObject(value, allowedKeys = null) {
+  if (!isRecord(value)) return null;
+  const output = {};
+  for (const [key, rawCount] of Object.entries(value)) {
+    if (
+      (allowedKeys !== null && !allowedKeys.has(key)) ||
+      (allowedKeys === null && !SOURCE_PATTERN.test(key)) ||
+      !Number.isSafeInteger(rawCount) ||
+      rawCount < 1
+    ) {
+      return null;
+    }
+    output[key] = rawCount;
+  }
+  return output;
+}
+
+function contractThemeStringArray(value) {
+  if (
+    !Array.isArray(value) ||
+    value.length > 20 ||
+    value.some(
+      (item) =>
+        typeof item !== "string" || !item.trim() ||
+        Array.from(item).length > 200,
+    ) ||
+    new Set(value).size !== value.length
+  ) {
+    return null;
+  }
+  return [...value];
+}
+
+export function contractThemeSummaryEvidence(value) {
+  const root = record(value);
+  const coverage = record(root.coverage);
+  const limits = record(root.limits);
+  const coverageValues = CONTRACT_THEME_SUMMARY_COVERAGE_KEYS.map(
+    (key) => decisionBriefInteger(coverage[key]),
+  );
+  if (
+    !hasExactKeys(root, CONTRACT_THEME_SUMMARY_ROOT_KEYS) ||
+    root.api_version !== CONTRACT_THEME_SUMMARY_SCHEMA ||
+    !isValidFamilyTimestamp(root.generated_at) ||
+    !hasExactKeys(coverage, CONTRACT_THEME_SUMMARY_COVERAGE_KEYS) ||
+    coverageValues.some((item) => item === null) ||
+    !Array.isArray(root.themes) ||
+    root.themes.length !== CONTRACT_THEME_KEYS.length ||
+    !hasExactKeys(limits, CONTRACT_THEME_SUMMARY_LIMIT_KEYS) ||
+    limits.taxonomy_version !== "themes_v1" ||
+    limits.supported_themes !== CONTRACT_THEME_KEYS.length ||
+    JSON.stringify(limits.eligible_document_kinds) !==
+      JSON.stringify(["contract", "amendment"]) ||
+    limits.current_observed_extractions_only !== true ||
+    limits.published_nonduplicate_documents_only !== true ||
+    limits.source_publication_and_redistribution_gates_required !== true ||
+    limits.theme_labels_are_observed_contract_wording !== false ||
+    limits.theme_counts_are_market_prevalence !== false ||
+    limits.missing_theme_establishes_clause_absence !== false ||
+    limits.exact_support_establishes_legal_effect !== false ||
+    coverage.supported_theme_count !== CONTRACT_THEME_KEYS.length ||
+    coverage.exact_detector_support_matches +
+        coverage.without_exact_detector_support !==
+      coverage.theme_assignments ||
+    coverage.contract_records + coverage.amendment_records !==
+      coverage.document_records ||
+    coverage.distinct_artifacts > coverage.document_records ||
+    coverage.distinct_themed_clauses > coverage.theme_assignments ||
+    coverage.source_count > coverage.document_records
+  ) {
+    return null;
+  }
+
+  const themes = [];
+  let assignmentTotal = 0;
+  let exactTotal = 0;
+  let withoutExactTotal = 0;
+  for (let index = 0; index < CONTRACT_THEME_KEYS.length; index += 1) {
+    const theme = record(root.themes[index]);
+    const expectedTheme = CONTRACT_THEME_KEYS[index];
+    const integerKeys = [
+      "clause_matches",
+      "distinct_clause_texts",
+      "distinct_clauses",
+      "document_records",
+      "distinct_artifacts",
+      "exact_detector_support_matches",
+      "without_exact_detector_support",
+    ];
+    const integers = Object.fromEntries(
+      integerKeys.map((key) => [key, decisionBriefInteger(theme[key])]),
+    );
+    const basisCounts = contractThemeCountObject(
+      theme.basis_counts,
+      new Set(["observed", "generated", "reviewed"]),
+    );
+    const kindCounts = contractThemeCountObject(
+      theme.document_kind_counts,
+      new Set(["contract", "amendment"]),
+    );
+    const sourceCounts = contractThemeCountObject(theme.source_counts);
+    const taxonomyVersions = contractThemeStringArray(
+      theme.taxonomy_versions,
+    );
+    const generatedBy = contractThemeStringArray(theme.generated_by);
+    const confidenceMin = theme.detector_confidence_min === null
+      ? null
+      : partyDossierConfidence(theme.detector_confidence_min);
+    const confidenceMax = theme.detector_confidence_max === null
+      ? null
+      : partyDossierConfidence(theme.detector_confidence_max);
+    if (
+      !hasExactKeys(theme, CONTRACT_THEME_SUMMARY_THEME_KEYS) ||
+      theme.theme !== expectedTheme ||
+      theme.label !== CONTRACT_THEME_LABELS[expectedTheme] ||
+      Object.values(integers).some((item) => item === null) ||
+      basisCounts === null ||
+      kindCounts === null ||
+      sourceCounts === null ||
+      taxonomyVersions === null ||
+      generatedBy === null ||
+      confidenceMin === undefined ||
+      confidenceMax === undefined ||
+      (confidenceMin !== null && confidenceMax !== null &&
+        confidenceMin > confidenceMax) ||
+      integers.distinct_clause_texts > integers.distinct_clauses ||
+      integers.distinct_clauses > integers.clause_matches ||
+      integers.document_records > integers.clause_matches ||
+      integers.distinct_artifacts > integers.document_records ||
+      integers.exact_detector_support_matches +
+          integers.without_exact_detector_support !==
+        integers.clause_matches ||
+      Object.values(basisCounts).reduce((sum, item) => sum + item, 0) !==
+        integers.clause_matches ||
+      Object.values(kindCounts).reduce((sum, item) => sum + item, 0) !==
+        integers.document_records ||
+      Object.values(sourceCounts).reduce((sum, item) => sum + item, 0) !==
+        integers.document_records ||
+      (integers.clause_matches === 0 &&
+        (confidenceMin !== null || confidenceMax !== null ||
+          taxonomyVersions.length !== 0 || generatedBy.length !== 0))
+    ) {
+      return null;
+    }
+    assignmentTotal += integers.clause_matches;
+    exactTotal += integers.exact_detector_support_matches;
+    withoutExactTotal += integers.without_exact_detector_support;
+    themes.push({
+      theme: expectedTheme,
+      label: theme.label,
+      clauseMatches: integers.clause_matches,
+      distinctClauseTexts: integers.distinct_clause_texts,
+      distinctClauses: integers.distinct_clauses,
+      documentRecords: integers.document_records,
+      distinctArtifacts: integers.distinct_artifacts,
+      exactDetectorSupportMatches: integers.exact_detector_support_matches,
+      withoutExactDetectorSupport: integers.without_exact_detector_support,
+      detectorConfidenceMin: confidenceMin,
+      detectorConfidenceMax: confidenceMax,
+      basisCounts,
+      documentKindCounts: kindCounts,
+      sourceCounts,
+      taxonomyVersions,
+      generatedBy,
+    });
+  }
+  if (
+    assignmentTotal !== coverage.theme_assignments ||
+    exactTotal !== coverage.exact_detector_support_matches ||
+    withoutExactTotal !== coverage.without_exact_detector_support
+  ) {
+    return null;
+  }
+  return {
+    apiVersion: CONTRACT_THEME_SUMMARY_SCHEMA,
+    generatedAt: root.generated_at,
+    coverage: {
+      supportedThemeCount: coverage.supported_theme_count,
+      themeAssignments: coverage.theme_assignments,
+      distinctThemedClauses: coverage.distinct_themed_clauses,
+      documentRecords: coverage.document_records,
+      distinctArtifacts: coverage.distinct_artifacts,
+      exactDetectorSupportMatches: coverage.exact_detector_support_matches,
+      withoutExactDetectorSupport: coverage.without_exact_detector_support,
+      contractRecords: coverage.contract_records,
+      amendmentRecords: coverage.amendment_records,
+      sourceCount: coverage.source_count,
+    },
+    themes,
+  };
+}
+
+export function contractThemeEvidence(value, rowValue, expectedTheme) {
+  const evidence = record(value);
+  const row = record(rowValue);
+  const support = record(evidence.support);
+  const reuse = record(evidence.exact_clause_text_reuse);
+  const limits = record(evidence.limits);
+  const confidence = evidence.confidence === null
+    ? null
+    : partyDossierConfidence(evidence.confidence);
+  const taxonomyVersion = evidence.taxonomy_version === null
+    ? null
+    : decisionBriefString(evidence.taxonomy_version, 200);
+  const generatedBy = evidence.generated_by === null
+    ? null
+    : decisionBriefString(evidence.generated_by, 200);
+  const clauseMatches = decisionBriefInteger(reuse.clause_matches, 1);
+  const documentRecords = decisionBriefInteger(reuse.document_records, 1);
+  const sourceRecords = decisionBriefInteger(reuse.source_records, 1);
+  if (
+    !hasExactKeys(evidence, CONTRACT_THEME_EVIDENCE_ROOT_KEYS) ||
+    evidence.api_version !== CONTRACT_THEME_EVIDENCE_SCHEMA ||
+    evidence.agreement_id !== row.agreement_id ||
+    evidence.clause_id !== row.clause_id ||
+    !UUID_PATTERN.test(evidence.agreement_id) ||
+    !UUID_PATTERN.test(evidence.clause_id) ||
+    !CONTRACT_THEME_KEYS.includes(evidence.theme) ||
+    (expectedTheme !== undefined && evidence.theme !== expectedTheme) ||
+    !["observed", "generated", "reviewed"].includes(evidence.basis) ||
+    confidence === undefined ||
+    taxonomyVersion === undefined ||
+    generatedBy === undefined ||
+    !DECISION_BRIEF_HASH_PATTERN.test(
+      evidence.clause_observed_text_sha256,
+    ) ||
+    !hasExactKeys(reuse, CONTRACT_THEME_REUSE_KEYS) ||
+    clauseMatches === null ||
+    documentRecords === null ||
+    sourceRecords === null ||
+    documentRecords > clauseMatches ||
+    sourceRecords > documentRecords ||
+    reuse.scope !== "requested_document_and_source_filters" ||
+    reuse.identity_basis !== "observed_clause_text_sha256" ||
+    reuse.market_prevalence !== false ||
+    reuse.legal_equivalence !== false ||
+    !hasExactKeys(limits, CONTRACT_THEME_EVIDENCE_LIMIT_KEYS) ||
+    limits.taxonomy_version !== "themes_v1" ||
+    limits.offset_basis !== "zero_based_half_open_unicode_code_points" ||
+    limits.maximum_support_characters !== 1_000 ||
+    limits.maximum_excerpt_characters_before_markers !== 1_600 ||
+    limits.generated_theme_label_is_legal_conclusion !== false ||
+    limits.exact_support_establishes_legal_effect !== false ||
+    limits.missing_exact_support_establishes_theme_absence !== false
+  ) {
+    return null;
+  }
+
+  let projectedSupport;
+  if (support.availability === "unavailable") {
+    const reason = evidence.basis === "generated"
+      ? "stored_exact_theme_support_unavailable"
+      : "exact_detector_support_not_applicable_to_non_generated_theme";
+    if (
+      !hasExactKeys(support, CONTRACT_THEME_UNAVAILABLE_SUPPORT_KEYS) ||
+      support.origin !== PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+      support.reason !== reason ||
+      support.highlighted_excerpt_replay_available !== false ||
+      String(row.evidence_excerpt ?? "").includes("<<")
+    ) {
+      return null;
+    }
+    projectedSupport = {
+      availability: "unavailable",
+      origin: PARTY_DOSSIER_THEME_SUPPORT_ORIGIN,
+      reason,
+      highlightedExcerptReplayAvailable: false,
+    };
+  } else {
+    const observedText = decisionBriefString(support.observed_text, 1_000);
+    const relativeStart = decisionBriefInteger(support.clause_relative_start);
+    const relativeEnd = decisionBriefInteger(support.clause_relative_end, 1);
+    const documentStart = support.document_char_start === null
+      ? null
+      : decisionBriefInteger(support.document_char_start);
+    const documentEnd = support.document_char_end === null
+      ? null
+      : decisionBriefInteger(support.document_char_end, 1);
+    const rowCharStart = row.char_start === null
+      ? null
+      : decisionBriefInteger(row.char_start);
+    const rowCharEnd = row.char_end === null
+      ? null
+      : decisionBriefInteger(row.char_end, 1);
+    const method = decisionBriefString(support.method, 100);
+    if (
+      evidence.basis !== "generated" ||
+      !hasExactKeys(support, CONTRACT_THEME_EXACT_SUPPORT_KEYS) ||
+      support.availability !== "exact_detector_span" ||
+      support.origin !== PARTY_DOSSIER_THEME_SUPPORT_ORIGIN ||
+      support.theme !== evidence.theme ||
+      observedText === undefined ||
+      relativeStart === null ||
+      relativeEnd === null ||
+      relativeEnd <= relativeStart ||
+      relativeEnd - relativeStart !== Array.from(observedText).length ||
+      !DECISION_BRIEF_HASH_PATTERN.test(support.observed_text_sha256) ||
+      (documentStart === null) !== (documentEnd === null) ||
+      (rowCharStart === null) !== (rowCharEnd === null) ||
+      (rowCharStart !== null &&
+        (documentStart !== rowCharStart + relativeStart ||
+          documentEnd !== rowCharStart + relativeEnd ||
+          documentEnd > rowCharEnd)) ||
+      method === undefined ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,99}$/.test(method) ||
+      support.text_basis !== "observed" ||
+      support.database_validated_against_clause !== true ||
+      support.highlighted_excerpt_replay_available !== true ||
+      !String(row.evidence_excerpt ?? "").includes(`<<${observedText}>>`)
+    ) {
+      return null;
+    }
+    projectedSupport = {
+      availability: "exact_detector_span",
+      origin: PARTY_DOSSIER_THEME_SUPPORT_ORIGIN,
+      theme: evidence.theme,
+      observedText,
+      observedTextSha256: support.observed_text_sha256,
+      clauseRelativeStart: relativeStart,
+      clauseRelativeEnd: relativeEnd,
+      documentCharStart: documentStart,
+      documentCharEnd: documentEnd,
+      method,
+      textBasis: "observed",
+      databaseValidatedAgainstClause: true,
+      highlightedExcerptReplayAvailable: true,
+    };
+  }
+
+  return {
+    apiVersion: CONTRACT_THEME_EVIDENCE_SCHEMA,
+    agreementId: evidence.agreement_id,
+    clauseId: evidence.clause_id,
+    theme: evidence.theme,
+    label: CONTRACT_THEME_LABELS[evidence.theme],
+    basis: evidence.basis,
+    confidence,
+    taxonomyVersion,
+    generatedBy,
+    clauseObservedTextSha256: evidence.clause_observed_text_sha256,
+    support: projectedSupport,
+    exactClauseTextReuse: {
+      clauseMatches,
+      documentRecords,
+      sourceRecords,
+    },
+  };
 }
 
 function isDecisionBriefDate(value) {
@@ -10688,6 +11243,10 @@ function boot() {
     indemnityKind: "",
     indemnitySource: "",
     indemnityLoading: false,
+    themeKey: "",
+    themeKind: "",
+    themeSource: "",
+    themeLoading: false,
     familyProposalOffset: 0,
     familyProposalLimit: FAMILY_PROPOSAL_PAGE_MAX,
     familyProposalHasMore: false,
@@ -10772,6 +11331,13 @@ function boot() {
   const indemnityButton = byId("indemnity-submit");
   const indemnityFacets = byId("indemnity-facets");
   const indemnityStatus = byId("indemnity-status");
+  const themeForm = byId("theme-form");
+  const themeKeyInput = byId("theme-key");
+  const themeKindInput = byId("theme-kind");
+  const themeSourceInput = byId("theme-source");
+  const themeButton = byId("theme-submit");
+  const themeFacets = byId("theme-facets");
+  const themeStatus = byId("theme-status");
   const familyProposalLoadButton = byId("family-proposals-load");
   const familyProposalStatus = byId("family-proposals-status");
   const familyProposalResults = byId("family-proposals-results");
@@ -10993,6 +11559,10 @@ function boot() {
     state.indemnityKind = "";
     state.indemnitySource = "";
     state.indemnityLoading = false;
+    state.themeKey = "";
+    state.themeKind = "";
+    state.themeSource = "";
+    state.themeLoading = false;
     state.familyProposalOffset = 0;
     state.familyProposalHasMore = false;
     state.familyProposalLoading = false;
@@ -11055,6 +11625,10 @@ function boot() {
     indemnityFacets.replaceChildren(element("span", "", "Available evidence:"));
     indemnityStatus.textContent =
       "Browse positive wording matches across published, nonduplicate contracts and amendments.";
+    themeForm.reset();
+    themeFacets.replaceChildren(element("span", "", "Available themes:"));
+    themeStatus.textContent =
+      "Choose a theme to inspect distinct observed wording and exact detector support.";
     familyProposalLoadButton.disabled = false;
     familyProposalPrevious.disabled = true;
     familyProposalNext.disabled = true;
@@ -11897,6 +12471,65 @@ function boot() {
     }
   }
 
+  function renderContractThemeSummary(value) {
+    const summary = contractThemeSummaryEvidence(value);
+    if (!summary) {
+      throw new Error(
+        "The contract-theme summary did not match its evidence disclosure contract.",
+      );
+    }
+    themeFacets.replaceChildren(element("span", "", "Available themes:"));
+    for (const theme of summary.themes) {
+      if (theme.clauseMatches === 0) continue;
+      const button = element(
+        "button",
+        "",
+        `${theme.label} · ${count(theme.distinctClauseTexts)} distinct texts / ${
+          count(theme.documentRecords)
+        } documents`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        themeKeyInput.value = theme.theme;
+        themeForm.requestSubmit();
+      });
+      themeFacets.append(button);
+    }
+    const coverage = summary.coverage;
+    statusMessage(
+      themeStatus,
+      `${count(coverage.supportedThemeCount)} themes · ${
+        count(coverage.themeAssignments)
+      } stored assignments across ${
+        count(coverage.documentRecords)
+      } useful agreements · ${
+        count(coverage.exactDetectorSupportMatches)
+      }/${count(coverage.themeAssignments)} assignments have exact detector support. Counts describe this acquired corpus, not market prevalence.`,
+      "success",
+    );
+    corpusDisclosure.append(
+      element(
+        "p",
+        "",
+        "The complete theme directory covers current published, nonduplicate contracts and amendments. Theme labels are navigation metadata; exact spans explain positive detector matches but do not establish clause meaning, legal effect, or absence.",
+      ),
+    );
+  }
+
+  async function loadContractThemeSummary() {
+    if (!state.token) return;
+    themeFacets.replaceChildren(
+      element("span", "", "Loading available themes…"),
+    );
+    statusMessage(themeStatus, "Loading complete theme coverage…");
+    try {
+      const payload = await requestJson("/api/theme-summary", state.token);
+      renderContractThemeSummary(record(payload).data);
+    } catch (error) {
+      handleFailure(error, themeStatus);
+    }
+  }
+
   async function loadDashboard(prefetched = null) {
     statusMessage(workspaceStatus, "Loading the published corpus snapshot…");
     try {
@@ -11907,6 +12540,7 @@ function boot() {
       await loadExplorerAccessSummary();
       await loadGoverningLawSummary();
       await loadIndemnitySummary();
+      await loadContractThemeSummary();
     } catch (error) {
       handleFailure(error, workspaceStatus);
     }
@@ -15985,6 +16619,60 @@ function boot() {
         ),
       );
     }
+    const themeMatch = item.theme_evidence === undefined
+      ? null
+      : contractThemeEvidence(
+        item.theme_evidence,
+        item,
+        state.resultMode === "theme_evidence" ? state.themeKey : undefined,
+      );
+    if (item.theme_evidence !== undefined && themeMatch === null) {
+      throw new ApiError(
+        "The contract-theme result did not match its evidence disclosure contract.",
+      );
+    }
+    const themeSummary = themeMatch
+      ? element("div", "result-position-summary")
+      : null;
+    if (themeSummary && themeMatch) {
+      const support = themeMatch.support;
+      const reuse = themeMatch.exactClauseTextReuse;
+      append(
+        themeSummary,
+        element(
+          "span",
+          `badge basis-${themeMatch.basis}`,
+          `${themeMatch.label} · ${themeMatch.basis} theme label`,
+        ),
+        support.availability === "exact_detector_span"
+          ? element(
+            "p",
+            "",
+            `Exact detector support: “${support.observedText}”`,
+          )
+          : element(
+            "p",
+            "muted",
+            "This stored label has no applicable exact generated-detector span; inspect the observed clause.",
+          ),
+        element(
+          "p",
+          "",
+          `Identical observed text occurs in ${
+            count(reuse.clauseMatches)
+          } matching clause row${reuse.clauseMatches === 1 ? "" : "s"} across ${
+            count(reuse.documentRecords)
+          } document${reuse.documentRecords === 1 ? "" : "s"} and ${
+            count(reuse.sourceRecords)
+          } source${reuse.sourceRecords === 1 ? "" : "s"} under these filters.`,
+        ),
+        element(
+          "p",
+          "muted",
+          "Theme and identical-text reuse are navigation evidence, not market prevalence, legal equivalence, or a legal conclusion.",
+        ),
+      );
+    }
     const agreementId = typeof item.agreement_id === "string"
       ? item.agreement_id
       : "";
@@ -16020,6 +16708,7 @@ function boot() {
       assignmentSummary,
       governingLawSummary,
       indemnitySummary,
+      themeSummary,
       actions,
     );
     return card;
@@ -16047,6 +16736,8 @@ function boot() {
             ? "No published governing-law/forum evidence matched these filters."
             : state.resultMode === "indemnity_positions"
             ? "No published indemnity-position evidence matched these filters."
+            : state.resultMode === "theme_evidence"
+            ? "No published theme evidence matched these filters."
             : "No published clause evidence matched this query.",
         ),
       ]),
@@ -16098,6 +16789,16 @@ function boot() {
           rows.length === 1 ? "" : "s"
         } loaded below.`
         : "No indemnity wording matched these filters.";
+    } else if (state.resultMode === "theme_evidence") {
+      const label = CONTRACT_THEME_LABELS[state.themeKey] ?? state.themeKey;
+      searchStatus.textContent = rows.length
+        ? `Showing ${label} evidence ${start}–${end}, deduplicated by exact observed clause text. Counts are corpus reuse, not market prevalence or legal conclusions.`
+        : `No ${label} evidence returned. Detector and corpus coverage may be incomplete.`;
+      themeStatus.textContent = rows.length
+        ? `${rows.length} distinct ${label.toLowerCase()} wording example${
+          rows.length === 1 ? "" : "s"
+        } loaded below.`
+        : `No ${label.toLowerCase()} evidence matched these filters.`;
     } else {
       searchStatus.textContent = rows.length
         ? `Showing results ${start}–${end}${
@@ -16118,7 +16819,8 @@ function boot() {
       state.terminationLoading ||
       state.assignmentLoading ||
       state.governingLawLoading ||
-      state.indemnityLoading
+      state.indemnityLoading ||
+      state.themeLoading
     ) {
       return;
     }
@@ -16129,6 +16831,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Searching published clause evidence…";
@@ -16151,6 +16854,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      themeButton.disabled = false;
     }
   }
 
@@ -16162,7 +16866,8 @@ function boot() {
       state.terminationLoading ||
       state.assignmentLoading ||
       state.governingLawLoading ||
-      state.indemnityLoading
+      state.indemnityLoading ||
+      state.themeLoading
     ) {
       return;
     }
@@ -16173,6 +16878,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published liability positions…";
@@ -16198,6 +16904,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      themeButton.disabled = false;
     }
   }
 
@@ -16209,7 +16916,8 @@ function boot() {
       state.terminationLoading ||
       state.assignmentLoading ||
       state.governingLawLoading ||
-      state.indemnityLoading
+      state.indemnityLoading ||
+      state.themeLoading
     ) {
       return;
     }
@@ -16220,6 +16928,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published termination wording…";
@@ -16245,6 +16954,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      themeButton.disabled = false;
     }
   }
 
@@ -16256,7 +16966,8 @@ function boot() {
       state.terminationLoading ||
       state.assignmentLoading ||
       state.governingLawLoading ||
-      state.indemnityLoading
+      state.indemnityLoading ||
+      state.themeLoading
     ) {
       return;
     }
@@ -16267,6 +16978,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent =
@@ -16292,6 +17004,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      themeButton.disabled = false;
     }
   }
 
@@ -16303,7 +17016,8 @@ function boot() {
       state.terminationLoading ||
       state.assignmentLoading ||
       state.governingLawLoading ||
-      state.indemnityLoading
+      state.indemnityLoading ||
+      state.themeLoading
     ) {
       return;
     }
@@ -16314,6 +17028,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent =
@@ -16338,6 +17053,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      themeButton.disabled = false;
     }
   }
 
@@ -16349,7 +17065,8 @@ function boot() {
       state.terminationLoading ||
       state.assignmentLoading ||
       state.governingLawLoading ||
-      state.indemnityLoading
+      state.indemnityLoading ||
+      state.themeLoading
     ) {
       return;
     }
@@ -16360,6 +17077,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
     searchStatus.textContent = "Loading published indemnity wording…";
@@ -16383,6 +17101,55 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      themeButton.disabled = false;
+    }
+  }
+
+  async function performContractThemeBrowse() {
+    if (
+      !state.token ||
+      state.searching ||
+      state.positionLoading ||
+      state.terminationLoading ||
+      state.assignmentLoading ||
+      state.governingLawLoading ||
+      state.indemnityLoading ||
+      state.themeLoading
+    ) {
+      return;
+    }
+    state.themeLoading = true;
+    searchButton.disabled = true;
+    positionButton.disabled = true;
+    terminationButton.disabled = true;
+    assignmentButton.disabled = true;
+    governingLawButton.disabled = true;
+    indemnityButton.disabled = true;
+    themeButton.disabled = true;
+    previous.disabled = true;
+    next.disabled = true;
+    searchStatus.textContent = "Loading published contract-theme evidence…";
+    themeStatus.textContent = "Applying evidence and reuse filters…";
+    try {
+      const path = buildContractThemeEvidencePath({
+        theme: state.themeKey,
+        kind: state.themeKind,
+        source: state.themeSource,
+        limit: state.limit,
+        offset: state.offset,
+      });
+      renderSearch(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, themeStatus);
+    } finally {
+      state.themeLoading = false;
+      searchButton.disabled = false;
+      positionButton.disabled = false;
+      terminationButton.disabled = false;
+      assignmentButton.disabled = false;
+      governingLawButton.disabled = false;
+      indemnityButton.disabled = false;
+      themeButton.disabled = false;
     }
   }
 
@@ -18522,6 +19289,7 @@ function boot() {
       await loadExplorerAccessSummary();
       await loadGoverningLawSummary();
       await loadIndemnitySummary();
+      await loadContractThemeSummary();
     } catch (error) {
       handleFailure(error, authStatus);
     } finally {
@@ -18894,6 +19662,25 @@ function boot() {
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
+  themeForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearComparison();
+    state.resultMode = "theme_evidence";
+    state.themeKey = themeKeyInput.value;
+    state.themeKind = themeKindInput.value;
+    state.themeSource = themeSourceInput.value.trim().toLowerCase();
+    const themeLabel = CONTRACT_THEME_LABELS[state.themeKey] ??
+      "Contract theme";
+    state.query = `Theme directory: ${themeLabel}`;
+    state.clauseParty = "";
+    state.kind = state.themeKind;
+    state.source = state.themeSource;
+    state.offset = 0;
+    syncGuideSelection("");
+    performContractThemeBrowse();
+    resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const query = queryInput.value.trim();
@@ -18928,6 +19715,8 @@ function boot() {
       performGoverningLawBrowse();
     } else if (state.resultMode === "indemnity_positions") {
       performIndemnityBrowse();
+    } else if (state.resultMode === "theme_evidence") {
+      performContractThemeBrowse();
     } else performSearch();
   });
   next.addEventListener("click", () => {
@@ -18938,6 +19727,7 @@ function boot() {
           "assignment_positions",
           "governing_law_positions",
           "indemnity_positions",
+          "theme_evidence",
         ].includes(state.resultMode)
         ? 5_000
         : 1_000,
@@ -18952,6 +19742,8 @@ function boot() {
       performGoverningLawBrowse();
     } else if (state.resultMode === "indemnity_positions") {
       performIndemnityBrowse();
+    } else if (state.resultMode === "theme_evidence") {
+      performContractThemeBrowse();
     } else performSearch();
   });
   for (const button of document.querySelectorAll("[data-query]")) {
