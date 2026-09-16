@@ -5416,6 +5416,64 @@ export function buildPartyDossierExport(
   };
 }
 
+export function partyDossierComparisonSelections(value, themeKey) {
+  const output = record(value);
+  const scope = record(output.scope);
+  const normalizedTheme = typeof themeKey === "string" ? themeKey.trim() : "";
+  if (
+    output.schema !== PARTY_DOSSIER_EXPORT_SCHEMA ||
+    output.source_api_version !== PARTY_DOSSIER_SCHEMA ||
+    decisionBriefString(scope.party_query, 200) === undefined ||
+    !/^[a-z0-9_]{1,200}$/.test(normalizedTheme) ||
+    !Array.isArray(output.themes)
+  ) {
+    throw new TypeError("Party dossier comparison selection is invalid");
+  }
+  const matches = output.themes.filter((item) =>
+    isRecord(item) && item.theme === normalizedTheme
+  );
+  if (matches.length !== 1 || !Array.isArray(matches[0].examples)) {
+    throw new TypeError("Party dossier comparison selection is invalid");
+  }
+  const selections = matches[0].examples.map((exampleValue) => {
+    const example = record(exampleValue);
+    const key = comparisonSelectionKey(example);
+    const sourceUrl = safeExternalUrl(example.source_url);
+    if (
+      key === null ||
+      decisionBriefInteger(example.clause_sequence, 1) === null ||
+      partyDossierOptionalText(example.clause_heading, 1_000) === undefined ||
+      partyDossierOptionalText(example.observed_title, 1_000) === undefined ||
+      decisionBriefString(example.source_name, 500) === undefined ||
+      sourceUrl === null ||
+      !DOCUMENT_KINDS.has(example.document_kind) ||
+      partyDossierTimestamp(example.observed_published_at) === undefined
+    ) {
+      throw new TypeError("Party dossier comparison selection is invalid");
+    }
+    return {
+      agreement_id: example.agreement_id,
+      clause_id: example.clause_id,
+      clause_sequence: example.clause_sequence,
+      clause_heading: example.clause_heading,
+      observed_title: example.observed_title,
+      source_name: example.source_name,
+      source_url: sourceUrl,
+      document_kind: example.document_kind,
+      observed_published_at: example.observed_published_at,
+      dossier_theme: normalizedTheme,
+      selection_basis: "bounded_party_dossier_theme_example",
+    };
+  });
+  if (
+    selections.length > COMPARISON_MAX_ITEMS ||
+    new Set(selections.map(comparisonSelectionKey)).size !== selections.length
+  ) {
+    throw new TypeError("Party dossier comparison selection is invalid");
+  }
+  return selections;
+}
+
 const PARTY_DOSSIER_MATRIX_COLUMNS = Object.freeze([
   "matrix_schema",
   "generated_at",
@@ -9432,6 +9490,7 @@ function boot() {
     comparing: false,
     comparisonSelection: new Map(),
     comparisonEvidence: [],
+    comparisonScope: null,
     partyQuery: "",
     partyKind: "",
     partySource: "",
@@ -9731,6 +9790,7 @@ function boot() {
     corpusDisclosure.replaceChildren();
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
+    state.comparisonScope = null;
     state.comparing = false;
     state.partyQuery = "";
     state.partyKind = "";
@@ -10670,6 +10730,7 @@ function boot() {
   function clearComparison() {
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
+    state.comparisonScope = null;
     comparisonBody.replaceChildren();
     exportStatus.textContent = "";
     if (comparisonDialog.hasAttribute("open")) closeDialog(comparisonDialog);
@@ -10679,6 +10740,11 @@ function boot() {
   function toggleComparison(item, input) {
     const key = comparisonSelectionKey(item);
     if (!key) return;
+    if (state.comparisonScope?.origin === "party_dossier") {
+      state.comparisonSelection.clear();
+      state.comparisonEvidence = [];
+      state.comparisonScope = null;
+    }
     if (input.checked) {
       if (state.comparisonSelection.size >= COMPARISON_MAX_ITEMS) {
         input.checked = false;
@@ -10708,6 +10774,15 @@ function boot() {
     input.addEventListener("change", () => toggleComparison(item, input));
     append(label, input, element("span", "", "Select for comparison"));
     return label;
+  }
+
+  function activeComparisonScope() {
+    return state.comparisonScope ?? {
+      query: state.query,
+      kind: state.kind,
+      source: state.source,
+      disclosure: null,
+    };
   }
 
   function clauseHeading(clause) {
@@ -11630,6 +11705,7 @@ function boot() {
     }
 
     state.comparing = true;
+    const comparisonScope = activeComparisonScope();
     state.comparisonEvidence = [];
     exportStatus.textContent = "";
     updateComparisonControls("Loading bounded source context…");
@@ -11707,11 +11783,14 @@ function boot() {
       element(
         "p",
         "comparison-scope",
-        `Retrieval scope: ${state.query || "unspecified query"} · ${
-          state.kind || "all document classes"
-        } · ${
-          state.source || "all published sources"
-        }. This selected set is not a representative market sample.`,
+        comparisonScope.disclosure ??
+          `Retrieval scope: ${
+            comparisonScope.query || "unspecified query"
+          } · ${
+            comparisonScope.kind || "all document classes"
+          } · ${
+            comparisonScope.source || "all published sources"
+          }. This selected set is not a representative market sample.`,
       ),
       grid,
     );
@@ -11728,10 +11807,11 @@ function boot() {
   function exportComparison() {
     if (!state.comparisonEvidence.length) return;
     try {
+      const comparisonScope = activeComparisonScope();
       const manifest = buildCitationManifest({
-        query: state.query,
-        kind: state.kind,
-        source: state.source,
+        query: comparisonScope.query,
+        kind: comparisonScope.kind,
+        source: comparisonScope.source,
         entries: state.comparisonEvidence,
       });
       const blob = new Blob([`${JSON.stringify(manifest, null, 2)}\n`], {
@@ -11764,10 +11844,11 @@ function boot() {
     if (!state.comparisonEvidence.length) return;
     try {
       const generatedAt = new Date().toISOString();
+      const comparisonScope = activeComparisonScope();
       const csv = buildLiabilityPositionMatrixCsv({
-        query: state.query,
-        kind: state.kind,
-        source: state.source,
+        query: comparisonScope.query,
+        kind: comparisonScope.kind,
+        source: comparisonScope.source,
         entries: state.comparisonEvidence,
         generatedAt,
       });
@@ -11799,10 +11880,11 @@ function boot() {
     if (!state.comparisonEvidence.length) return;
     try {
       const generatedAt = new Date().toISOString();
+      const comparisonScope = activeComparisonScope();
       const csv = buildTerminationPositionMatrixCsv({
-        query: state.query,
-        kind: state.kind,
-        source: state.source,
+        query: comparisonScope.query,
+        kind: comparisonScope.kind,
+        source: comparisonScope.source,
         entries: state.comparisonEvidence,
         generatedAt,
       });
@@ -11834,10 +11916,11 @@ function boot() {
     if (!state.comparisonEvidence.length) return;
     try {
       const generatedAt = new Date().toISOString();
+      const comparisonScope = activeComparisonScope();
       const csv = buildAssignmentPositionMatrixCsv({
-        query: state.query,
-        kind: state.kind,
-        source: state.source,
+        query: comparisonScope.query,
+        kind: comparisonScope.kind,
+        source: comparisonScope.source,
         entries: state.comparisonEvidence,
         generatedAt,
       });
@@ -11870,10 +11953,15 @@ function boot() {
     try {
       const generatedAt = new Date().toISOString();
       const governingMode = state.resultMode === "governing_law_positions";
-      const csv = buildGoverningLawPositionMatrixCsv({
+      const comparisonScope = state.comparisonScope ?? {
         query: governingMode ? state.governingLawSignal : state.query,
         kind: governingMode ? state.governingLawKind : state.kind,
         source: governingMode ? state.governingLawSource : state.source,
+      };
+      const csv = buildGoverningLawPositionMatrixCsv({
+        query: comparisonScope.query,
+        kind: comparisonScope.kind,
+        source: comparisonScope.source,
         entries: state.comparisonEvidence,
         generatedAt,
       });
@@ -11906,10 +11994,15 @@ function boot() {
     try {
       const generatedAt = new Date().toISOString();
       const indemnityMode = state.resultMode === "indemnity_positions";
-      const csv = buildIndemnityPositionMatrixCsv({
+      const comparisonScope = state.comparisonScope ?? {
         query: indemnityMode ? state.indemnitySignal : state.query,
         kind: indemnityMode ? state.indemnityKind : state.kind,
         source: indemnityMode ? state.indemnitySource : state.source,
+      };
+      const csv = buildIndemnityPositionMatrixCsv({
+        query: comparisonScope.query,
+        kind: comparisonScope.kind,
+        source: comparisonScope.source,
         entries: state.comparisonEvidence,
         generatedAt,
       });
@@ -13887,6 +13980,9 @@ function boot() {
     state.partyBriefShortlistCsv = null;
     state.partyDossierExport = null;
     state.partyDossierCsv = null;
+    if (state.comparisonScope?.origin === "party_dossier") {
+      clearComparison();
+    }
     state.partySearching = true;
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
@@ -14092,6 +14188,57 @@ function boot() {
         examples.append(exampleCard);
       }
       card.append(examples);
+      const comparisonSelections = partyDossierComparisonSelections(
+        dossierExport,
+        theme.theme,
+      );
+      if (comparisonSelections.length >= COMPARISON_MIN_ITEMS) {
+        const compareExamples = element(
+          "button",
+          "button secondary party-dossier-compare-button",
+          `Compare ${comparisonSelections.length} observed examples`,
+        );
+        compareExamples.type = "button";
+        compareExamples.addEventListener("click", async () => {
+          if (state.comparing || !state.token) return;
+          clearComparison();
+          for (const selection of comparisonSelections) {
+            state.comparisonSelection.set(
+              comparisonSelectionKey(selection),
+              selection,
+            );
+          }
+          const themeLabel = displayText(theme.theme).replaceAll("_", " ");
+          const singleSource = dossierExport.coverage.sources.length === 1
+            ? dossierExport.coverage.sources[0].source_slug
+            : "";
+          state.comparisonScope = {
+            origin: "party_dossier",
+            query: `Observed party ${dossierExport.scope.party_query}; generated theme ${theme.theme}`,
+            kind: "",
+            source: singleSource,
+            disclosure: `Exact observed-party scope “${dossierExport.scope.party_query}” · generated ${themeLabel} theme · ${comparisonSelections.length} bounded examples. Identity resolution was not applied, and this selected set is not a representative market sample.`,
+          };
+          updateComparisonControls(
+            `${comparisonSelections.length} dossier examples selected. Loading bounded source context…`,
+          );
+          partyDossierExportStatus.textContent =
+            `Loading fresh bounded evidence context for ${comparisonSelections.length} ${themeLabel} examples…`;
+          await compareSelected();
+          if (state.token && state.comparisonScope?.origin === "party_dossier") {
+            partyDossierExportStatus.textContent =
+              `${comparisonSelections.length} ${themeLabel} examples opened in the evidence comparison. Citation and applicable position-matrix exports use the exact-party dossier scope.`;
+          }
+        });
+        card.append(
+          element(
+            "p",
+            "muted tiny",
+            "Compare opens freshly fetched clause context; the displayed examples remain bounded and generated theme membership is not a legal conclusion.",
+          ),
+          compareExamples,
+        );
+      }
       partyDossierThemes.append(card);
     }
     const familySummary = familyCoverage.recordedFamilyGroups > 0
@@ -17375,6 +17522,7 @@ function boot() {
     state.partyDossierCsv = null;
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
+    state.comparisonScope = null;
     state.decisionBriefComparisonSelection.clear();
     state.decisionBriefComparison = null;
     state.decisionBriefComparisonExport = null;
