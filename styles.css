@@ -912,6 +912,9 @@ dialog::backdrop {
 .brief-comparison-more[open] > summary {
   margin-bottom: 9px;
 }
+.brief-comparison-more:not([open]) > :not(summary) {
+  display: none;
+}
 .brief-comparison-more-list {
   display: grid;
   gap: 12px;
