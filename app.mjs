@@ -1420,6 +1420,10 @@ function decisionBriefExample(
       observed.matched_clause_char_end - observed.matched_clause_char_start ||
     observed.matched_clause_char_start < observed.clause_char_start ||
     observed.matched_clause_char_end > observed.clause_char_end ||
+    Array.from(observed.excerpt).slice(
+        observed.matched_clause_char_start - observed.clause_char_start,
+        observed.matched_clause_char_end - observed.clause_char_start,
+      ).join("") !== observed.matched_text ||
     (example.clause_char_start === null
       ? observed.document_char_start !== null ||
         observed.document_char_end !== null
@@ -10293,9 +10297,10 @@ function boot() {
       ),
       element(
         "p",
-        "brief-comparison-evidence",
-        example.observed_evidence.excerpt,
+        "muted",
+        `Exact detector match: “${example.observed_evidence.matched_text}”`,
       ),
+      decisionBriefComparisonMarkedEvidence(example),
       element(
         "p",
         "muted tiny",
@@ -10312,6 +10317,21 @@ function boot() {
     });
     cell.append(inspect);
     return cell;
+  }
+
+  function decisionBriefComparisonMarkedEvidence(example) {
+    const evidence = example.observed_evidence;
+    const characters = Array.from(evidence.excerpt);
+    const start = evidence.matched_clause_char_start -
+      evidence.clause_char_start;
+    const end = evidence.matched_clause_char_end - evidence.clause_char_start;
+    const container = element("p", "brief-comparison-evidence");
+    container.append(
+      document.createTextNode(characters.slice(0, start).join("")),
+      element("mark", "", characters.slice(start, end).join("")),
+      document.createTextNode(characters.slice(end).join("")),
+    );
+    return container;
   }
 
   function renderDecisionBriefComparison(comparison) {

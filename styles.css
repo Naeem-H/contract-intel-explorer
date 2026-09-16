@@ -888,6 +888,8 @@ dialog::backdrop {
   margin: 7px 0;
 }
 .brief-comparison-evidence {
+  max-height: 260px;
+  overflow: auto;
   padding: 9px;
   border-left: 2px solid var(--green);
   background: #0a1410;
