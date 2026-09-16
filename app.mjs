@@ -82,6 +82,57 @@ export const GOVERNING_LAW_POSITION_MATRIX_SCHEMA =
   "esheria.governing-law-position-matrix.v1";
 export const INDEMNITY_POSITION_MATRIX_SCHEMA =
   "esheria.indemnity-position-matrix.v1";
+export const EXPLORER_ACCESS_SUMMARY_SCHEMA =
+  "explorer-api-access-summary-v1";
+export const EXPLORER_ACCESS_SUMMARY_HOURS = 24;
+export const EXPLORER_ACCESS_SUMMARY_HOURS_MAX = 168;
+
+const EXPLORER_ACCESS_SUMMARY_EXACT_KEYS = Object.freeze([
+  "api_version",
+  "window_hours",
+  "window_started_at",
+  "observed_at",
+  "bucket_rows",
+  "active_credential_fingerprints",
+  "request_count",
+  "allowed_request_count",
+  "denied_request_count",
+  "first_request_at",
+  "last_request_at",
+  "route_counts",
+  "limit_per_credential_per_minute",
+  "window_seconds",
+  "retention_days",
+  "raw_credentials_stored",
+  "client_network_identifiers_stored",
+  "query_values_stored",
+  "response_outcomes_recorded",
+]);
+const EXPLORER_ACCESS_SUMMARY_ROUTES = new Set([
+  "/api/access-summary",
+  "/api/amendment-changes",
+  "/api/assignment-positions",
+  "/api/dashboard",
+  "/api/decision-briefs",
+  "/api/family-proposals",
+  "/api/governing-law-positions",
+  "/api/governing-law-summary",
+  "/api/indemnity-positions",
+  "/api/indemnity-summary",
+  "/api/metrics",
+  "/api/parties",
+  "/api/party-clauses",
+  "/api/party-dossier",
+  "/api/positions",
+  "/api/search",
+  "/api/summary",
+  "/api/termination-positions",
+  "/api/agreements/:agreement_id",
+  "/api/agreements/:agreement_id/change-cues",
+  "/api/agreements/:agreement_id/decision-brief",
+  "/api/claims/:claim_id",
+  "/api/unknown",
+]);
 
 const LIABILITY_VALUE_CANDIDATE_CATEGORIES = Object.freeze([
   ["currency_amounts", "Currency amounts"],
@@ -246,6 +297,18 @@ export function normalizeToken(value) {
 
 function isAllowedApiTarget(url) {
   const pathname = url.pathname;
+  if (pathname === "/api/access-summary") {
+    if (
+      [...url.searchParams.keys()].some((key) => key !== "hours") ||
+      url.searchParams.getAll("hours").length > 1
+    ) {
+      return false;
+    }
+    const hours = url.searchParams.get("hours");
+    return hours === null ||
+      (/^[1-9]\d*$/.test(hours) &&
+        Number(hours) <= EXPLORER_ACCESS_SUMMARY_HOURS_MAX);
+  }
   const changeCueMatch = pathname.match(
     /^\/api\/agreements\/([^/]+)\/change-cues$/,
   );
@@ -517,6 +580,19 @@ export function apiUrl(path) {
     throw new TypeError("API path is not allowed");
   }
   return `${API_ROOT}${relative.pathname}${relative.search}`;
+}
+
+export function buildExplorerAccessSummaryPath(
+  hours = EXPLORER_ACCESS_SUMMARY_HOURS,
+) {
+  if (
+    !Number.isInteger(hours) ||
+    hours < 1 ||
+    hours > EXPLORER_ACCESS_SUMMARY_HOURS_MAX
+  ) {
+    throw new TypeError("Access-summary hours are outside the allowed range");
+  }
+  return `/api/access-summary?hours=${hours}`;
 }
 
 export function buildSearchPath({
@@ -1479,6 +1555,94 @@ function hasExactKeys(value, expectedKeys) {
   const actualKeys = Object.keys(value);
   return actualKeys.length === expectedKeys.length &&
     expectedKeys.every((key) => Object.hasOwn(value, key));
+}
+
+export function explorerAccessSummaryEvidence(
+  value,
+  expectedWindowHours = EXPLORER_ACCESS_SUMMARY_HOURS,
+) {
+  if (
+    !Number.isInteger(expectedWindowHours) ||
+    expectedWindowHours < 1 ||
+    expectedWindowHours > EXPLORER_ACCESS_SUMMARY_HOURS_MAX
+  ) {
+    return null;
+  }
+  const summary = record(value);
+  const routeCounts = record(summary.route_counts);
+  const integerFields = [
+    "bucket_rows",
+    "active_credential_fingerprints",
+    "request_count",
+    "allowed_request_count",
+    "denied_request_count",
+  ];
+  if (
+    !hasExactKeys(summary, EXPLORER_ACCESS_SUMMARY_EXACT_KEYS) ||
+    summary.api_version !== EXPLORER_ACCESS_SUMMARY_SCHEMA ||
+    summary.window_hours !== expectedWindowHours ||
+    summary.limit_per_credential_per_minute !== 120 ||
+    summary.window_seconds !== 60 ||
+    summary.retention_days !== 31 ||
+    summary.raw_credentials_stored !== false ||
+    summary.client_network_identifiers_stored !== false ||
+    summary.query_values_stored !== false ||
+    summary.response_outcomes_recorded !== false ||
+    integerFields.some((field) =>
+      !Number.isSafeInteger(summary[field]) || summary[field] < 0
+    ) ||
+    summary.allowed_request_count + summary.denied_request_count !==
+      summary.request_count ||
+    summary.active_credential_fingerprints > summary.bucket_rows ||
+    summary.bucket_rows > summary.request_count ||
+    !isRecord(summary.route_counts) ||
+    !isValidFamilyTimestamp(summary.window_started_at) ||
+    !isValidFamilyTimestamp(summary.observed_at) ||
+    Date.parse(summary.window_started_at) > Date.parse(summary.observed_at) ||
+    (summary.request_count === 0 &&
+      (summary.first_request_at !== null ||
+        summary.last_request_at !== null)) ||
+    (summary.request_count > 0 &&
+      (!isValidFamilyTimestamp(summary.first_request_at) ||
+        !isValidFamilyTimestamp(summary.last_request_at) ||
+        Date.parse(summary.first_request_at) >
+          Date.parse(summary.last_request_at) ||
+        Date.parse(summary.last_request_at) > Date.parse(summary.observed_at)))
+  ) {
+    return null;
+  }
+
+  const projectedRouteCounts = {};
+  let routeTotal = 0;
+  for (const [route, routeCount] of Object.entries(routeCounts)) {
+    if (
+      !EXPLORER_ACCESS_SUMMARY_ROUTES.has(route) ||
+      !Number.isSafeInteger(routeCount) ||
+      routeCount < 1
+    ) {
+      return null;
+    }
+    projectedRouteCounts[route] = routeCount;
+    routeTotal += routeCount;
+  }
+  if (routeTotal !== summary.request_count) return null;
+
+  return {
+    apiVersion: EXPLORER_ACCESS_SUMMARY_SCHEMA,
+    windowHours: expectedWindowHours,
+    windowStartedAt: summary.window_started_at,
+    observedAt: summary.observed_at,
+    bucketRows: summary.bucket_rows,
+    activeCredentialFingerprints: summary.active_credential_fingerprints,
+    requestCount: summary.request_count,
+    allowedRequestCount: summary.allowed_request_count,
+    deniedRequestCount: summary.denied_request_count,
+    firstRequestAt: summary.first_request_at,
+    lastRequestAt: summary.last_request_at,
+    routeCounts: projectedRouteCounts,
+    limitPerCredentialPerMinute: 120,
+    retentionDays: 31,
+  };
 }
 
 function decisionBriefInteger(value, minimum = 0) {
@@ -10090,6 +10254,7 @@ function boot() {
   const summaryCards = byId("summary-cards");
   const kindBreakdown = byId("kind-breakdown");
   const operations = byId("operations");
+  const apiActivity = byId("api-activity");
   const summaryFreshness = byId("summary-freshness");
   const corpusDisclosure = byId("corpus-disclosure");
   const guideStatus = byId("guide-status");
@@ -10305,6 +10470,10 @@ function boot() {
     summaryCards.replaceChildren();
     kindBreakdown.replaceChildren();
     operations.replaceChildren();
+    apiActivity.className = "";
+    apiActivity.replaceChildren(
+      element("p", "muted", "Sign in to inspect aggregate API admissions."),
+    );
     corpusDisclosure.replaceChildren();
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
@@ -11090,6 +11259,69 @@ function boot() {
     }
   }
 
+  function renderExplorerAccessSummary(value) {
+    const summary = explorerAccessSummaryEvidence(value);
+    if (!summary) {
+      throw new Error(
+        "The API protection summary did not match its expected contract.",
+      );
+    }
+    const busiestRoutes = Object.entries(summary.routeCounts)
+      .sort(([leftRoute, leftCount], [rightRoute, rightCount]) =>
+        rightCount - leftCount || leftRoute.localeCompare(rightRoute)
+      )
+      .slice(0, 4)
+      .map(([route, routeCount]) => `${route} (${count(routeCount)})`)
+      .join(" · ");
+    apiActivity.className = "";
+    apiActivity.replaceChildren(
+      dataList([
+        ["Authenticated requests", count(summary.requestCount)],
+        ["Allowed admissions", count(summary.allowedRequestCount)],
+        ["Denied by global limit", count(summary.deniedRequestCount)],
+        [
+          "Active credential fingerprints",
+          count(summary.activeCredentialFingerprints),
+        ],
+        ["Minute buckets", count(summary.bucketRows)],
+        [
+          "Per-credential limit",
+          `${count(summary.limitPerCredentialPerMinute)} / minute`,
+        ],
+        ["Observed at", date(summary.observedAt)],
+      ]),
+      element(
+        "p",
+        "muted",
+        busiestRoutes
+          ? `Busiest canonical routes: ${busiestRoutes}. Counts include this status request; they are admissions, not users or successful outcomes.`
+          : "No authenticated API admissions were recorded in this window before this status response was assembled.",
+      ),
+      element(
+        "p",
+        "muted",
+        `Private aggregate ledger retained for ${summary.retentionDays} days; no raw credential, network identifier, query value, response outcome or evidence text is stored.`,
+      ),
+    );
+  }
+
+  async function loadExplorerAccessSummary() {
+    if (!state.token) return;
+    apiActivity.className = "";
+    apiActivity.replaceChildren(
+      element("p", "muted", "Loading protected API activity…"),
+    );
+    try {
+      const payload = await requestJson(
+        buildExplorerAccessSummaryPath(),
+        state.token,
+      );
+      renderExplorerAccessSummary(record(payload).data);
+    } catch (error) {
+      handleFailure(error, apiActivity);
+    }
+  }
+
   async function loadGoverningLawSummary() {
     if (!state.token) return;
     governingLawFacets.replaceChildren(
@@ -11198,6 +11430,7 @@ function boot() {
         (await requestJson("/api/dashboard", state.token));
       renderDashboard(payload);
       statusMessage(workspaceStatus, "Published snapshot loaded.", "success");
+      await loadExplorerAccessSummary();
       await loadGoverningLawSummary();
       await loadIndemnitySummary();
     } catch (error) {
@@ -17688,6 +17921,7 @@ function boot() {
         "Published snapshot loaded. The token remains only in page memory and will be cleared on reload.",
         "success",
       );
+      await loadExplorerAccessSummary();
       await loadGoverningLawSummary();
       await loadIndemnitySummary();
     } catch (error) {
