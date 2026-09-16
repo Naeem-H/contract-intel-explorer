@@ -59,6 +59,8 @@ export const PARTY_DECISION_BRIEF_SCAN_MAX = 50;
 export const PARTY_DECISION_BRIEF_SHORTLIST_MAX = 10;
 export const PARTY_DECISION_BRIEF_SHORTLIST_SCHEMA =
   "esheria.party-decision-brief-shortlist.v1";
+export const PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_SCHEMA =
+  "esheria.party-decision-brief-shortlist-matrix.v1";
 export const PARTY_DOSSIER_SCHEMA =
   "observed-party-negotiation-dossier-v4";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
@@ -3925,7 +3927,7 @@ function decisionBriefMatrixDateFields(agreement, dateType) {
   };
 }
 
-function serializeAgreementDecisionBriefMatrix(
+function agreementDecisionBriefMatrixRows(
   comparison,
   selectionContext = null,
 ) {
@@ -4107,6 +4109,17 @@ function serializeAgreementDecisionBriefMatrix(
       }
     }
   }
+  return rows;
+}
+
+function serializeAgreementDecisionBriefMatrix(
+  comparison,
+  selectionContext = null,
+) {
+  const rows = agreementDecisionBriefMatrixRows(
+    comparison,
+    selectionContext,
+  );
   return "\uFEFF" +
     [
       AGREEMENT_DECISION_BRIEF_MATRIX_COLUMNS.map(csvCell).join(","),
@@ -4141,6 +4154,142 @@ export function buildFamilyProposalDecisionBriefComparisonCsv(
   return serializeAgreementDecisionBriefMatrix(
     packet.decision_brief_comparison,
     packet.selection_context,
+  );
+}
+
+const PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_OMITTED_COLUMNS = new Set([
+  "matrix_schema",
+  "generated_at",
+  "selection_basis",
+  "candidate_id",
+  "proposal_only",
+  "human_review_status",
+  "human_review_current_decision_count",
+  "human_review_conflicting",
+  "same_family_established_by_candidate",
+  "relationship_materialized",
+  "comparison_limitations",
+]);
+const PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_COLUMNS = Object.freeze([
+  "matrix_schema",
+  "generated_at",
+  "selection_basis",
+  "party_query",
+  "document_kind_filter",
+  "source_filter",
+  "matching_records_returned",
+  "total_matching_records",
+  "matching_set_truncated",
+  "maximum_matching_records",
+  "eligible_briefs_attempted",
+  "validated_briefs",
+  "validation_failures",
+  "positive_briefs",
+  "zero_match_briefs",
+  "maximum_shortlist_records",
+  "shortlist_records",
+  "shortlist_rank",
+  "observed_party_name",
+  "observed_party_role",
+  "party_capture_method",
+  "party_resolution_status",
+  "party_match_kind",
+  "party_evidence_quote",
+  "party_evidence_source",
+  "generated_matched_topic_count",
+  "generated_matching_clause_count",
+  "generated_signal_count",
+  "generated_matched_topic_keys",
+  "ranking_basis",
+  "ranking_basis_type",
+  "ranking_normalized_score_provided",
+  ...AGREEMENT_DECISION_BRIEF_MATRIX_COLUMNS.filter(
+    (column) =>
+      !PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_OMITTED_COLUMNS.has(column),
+  ),
+  "shortlist_limitations",
+]);
+
+function serializePartyDecisionBriefShortlistMatrix(output) {
+  if (!output.results.length) {
+    throw new TypeError("Party decision brief shortlist matrix is empty");
+  }
+  const resultByAgreement = new Map(
+    output.results.map((result) => [
+      result.decision_brief.agreement.agreement_id,
+      result,
+    ]),
+  );
+  const baseRows = agreementDecisionBriefMatrixRows({
+    generated_at: output.generated_at,
+    scope: { agreement_count: output.results.length },
+    decision_briefs: output.results.map((result) => result.decision_brief),
+    limitations: output.limitations,
+  });
+  const rows = baseRows.map((baseRow) => {
+    const result = resultByAgreement.get(baseRow.agreement_id);
+    const party = result.observed_party_match;
+    const coverage = result.generated_coverage;
+    return {
+      ...baseRow,
+      matrix_schema: PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_SCHEMA,
+      selection_basis: "literal_observed_party_match_generated_shortlist",
+      party_query: output.scope.party_query,
+      document_kind_filter: output.scope.document_kind_filter,
+      source_filter: output.scope.source_filter,
+      matching_records_returned: output.scope.matching_records_returned,
+      total_matching_records: output.scope.total_matching_records,
+      matching_set_truncated: matrixBoolean(
+        output.scope.matching_set_truncated,
+      ),
+      maximum_matching_records: output.scope.maximum_matching_records,
+      eligible_briefs_attempted: output.scope.eligible_briefs_attempted,
+      validated_briefs: output.scope.validated_briefs,
+      validation_failures: output.scope.validation_failures,
+      positive_briefs: output.scope.positive_briefs,
+      zero_match_briefs: output.scope.zero_match_briefs,
+      maximum_shortlist_records: output.scope.maximum_shortlist_records,
+      shortlist_records: output.scope.shortlist_records,
+      shortlist_rank: result.rank,
+      observed_party_name: party.observed_name,
+      observed_party_role: party.observed_role,
+      party_capture_method: party.capture_method,
+      party_resolution_status: party.resolution_status,
+      party_match_kind: party.match_kind,
+      party_evidence_quote: party.evidence_quote,
+      party_evidence_source: party.evidence_source,
+      generated_matched_topic_count: coverage.matched_topic_count,
+      generated_matching_clause_count: coverage.matching_clause_count,
+      generated_signal_count: coverage.signal_count,
+      generated_matched_topic_keys: coverage.matched_topics.map((topic) =>
+        topic.topic_key
+      ).join(" | "),
+      ranking_basis: output.ranking.basis,
+      ranking_basis_type: output.ranking.basis_type,
+      ranking_normalized_score_provided: matrixBoolean(
+        output.ranking.normalized_score_provided,
+      ),
+      shortlist_limitations: output.limitations.join(" | "),
+    };
+  });
+  return "\uFEFF" +
+    [
+      PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_COLUMNS.map(csvCell).join(","),
+      ...rows.map((row) =>
+        PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_COLUMNS.map((column) =>
+          csvCell(row[column])
+        ).join(",")
+      ),
+    ].join("\r\n") +
+    "\r\n";
+}
+
+export function buildPartyDecisionBriefShortlistCsv(
+  value = {},
+  generatedAt = new Date().toISOString(),
+) {
+  return serializePartyDecisionBriefShortlistMatrix(
+    buildPartyDecisionBriefShortlistExport(value, generatedAt),
   );
 }
 
@@ -8574,6 +8723,7 @@ function boot() {
     partyPageResults: [],
     partyBriefCoverage: new Map(),
     partyBriefShortlistExport: null,
+    partyBriefShortlistCsv: null,
     partyBriefScanGeneration: 0,
     partyBriefScanLoading: false,
     partyDossierLoading: false,
@@ -8754,6 +8904,9 @@ function boot() {
   const downloadPartyBriefShortlistButton = byId(
     "download-party-decision-brief-shortlist",
   );
+  const downloadPartyBriefShortlistCsvButton = byId(
+    "download-party-decision-brief-shortlist-csv",
+  );
   const partyBriefShortlistExportStatus = byId(
     "party-decision-brief-shortlist-export-status",
   );
@@ -8864,6 +9017,7 @@ function boot() {
     state.partyPageResults = [];
     state.partyBriefCoverage.clear();
     state.partyBriefShortlistExport = null;
+    state.partyBriefShortlistCsv = null;
     state.partyBriefScanGeneration += 1;
     state.partyBriefScanLoading = false;
     state.partyDossierLoading = false;
@@ -8981,6 +9135,7 @@ function boot() {
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
     downloadPartyBriefShortlistButton.disabled = true;
+    downloadPartyBriefShortlistCsvButton.disabled = true;
     partyBriefShortlistExportStatus.textContent = "";
     syncGuideSelection("");
     results.replaceChildren(
@@ -12735,9 +12890,11 @@ function boot() {
     state.partyPageResults = rows;
     state.partyBriefCoverage = new Map();
     state.partyBriefShortlistExport = null;
+    state.partyBriefShortlistCsv = null;
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
     downloadPartyBriefShortlistButton.disabled = true;
+    downloadPartyBriefShortlistCsvButton.disabled = true;
     partyBriefShortlistExportStatus.textContent = "";
     state.partyHasMore = pagination.has_more === true;
     partyPrevious.disabled = state.partyOffset === 0;
@@ -12778,9 +12935,11 @@ function boot() {
     state.partyBriefScanLoading = true;
     state.partyBriefCoverage = new Map();
     state.partyBriefShortlistExport = null;
+    state.partyBriefShortlistCsv = null;
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
     downloadPartyBriefShortlistButton.disabled = true;
+    downloadPartyBriefShortlistCsvButton.disabled = true;
     partyBriefShortlistExportStatus.textContent = "";
     const token = state.token;
     const query = state.partyQuery;
@@ -12929,22 +13088,29 @@ function boot() {
           total >= scanRows.length
         ? total
         : null;
+      const generatedAt = new Date().toISOString();
+      const exportInput = {
+        query,
+        documentKind: kind,
+        sourceSlug: source,
+        matchingRecordCount: scanRows.length,
+        totalMatchingRecords,
+        matchingSetTruncated: scanWasTruncated,
+        candidates,
+        briefs: validatedBriefs,
+      };
       state.partyBriefShortlistExport = shortlist.length
-        ? buildPartyDecisionBriefShortlistExport({
-          query,
-          documentKind: kind,
-          sourceSlug: source,
-          matchingRecordCount: scanRows.length,
-          totalMatchingRecords,
-          matchingSetTruncated: scanWasTruncated,
-          candidates,
-          briefs: validatedBriefs,
-        })
+        ? buildPartyDecisionBriefShortlistExport(exportInput, generatedAt)
+        : null;
+      state.partyBriefShortlistCsv = shortlist.length
+        ? buildPartyDecisionBriefShortlistCsv(exportInput, generatedAt)
         : null;
       downloadPartyBriefShortlistButton.disabled =
         state.partyBriefShortlistExport === null;
+      downloadPartyBriefShortlistCsvButton.disabled =
+        state.partyBriefShortlistCsv === null;
       partyBriefShortlistExportStatus.textContent = shortlist.length
-        ? "Sanitized evidence JSON is ready. It contains no bearer token or private Storage path."
+        ? "Sanitized evidence JSON and spreadsheet-ready CSV are ready. They contain no bearer token or private Storage path."
         : "No positive-evidence brief is available to export.";
       statusMessage(
         partyBriefRankStatus,
@@ -12988,10 +13154,12 @@ function boot() {
     state.partyPageResults = [];
     state.partyBriefCoverage = new Map();
     state.partyBriefShortlistExport = null;
+    state.partyBriefShortlistCsv = null;
     state.partySearching = true;
     partyBriefShortlist.hidden = true;
     partyBriefShortlistResults.replaceChildren();
     downloadPartyBriefShortlistButton.disabled = true;
+    downloadPartyBriefShortlistCsvButton.disabled = true;
     partyBriefShortlistExportStatus.textContent = "";
     partySearchButton.disabled = true;
     partyBriefRankButton.disabled = true;
@@ -14936,6 +15104,28 @@ function boot() {
       "Shortlist JSON downloaded with bounded observed evidence and generated coverage kept separate; no bearer token or private Storage path was included.";
   }
 
+  function downloadPartyDecisionBriefShortlistCsv() {
+    if (!state.partyBriefShortlistCsv || !state.partyBriefShortlistExport) {
+      return;
+    }
+    const blob = new Blob([state.partyBriefShortlistCsv], {
+      type: "text/csv;charset=utf-8",
+    });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = element("a");
+    link.href = objectUrl;
+    link.download = `esheria-party-brief-shortlist-matrix-${
+      state.partyBriefShortlistExport.generated_at.slice(0, 10)
+    }.csv`;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    partyBriefShortlistExportStatus.textContent =
+      "Shortlist CSV downloaded with one row per topic/evidence example, literal party-match provenance, evidence hashes, and spreadsheet-formula protection.";
+  }
+
   function downloadDecisionBriefComparison() {
     if (!state.decisionBriefComparisonExport) return;
     const output = state.decisionBriefComparisonExport;
@@ -15988,6 +16178,10 @@ function boot() {
     "click",
     downloadPartyDecisionBriefShortlist,
   );
+  downloadPartyBriefShortlistCsvButton.addEventListener(
+    "click",
+    downloadPartyDecisionBriefShortlistCsv,
+  );
   exportPositionMatrixButton.addEventListener("click", exportPositionMatrix);
   exportTerminationMatrixButton.addEventListener(
     "click",
@@ -16361,6 +16555,7 @@ function boot() {
     state.partyBriefScanGeneration += 1;
     state.partyBriefCoverage.clear();
     state.partyBriefShortlistExport = null;
+    state.partyBriefShortlistCsv = null;
     state.comparisonSelection.clear();
     state.comparisonEvidence = [];
     state.decisionBriefComparisonSelection.clear();
