@@ -6718,13 +6718,22 @@ export function comparisonEvidence(payload, expectedClauseId) {
       "The bounded response did not identify the selected clause.",
     );
   }
-  const clauses = array(data.clauses)
-    .slice(0, COMPARISON_CONTEXT_CLAUSES)
-    .map(record);
-  const anchor = clauses.find((clause) => clause.id === expectedClauseId);
+  const clauses = array(data.clauses).slice(0, 40).map(record);
+  const anchorIndex = clauses.findIndex(
+    (clause) => clause.id === expectedClauseId,
+  );
+  const anchor = anchorIndex < 0 ? null : clauses[anchorIndex];
   if (!anchor || typeof anchor.observed_text !== "string") {
     throw new ApiError("The selected clause wording was not returned.");
   }
+  const previewSize = Math.min(COMPARISON_CONTEXT_CLAUSES, clauses.length);
+  let previewStart = Math.max(
+    0,
+    anchorIndex - Math.floor((previewSize - 1) / 2),
+  );
+  const previewEnd = Math.min(clauses.length, previewStart + previewSize);
+  previewStart = Math.max(0, previewEnd - previewSize);
+  const clausePreview = clauses.slice(previewStart, previewEnd);
   const anchorThemeEvidence = anchorClauseThemeEvidence(
     data.anchor_theme_evidence,
     record(data.agreement).id,
@@ -6740,7 +6749,7 @@ export function comparisonEvidence(payload, expectedClauseId) {
     source: record(data.source),
     clauseWindow: record(data.clause_window),
     anchor,
-    context: clauses.filter((clause) => clause.id !== expectedClauseId),
+    context: clausePreview.filter((clause) => clause.id !== expectedClauseId),
     agreementDateEvidence: array(data.agreement_date_evidence)
       .slice(0, 20)
       .map(record),
