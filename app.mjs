@@ -308,6 +308,8 @@ const EXPLORER_ACCESS_SUMMARY_ROUTES = new Set([
   "/api/assignment-positions",
   "/api/dashboard",
   "/api/decision-briefs",
+  "/api/family-link-summary",
+  "/api/family-links",
   "/api/family-proposals",
   "/api/governing-law-positions",
   "/api/governing-law-summary",
@@ -582,7 +584,9 @@ function isAllowedApiTarget(url) {
       (/^[1-5]$/.test(examples) &&
         Number(examples) <= AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX);
   }
-  if (pathname === "/api/family-proposals") {
+  if (
+    pathname === "/api/family-proposals" || pathname === "/api/family-links"
+  ) {
     const allowed = new Set(["limit", "offset"]);
     if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
       return false;
@@ -674,6 +678,7 @@ function isAllowedApiTarget(url) {
     pathname === "/api/metrics" ||
     pathname === "/api/governing-law-summary" ||
     pathname === "/api/indemnity-summary" ||
+    pathname === "/api/family-link-summary" ||
     pathname === "/api/vendor-summary" ||
     pathname === "/api/theme-summary"
   ) {
