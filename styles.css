@@ -896,6 +896,33 @@ dialog::backdrop {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.brief-comparison-example {
+  margin-top: 9px;
+}
+.brief-comparison-more {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.brief-comparison-more > summary {
+  color: var(--green);
+  cursor: pointer;
+  font-weight: 700;
+}
+.brief-comparison-more[open] > summary {
+  margin-bottom: 9px;
+}
+.brief-comparison-more-list {
+  display: grid;
+  gap: 12px;
+}
+.brief-comparison-more-list .brief-comparison-example {
+  padding-top: 10px;
+  border-top: 1px solid #293b32;
+}
+.brief-comparison-more-list .brief-comparison-example:first-child {
+  border-top: 0;
+}
 .comparison-column {
   min-width: 0;
   padding: 15px;
@@ -1120,6 +1147,10 @@ dialog::backdrop {
   border-left: 3px solid var(--green);
   border-radius: 8px;
   background: #08130e;
+}
+.decision-brief-marked-evidence {
+  max-height: 360px;
+  overflow: auto;
 }
 .decision-brief-signal {
   margin-top: 10px;

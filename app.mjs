@@ -30,6 +30,8 @@ export const AGREEMENT_DECISION_BRIEF_SCHEMA =
   "esheria.agreement-decision-brief.v2";
 export const AGREEMENT_DECISION_BRIEF_COMPARISON_MIN = 2;
 export const AGREEMENT_DECISION_BRIEF_COMPARISON_MAX = 3;
+export const AGREEMENT_DECISION_BRIEF_COMPARISON_EXAMPLES =
+  AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX;
 export const AGREEMENT_DECISION_BRIEF_COMPARISON_SCHEMA =
   "esheria.agreement-decision-brief-comparison.v1";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
@@ -1749,7 +1751,7 @@ export function buildAgreementDecisionBriefComparison(
     const brief = agreementDecisionBriefEvidence(
       input,
       agreementId,
-      AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+      AGREEMENT_DECISION_BRIEF_COMPARISON_EXAMPLES,
     );
     if (brief === null || agreementIds.has(agreementId)) {
       throw new TypeError("Agreement decision brief comparison is invalid");
@@ -1775,6 +1777,7 @@ export function buildAgreementDecisionBriefComparison(
       "The selected agreements are user-chosen examples, not a representative market sample.",
       "Clause and signal counts are raw positive detector matches and are not normalized scores.",
       "Zero matches do not establish that a provision, exception, right or consequence is absent.",
+      "Each topic includes at most five ranked validated examples per agreement; additional matching clauses may exist.",
       "Compare complete agreements, definitions, schedules, amendments and related documents before relying on these excerpts.",
     ],
     export_safety: {
@@ -1784,6 +1787,30 @@ export function buildAgreementDecisionBriefComparison(
       private_storage_paths_included: false,
       bearer_token_included: false,
     },
+  };
+}
+
+export function decisionBriefComparisonExamples(value) {
+  const topic = record(value);
+  const returnedExamples = decisionBriefInteger(topic.returned_examples);
+  const totalMatches = decisionBriefInteger(topic.total_matches);
+  if (
+    returnedExamples === null ||
+    totalMatches === null ||
+    totalMatches < returnedExamples ||
+    !Array.isArray(topic.examples) ||
+    topic.examples.length !== returnedExamples ||
+    topic.examples.length > AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX ||
+    typeof topic.examples_truncated !== "boolean" ||
+    topic.examples_truncated !== (totalMatches > returnedExamples)
+  ) {
+    throw new TypeError("Decision brief comparison examples are invalid");
+  }
+  const [primaryExample = null, ...additionalExamples] = topic.examples;
+  return {
+    primaryExample,
+    additionalExamples,
+    omittedMatchingClauseCount: totalMatches - returnedExamples,
   };
 }
 
@@ -9941,6 +9968,21 @@ function boot() {
     return rows;
   }
 
+  function decisionBriefMarkedEvidence(example, className) {
+    const evidence = example.observed_evidence;
+    const characters = Array.from(evidence.excerpt);
+    const start = evidence.matched_clause_char_start -
+      evidence.clause_char_start;
+    const end = evidence.matched_clause_char_end - evidence.clause_char_start;
+    const container = element("p", className);
+    container.append(
+      document.createTextNode(characters.slice(0, start).join("")),
+      element("mark", "", characters.slice(start, end).join("")),
+      document.createTextNode(characters.slice(end).join("")),
+    );
+    return container;
+  }
+
   function decisionBriefExampleCard(example, agreementId) {
     const evidence = example.observed_evidence;
     const generated = example.generated_signal;
@@ -9971,7 +10013,10 @@ function boot() {
     append(
       observedPanel,
       element("strong", "", "Bounded observed support excerpt"),
-      element("p", "observed-text", evidence.excerpt),
+      decisionBriefMarkedEvidence(
+        example,
+        "observed-text decision-brief-marked-evidence",
+      ),
       dataList([
         ["Exact detector match", evidence.matched_text],
         [
@@ -10244,18 +10289,22 @@ function boot() {
     downloadDecisionBriefButton.disabled = false;
   }
 
-  async function fetchAgreementDecisionBrief(agreementId, token) {
+  async function fetchAgreementDecisionBrief(
+    agreementId,
+    token,
+    examplesPerTopic = AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+  ) {
     const payload = await requestJson(
       buildAgreementDecisionBriefPath(
         agreementId,
-        AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+        examplesPerTopic,
       ),
       token,
     );
     const brief = agreementDecisionBriefEvidence(
       record(payload).data,
       agreementId,
-      AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT,
+      examplesPerTopic,
     );
     if (brief === null) {
       throw new ApiError(
@@ -10277,8 +10326,12 @@ function boot() {
         } positive signal(s)`,
       ),
     );
-    const example = topic.examples[0];
-    if (!example) {
+    const {
+      primaryExample,
+      additionalExamples,
+      omittedMatchingClauseCount,
+    } = decisionBriefComparisonExamples(topic);
+    if (!primaryExample) {
       cell.append(
         element(
           "p",
@@ -10288,8 +10341,56 @@ function boot() {
       );
       return cell;
     }
+    cell.append(
+      decisionBriefComparisonEvidenceBlock(
+        brief,
+        primaryExample,
+        "Representative evidence",
+      ),
+    );
+    if (additionalExamples.length) {
+      const details = element("details", "brief-comparison-more");
+      details.append(
+        element(
+          "summary",
+          "",
+          `Show ${count(additionalExamples.length)} additional validated example${
+            additionalExamples.length === 1 ? "" : "s"
+          }`,
+        ),
+        element(
+          "p",
+          "muted tiny",
+          omittedMatchingClauseCount > 0
+            ? `${count(topic.returned_examples)} of ${
+              count(topic.total_matches)
+            } matching clauses are returned by the bounded evidence endpoint; ${
+              count(omittedMatchingClauseCount)
+            } additional matching clause(s) are not included.`
+            : "These are the remaining examples returned by the bounded evidence endpoint.",
+        ),
+      );
+      const list = element("div", "brief-comparison-more-list");
+      for (let index = 0; index < additionalExamples.length; index += 1) {
+        list.append(
+          decisionBriefComparisonEvidenceBlock(
+            brief,
+            additionalExamples[index],
+            `Additional evidence ${count(index + 1)}`,
+          ),
+        );
+      }
+      details.append(list);
+      cell.append(details);
+    }
+    return cell;
+  }
+
+  function decisionBriefComparisonEvidenceBlock(brief, example, label) {
+    const container = element("div", "brief-comparison-example");
     append(
-      cell,
+      container,
+      element("p", "muted tiny", label),
       element(
         "span",
         "badge basis-generated",
@@ -10304,7 +10405,9 @@ function boot() {
       element(
         "p",
         "muted tiny",
-        `Clause ${example.clause_ordinal}${
+        `${count(example.matched_signal_count)} generated signal(s) on clause ${
+          example.clause_ordinal
+        }${
           example.clause_heading ? ` · ${example.clause_heading}` : ""
         } · observed support SHA-256 ${example.observed_evidence.sha256}`,
       ),
@@ -10315,23 +10418,15 @@ function boot() {
       closeDialog(decisionBriefComparisonDialog);
       loadAgreement(brief.agreement.agreement_id, example.clause_id);
     });
-    cell.append(inspect);
-    return cell;
+    container.append(inspect);
+    return container;
   }
 
   function decisionBriefComparisonMarkedEvidence(example) {
-    const evidence = example.observed_evidence;
-    const characters = Array.from(evidence.excerpt);
-    const start = evidence.matched_clause_char_start -
-      evidence.clause_char_start;
-    const end = evidence.matched_clause_char_end - evidence.clause_char_start;
-    const container = element("p", "brief-comparison-evidence");
-    container.append(
-      document.createTextNode(characters.slice(0, start).join("")),
-      element("mark", "", characters.slice(start, end).join("")),
-      document.createTextNode(characters.slice(end).join("")),
+    return decisionBriefMarkedEvidence(
+      example,
+      "brief-comparison-evidence",
     );
-    return container;
   }
 
   function renderDecisionBriefComparison(comparison) {
@@ -10448,7 +10543,11 @@ function boot() {
     try {
       const settled = await Promise.allSettled(
         selected.map((item) =>
-          fetchAgreementDecisionBrief(item.agreementId, token)
+          fetchAgreementDecisionBrief(
+            item.agreementId,
+            token,
+            AGREEMENT_DECISION_BRIEF_COMPARISON_EXAMPLES,
+          )
         ),
       );
       if (state.token !== token) return;
