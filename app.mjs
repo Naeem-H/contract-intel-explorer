@@ -1183,6 +1183,7 @@ const AGREEMENT_CHANGE_CUE_EXACT_KEYS = Object.freeze({
 const AMENDMENT_CHANGE_DIRECTORY_LIMITATIONS = Object.freeze([
   "This directory contains published amendment records with positive deterministic wording matches; it is not an exhaustive amendment inventory or market-prevalence measure.",
   "Counts reflect the selected cue and source filters. A missing record or cue does not establish absence, particularly where source text is OCR-corrupted.",
+  "Eligible amendment records without a current version-bound cue cache are omitted and counted explicitly; open results revalidate the full evidence packet.",
   "A cue does not identify which provision or document is changed and does not establish amendment direction, incorporation, supersession, novation or legal effect.",
   "Open the complete change-cue packet, underlying instrument and related documents before relying on a result.",
 ]);
@@ -1212,6 +1213,7 @@ const AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS = Object.freeze({
     "matched_cue_count",
     "matched_cue_class_count",
     "clauses_truncated_for_scan",
+    "cache_computed_at",
   ],
   cueSummary: [
     "cue_key",
@@ -1223,6 +1225,10 @@ const AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS = Object.freeze({
     "limit",
     "offset",
     "returned_count",
+    "eligible_amendments",
+    "cached_eligible_amendments",
+    "uncached_eligible_amendments",
+    "cache_complete",
     "eligible_matching_amendments",
     "has_more",
   ],
@@ -1237,6 +1243,8 @@ const AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS = Object.freeze({
     "one_match_per_rule_per_clause",
     "one_representative_cue_per_agreement",
     "positive_matches_only",
+    "cache_required",
+    "cache_detector_version",
     "full_evidence_revalidated_when_agreement_opens",
     "absence_is_not_evidence_of_absence",
     "change_target_identified",
@@ -2314,6 +2322,15 @@ export function amendmentChangeDirectoryEvidence(value, expected = {}) {
   const eligibleCount = decisionBriefInteger(
     page.eligible_matching_amendments,
   );
+  const eligibleAmendmentCount = decisionBriefInteger(
+    page.eligible_amendments,
+  );
+  const cachedEligibleCount = decisionBriefInteger(
+    page.cached_eligible_amendments,
+  );
+  const uncachedEligibleCount = decisionBriefInteger(
+    page.uncached_eligible_amendments,
+  );
   if (
     !hasExactKeys(root, AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.root) ||
     root.api_version !== "amendment-change-directory-v1" ||
@@ -2326,6 +2343,13 @@ export function amendmentChangeDirectoryEvidence(value, expected = {}) {
     returnedCount !== root.items.length ||
     returnedCount > expectedLimit ||
     eligibleCount === null ||
+    eligibleAmendmentCount === null ||
+    cachedEligibleCount === null ||
+    uncachedEligibleCount === null ||
+    cachedEligibleCount > eligibleAmendmentCount ||
+    eligibleCount > cachedEligibleCount ||
+    uncachedEligibleCount !== eligibleAmendmentCount - cachedEligibleCount ||
+    page.cache_complete !== (uncachedEligibleCount === 0) ||
     page.has_more !== expectedOffset + returnedCount < eligibleCount ||
     returnedCount !==
       (expectedOffset >= eligibleCount
@@ -2348,6 +2372,8 @@ export function amendmentChangeDirectoryEvidence(value, expected = {}) {
     limits.one_match_per_rule_per_clause !== true ||
     limits.one_representative_cue_per_agreement !== true ||
     limits.positive_matches_only !== true ||
+    limits.cache_required !== true ||
+    limits.cache_detector_version !== AGREEMENT_CHANGE_CUE_DETECTOR ||
     limits.full_evidence_revalidated_when_agreement_opens !== true ||
     limits.absence_is_not_evidence_of_absence !== true ||
     limits.change_target_identified !== false ||
@@ -2394,6 +2420,7 @@ export function amendmentChangeDirectoryEvidence(value, expected = {}) {
     const truncatedClauseCount = decisionBriefInteger(
       coverage.clauses_truncated_for_scan,
     );
+    const cacheComputedAt = coverage.cache_computed_at;
     if (
       !hasExactKeys(item, AMENDMENT_CHANGE_DIRECTORY_EXACT_KEYS.item) ||
       !hasExactKeys(
@@ -2421,6 +2448,7 @@ export function amendmentChangeDirectoryEvidence(value, expected = {}) {
       matchedCueClassCount > matchedCueCount ||
       matchedCueClassCount > Object.keys(AGREEMENT_CHANGE_CUE_LABELS).length ||
       truncatedClauseCount > currentClauseCount ||
+      !isValidFamilyTimestamp(cacheComputedAt) ||
       item.full_change_cues_available !== true ||
       !Array.isArray(item.cue_summary) ||
       item.cue_summary.length !== matchedCueClassCount ||
@@ -10791,6 +10819,11 @@ function boot() {
         )
         : null,
       element("span", "", `Source record ${item.source.external_id}`),
+      element(
+        "span",
+        "",
+        `Cue cache computed ${date(item.coverage.cache_computed_at)}`,
+      ),
     );
 
     const summaries = element("div", "change-cue-summary");
@@ -10964,12 +10997,20 @@ function boot() {
     amendmentChangeStatus.textContent = response.items.length
       ? `Showing amendment evidence ${start}–${end} of ${
         count(response.page.eligible_matching_amendments)
-      } positive-match record(s). Ordering reflects cue coverage, not importance or market prevalence.`
+      } positive-match record(s). ${
+        count(response.page.cached_eligible_amendments)
+      } of ${
+        count(response.page.eligible_amendments)
+      } eligible amendment(s) have a current cue cache; ${
+        count(response.page.uncached_eligible_amendments)
+      } are omitted pending repair. Ordering reflects cue coverage, not importance or market prevalence.`
       : response.page.eligible_matching_amendments > 0
       ? `No amendment appears at this offset; ${
         count(response.page.eligible_matching_amendments)
       } positive-match record(s) meet the selected filters.`
-      : "No published amendment matched the selected deterministic cue filters. OCR and corpus coverage remain incomplete.";
+      : `No published amendment matched the selected deterministic cue filters. ${
+        count(response.page.uncached_eligible_amendments)
+      } eligible amendment(s) are omitted pending cache repair; OCR and corpus coverage remain incomplete.`;
   }
 
   async function performAmendmentChangeBrowse() {
