@@ -26,6 +26,8 @@ export const FAMILY_PROPOSAL_PAGE_MAX = 20;
 export const FAMILY_PROPOSAL_OFFSET_MAX = 500;
 export const AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT = 3;
 export const AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX = 5;
+export const AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT = 12;
+export const AGREEMENT_CHANGE_CUE_LIMIT_MAX = 20;
 export const AGREEMENT_DECISION_BRIEF_SCHEMA =
   "esheria.agreement-decision-brief.v2";
 export const AGREEMENT_DECISION_BRIEF_COMPARISON_MIN = 2;
@@ -36,6 +38,8 @@ export const AGREEMENT_DECISION_BRIEF_COMPARISON_SCHEMA =
   "esheria.agreement-decision-brief-comparison.v1";
 export const FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA =
   "esheria.family-proposal-brief-comparison.v1";
+export const FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA =
+  "esheria.family-proposal-lifecycle-comparison.v1";
 export const PARTY_DECISION_BRIEF_SCAN_CONCURRENCY = 3;
 export const PARTY_DECISION_BRIEF_SCAN_EXAMPLES = 1;
 export const PARTY_DECISION_BRIEF_SCAN_MAX = 50;
@@ -223,6 +227,21 @@ export function normalizeToken(value) {
 
 function isAllowedApiTarget(url) {
   const pathname = url.pathname;
+  const changeCueMatch = pathname.match(
+    /^\/api\/agreements\/([^/]+)\/change-cues$/,
+  );
+  if (changeCueMatch) {
+    if (!UUID_PATTERN.test(changeCueMatch[1])) return false;
+    const allowed = new Set(["limit"]);
+    if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
+      return false;
+    }
+    if (url.searchParams.getAll("limit").length > 1) return false;
+    const limit = url.searchParams.get("limit");
+    return limit === null ||
+      (/^[1-9]\d*$/.test(limit) &&
+        Number(limit) <= AGREEMENT_CHANGE_CUE_LIMIT_MAX);
+  }
   const decisionBriefMatch = pathname.match(
     /^\/api\/agreements\/([^/]+)\/decision-brief$/,
   );
@@ -852,6 +871,25 @@ export function buildAgreementDecisionBriefPath(
   return `/api/agreements/${agreementId}/decision-brief?${params.toString()}`;
 }
 
+export function buildAgreementChangeCuePath(
+  agreementId,
+  limit = AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT,
+) {
+  if (typeof agreementId !== "string" || !UUID_PATTERN.test(agreementId)) {
+    throw new TypeError("Agreement identifier is invalid");
+  }
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > AGREEMENT_CHANGE_CUE_LIMIT_MAX
+  ) {
+    throw new TypeError("Change cue limit is outside the allowed range");
+  }
+  return `/api/agreements/${agreementId}/change-cues?${
+    new URLSearchParams({ limit: String(limit) }).toString()
+  }`;
+}
+
 export function buildDecisionBriefDirectoryPath({
   minimumTopics = 3,
   kind = "",
@@ -940,6 +978,121 @@ const DECISION_BRIEF_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const DECISION_BRIEF_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DECISION_BRIEF_BASES = new Set(["observed", "reviewed", "generated"]);
 const DECISION_BRIEF_DOCUMENT_KINDS = new Set(["contract", "amendment"]);
+const AGREEMENT_CHANGE_CUE_DETECTOR = "agreement_change_cue_rules_v1";
+const AGREEMENT_CHANGE_CUE_LABELS = Object.freeze({
+  express_amendment_language: "Express amendment or modification wording",
+  delete_and_replace_language: "Deletion and replacement wording",
+  addition_or_insertion_language: "Addition or insertion wording",
+  amended_and_restated_language: "Amended-and-restated wording",
+  continuing_effect_language:
+    "Continuing force-and-effect wording tied to amendment context",
+  unchanged_terms_language: "Express unchanged-terms wording",
+  amendment_effectiveness_language: "Express amendment effectiveness wording",
+  no_waiver_or_novation_language: "No-waiver or no-novation wording",
+});
+const AGREEMENT_CHANGE_CUE_ORDER = new Map(
+  Object.keys(AGREEMENT_CHANGE_CUE_LABELS).map((key, index) => [key, index]),
+);
+const AGREEMENT_CHANGE_CUE_LIMITATIONS = Object.freeze([
+  "Cues are deterministic generated pattern matches over the current observed extraction; exact matched wording and bounded observed support are supplied separately.",
+  "A cue does not identify which other document is changed and does not establish amendment direction, incorporation, supersession or legal effect.",
+  "Only the first match for each supported rule in a clause is returned; the response may also be truncated by the requested cue limit.",
+  "A missing cue does not establish that the agreement lacks change language, and text after the per-clause scan limit is not inspected.",
+  "Read the complete instruments, definitions, schedules, incorporated terms and governing law before relying on a cue.",
+]);
+const AGREEMENT_CHANGE_CUE_EXACT_KEYS = Object.freeze({
+  root: [
+    "api_version",
+    "agreement",
+    "source",
+    "cues",
+    "coverage",
+    "limits",
+    "limitations",
+  ],
+  agreement: [
+    "agreement_id",
+    "family_key",
+    "document_kind",
+    "document_kind_basis",
+    "title",
+    "published_at",
+    "artifact_sha256",
+    "extraction_id",
+    "extraction_method",
+    "extraction_version",
+    "extracted_text_sha256",
+    "text_basis",
+  ],
+  source: [
+    "slug",
+    "name",
+    "publisher",
+    "source_url",
+    "external_id",
+    "observed_published_at",
+  ],
+  cue: [
+    "cue_key",
+    "label",
+    "cue_basis",
+    "confidence",
+    "detector_version",
+    "rule_id",
+    "anchor_clause_id",
+    "anchor_clause_sha256",
+    "observed_evidence",
+    "clause",
+  ],
+  clause: [
+    "clause_id",
+    "sequence",
+    "heading",
+    "observed_text_sha256",
+    "page_start",
+    "page_end",
+    "document_char_start",
+    "document_char_end",
+  ],
+  observedEvidence: [
+    "excerpt",
+    "sha256",
+    "text_basis",
+    "clause_char_start",
+    "clause_char_end",
+    "document_char_start",
+    "document_char_end",
+    "matched_text",
+    "matched_text_sha256",
+    "matched_clause_char_start",
+    "matched_clause_char_end",
+    "matched_document_char_start",
+    "matched_document_char_end",
+    "bounded_excerpt",
+  ],
+  coverage: [
+    "current_clause_count",
+    "candidate_clause_count",
+    "matching_clause_count",
+    "matched_cue_count",
+    "returned_cue_count",
+    "supported_rule_count",
+    "clauses_truncated_for_scan",
+  ],
+  limits: [
+    "maximum_returned_cues",
+    "maximum_supported_limit",
+    "maximum_clause_characters_scanned",
+    "one_match_per_rule_per_clause",
+    "cues_truncated",
+    "positive_matches_only",
+    "absence_is_not_evidence_of_absence",
+    "change_target_identified",
+    "amendment_direction_determined",
+    "agreement_relationship_established",
+    "legal_effect_determined",
+  ],
+});
 const PARTY_CAPTURE_METHODS = new Set([
   "source_structured_metadata",
   "generated_extraction_with_observed_quote",
@@ -1723,6 +1876,268 @@ export function agreementDecisionBriefEvidence(
   };
 }
 
+export function agreementChangeCueEvidence(
+  value,
+  expectedAgreementId,
+  expectedLimit = AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT,
+) {
+  if (
+    typeof expectedAgreementId !== "string" ||
+    !UUID_PATTERN.test(expectedAgreementId) ||
+    !Number.isInteger(expectedLimit) ||
+    expectedLimit < 1 ||
+    expectedLimit > AGREEMENT_CHANGE_CUE_LIMIT_MAX
+  ) {
+    return null;
+  }
+
+  const root = record(value);
+  const agreement = record(root.agreement);
+  const source = record(root.source);
+  const coverage = record(root.coverage);
+  const limits = record(root.limits);
+  const familyKey = decisionBriefString(agreement.family_key, 300, true);
+  const title = decisionBriefString(agreement.title, 2_000, true);
+  const publisher = decisionBriefString(source.publisher, 300, true);
+  const sourceUrl = safeExternalUrl(source.source_url);
+  const currentClauseCount = decisionBriefInteger(
+    coverage.current_clause_count,
+  );
+  const candidateClauseCount = decisionBriefInteger(
+    coverage.candidate_clause_count,
+  );
+  const matchingClauseCount = decisionBriefInteger(
+    coverage.matching_clause_count,
+  );
+  const matchedCueCount = decisionBriefInteger(coverage.matched_cue_count);
+  const returnedCueCount = decisionBriefInteger(coverage.returned_cue_count);
+  const truncatedClauseCount = decisionBriefInteger(
+    coverage.clauses_truncated_for_scan,
+  );
+
+  if (
+    !hasExactKeys(root, AGREEMENT_CHANGE_CUE_EXACT_KEYS.root) ||
+    root.api_version !== "agreement-change-cues-v1" ||
+    !hasExactKeys(agreement, AGREEMENT_CHANGE_CUE_EXACT_KEYS.agreement) ||
+    agreement.agreement_id !== expectedAgreementId ||
+    familyKey === undefined ||
+    !DECISION_BRIEF_DOCUMENT_KINDS.has(agreement.document_kind) ||
+    !DECISION_BRIEF_BASES.has(agreement.document_kind_basis) ||
+    title === undefined ||
+    !isValidFamilyTimestamp(agreement.published_at) ||
+    !DECISION_BRIEF_HASH_PATTERN.test(agreement.artifact_sha256) ||
+    typeof agreement.extraction_id !== "string" ||
+    !UUID_PATTERN.test(agreement.extraction_id) ||
+    decisionBriefString(agreement.extraction_method, 100) === undefined ||
+    decisionBriefString(agreement.extraction_version, 100) === undefined ||
+    !DECISION_BRIEF_HASH_PATTERN.test(agreement.extracted_text_sha256) ||
+    agreement.text_basis !== "observed" ||
+    !hasExactKeys(source, AGREEMENT_CHANGE_CUE_EXACT_KEYS.source) ||
+    typeof source.slug !== "string" ||
+    !SOURCE_PATTERN.test(source.slug) ||
+    decisionBriefString(source.name, 300) === undefined ||
+    publisher === undefined ||
+    sourceUrl === null ||
+    new URL(sourceUrl).protocol !== "https:" ||
+    decisionBriefString(source.external_id, 1_000) === undefined ||
+    !(
+      source.observed_published_at === null ||
+      isValidFamilyTimestamp(source.observed_published_at)
+    ) ||
+    !hasExactKeys(coverage, AGREEMENT_CHANGE_CUE_EXACT_KEYS.coverage) ||
+    currentClauseCount === null ||
+    candidateClauseCount === null ||
+    matchingClauseCount === null ||
+    matchedCueCount === null ||
+    returnedCueCount === null ||
+    coverage.supported_rule_count !==
+      Object.keys(AGREEMENT_CHANGE_CUE_LABELS).length ||
+    truncatedClauseCount === null ||
+    candidateClauseCount > currentClauseCount ||
+    matchingClauseCount > candidateClauseCount ||
+    matchingClauseCount > matchedCueCount ||
+    truncatedClauseCount > currentClauseCount ||
+    returnedCueCount !== Math.min(matchedCueCount, expectedLimit) ||
+    !hasExactKeys(limits, AGREEMENT_CHANGE_CUE_EXACT_KEYS.limits) ||
+    limits.maximum_returned_cues !== expectedLimit ||
+    limits.maximum_supported_limit !== AGREEMENT_CHANGE_CUE_LIMIT_MAX ||
+    limits.maximum_clause_characters_scanned !== 500_000 ||
+    limits.one_match_per_rule_per_clause !== true ||
+    limits.cues_truncated !== (matchedCueCount > expectedLimit) ||
+    limits.positive_matches_only !== true ||
+    limits.absence_is_not_evidence_of_absence !== true ||
+    limits.change_target_identified !== false ||
+    limits.amendment_direction_determined !== false ||
+    limits.agreement_relationship_established !== false ||
+    limits.legal_effect_determined !== false ||
+    !Array.isArray(root.limitations) ||
+    root.limitations.length !== AGREEMENT_CHANGE_CUE_LIMITATIONS.length ||
+    root.limitations.some(
+      (limitation, index) =>
+        limitation !== AGREEMENT_CHANGE_CUE_LIMITATIONS[index],
+    ) ||
+    !Array.isArray(root.cues) ||
+    root.cues.length !== returnedCueCount
+  ) {
+    return null;
+  }
+
+  const cues = [];
+  const cueIdentities = new Set();
+  let previousSequence = -1;
+  let previousRuleOrdinal = -1;
+  for (const cueValue of root.cues) {
+    const cue = record(cueValue);
+    const clause = record(cue.clause);
+    const observed = record(cue.observed_evidence);
+    const cueOrdinal = AGREEMENT_CHANGE_CUE_ORDER.get(cue.cue_key);
+    const clauseSequence = decisionBriefInteger(clause.sequence, 1);
+    const clauseHeading = decisionBriefString(clause.heading, 2_000, true);
+    const pageSpanValid = decisionBriefSpan(
+      clause.page_start,
+      clause.page_end,
+      { minimum: 0, allowEqual: true },
+    );
+    const clauseDocumentSpanValid = decisionBriefSpan(
+      clause.document_char_start,
+      clause.document_char_end,
+    );
+    const excerpt = decisionBriefString(observed.excerpt, 2_000);
+    const matchedText = decisionBriefString(observed.matched_text, 800);
+    const supportSpanValid = decisionBriefSpan(
+      observed.clause_char_start,
+      observed.clause_char_end,
+    );
+    const matchSpanValid = decisionBriefSpan(
+      observed.matched_clause_char_start,
+      observed.matched_clause_char_end,
+    );
+    const evidenceDocumentSpanValid = decisionBriefSpan(
+      observed.document_char_start,
+      observed.document_char_end,
+    );
+    const matchDocumentSpanValid = decisionBriefSpan(
+      observed.matched_document_char_start,
+      observed.matched_document_char_end,
+    );
+    const identity = `${clause.clause_id}:${cue.cue_key}`;
+
+    if (
+      !hasExactKeys(cue, AGREEMENT_CHANGE_CUE_EXACT_KEYS.cue) ||
+      cueOrdinal === undefined ||
+      cue.label !== AGREEMENT_CHANGE_CUE_LABELS[cue.cue_key] ||
+      cue.cue_basis !== "generated" ||
+      typeof cue.confidence !== "number" ||
+      !Number.isFinite(cue.confidence) ||
+      cue.confidence < 0 ||
+      cue.confidence > 1 ||
+      cue.detector_version !== AGREEMENT_CHANGE_CUE_DETECTOR ||
+      cue.rule_id !== `${cue.cue_key}_v1` ||
+      typeof cue.anchor_clause_id !== "string" ||
+      !UUID_PATTERN.test(cue.anchor_clause_id) ||
+      !DECISION_BRIEF_HASH_PATTERN.test(cue.anchor_clause_sha256) ||
+      !hasExactKeys(clause, AGREEMENT_CHANGE_CUE_EXACT_KEYS.clause) ||
+      clause.clause_id !== cue.anchor_clause_id ||
+      !UUID_PATTERN.test(clause.clause_id) ||
+      clauseSequence === null ||
+      clauseHeading === undefined ||
+      !DECISION_BRIEF_HASH_PATTERN.test(clause.observed_text_sha256) ||
+      clause.observed_text_sha256 !== cue.anchor_clause_sha256 ||
+      !pageSpanValid ||
+      !clauseDocumentSpanValid ||
+      !hasExactKeys(
+        observed,
+        AGREEMENT_CHANGE_CUE_EXACT_KEYS.observedEvidence,
+      ) ||
+      excerpt === undefined ||
+      matchedText === undefined ||
+      observed.text_basis !== "observed" ||
+      !DECISION_BRIEF_HASH_PATTERN.test(observed.sha256) ||
+      !DECISION_BRIEF_HASH_PATTERN.test(observed.matched_text_sha256) ||
+      !supportSpanValid ||
+      !matchSpanValid ||
+      !evidenceDocumentSpanValid ||
+      !matchDocumentSpanValid ||
+      observed.matched_clause_char_start < observed.clause_char_start ||
+      observed.matched_clause_char_end > observed.clause_char_end ||
+      Array.from(excerpt).length !==
+        observed.clause_char_end - observed.clause_char_start ||
+      Array.from(matchedText).length !==
+        observed.matched_clause_char_end -
+          observed.matched_clause_char_start ||
+      Array.from(excerpt).slice(
+          observed.matched_clause_char_start - observed.clause_char_start,
+          observed.matched_clause_char_end - observed.clause_char_start,
+        ).join("") !== matchedText ||
+      observed.bounded_excerpt !== true ||
+      cueIdentities.has(identity) ||
+      clauseSequence < previousSequence ||
+      (clauseSequence === previousSequence && cueOrdinal <= previousRuleOrdinal)
+    ) {
+      return null;
+    }
+
+    const hasDocumentOffsets = clause.document_char_start !== null;
+    if (
+      hasDocumentOffsets !== (clause.document_char_end !== null) ||
+      hasDocumentOffsets !== (observed.document_char_start !== null) ||
+      hasDocumentOffsets !== (observed.document_char_end !== null) ||
+      hasDocumentOffsets !==
+        (observed.matched_document_char_start !== null) ||
+      hasDocumentOffsets !== (observed.matched_document_char_end !== null) ||
+      (hasDocumentOffsets &&
+        (
+          observed.document_char_start !==
+            clause.document_char_start + observed.clause_char_start ||
+          observed.document_char_end !==
+            clause.document_char_start + observed.clause_char_end ||
+          observed.matched_document_char_start !==
+            clause.document_char_start +
+              observed.matched_clause_char_start ||
+          observed.matched_document_char_end !==
+            clause.document_char_start + observed.matched_clause_char_end ||
+          observed.document_char_end > clause.document_char_end
+        ))
+    ) {
+      return null;
+    }
+
+    cueIdentities.add(identity);
+    previousSequence = clauseSequence;
+    previousRuleOrdinal = cueOrdinal;
+    cues.push({
+      ...cue,
+      clause: { ...clause, heading: clauseHeading },
+      observed_evidence: {
+        ...observed,
+        excerpt,
+        matched_text: matchedText,
+      },
+    });
+  }
+
+  const returnedMatchingClauseCount = new Set(
+    cues.map((cue) => cue.clause.clause_id),
+  ).size;
+  if (
+    returnedMatchingClauseCount > matchingClauseCount ||
+    (!limits.cues_truncated &&
+      returnedMatchingClauseCount !== matchingClauseCount)
+  ) {
+    return null;
+  }
+
+  return {
+    api_version: root.api_version,
+    agreement: { ...agreement, family_key: familyKey, title },
+    source: { ...source, publisher, source_url: sourceUrl },
+    cues,
+    coverage: { ...coverage },
+    limits: { ...limits },
+    limitations: [...root.limitations],
+  };
+}
+
 export function partyDecisionBriefCoverage(value, expectedAgreementId) {
   const brief = record(value);
   const agreement = record(brief.agreement);
@@ -2345,6 +2760,74 @@ export function buildFamilyProposalBriefComparison(
       private_storage_paths_included: false,
       bearer_token_included: false,
     },
+  };
+}
+
+export function buildFamilyProposalLifecycleComparison(
+  proposalValue,
+  briefValues,
+  changeCueValues,
+  generatedAt = new Date().toISOString(),
+) {
+  if (
+    !Array.isArray(changeCueValues) ||
+    changeCueValues.length !== 2
+  ) {
+    throw new TypeError("Family proposal lifecycle comparison is invalid");
+  }
+  const base = buildFamilyProposalBriefComparison(
+    proposalValue,
+    briefValues,
+    generatedAt,
+  );
+  const documents = base.selection_context.documents;
+  const cues = changeCueValues.map((value, index) =>
+    agreementChangeCueEvidence(
+      value,
+      documents[index].agreement_id,
+      AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT,
+    )
+  );
+  if (cues.some((packet) => packet === null)) {
+    throw new TypeError("Family proposal lifecycle comparison is invalid");
+  }
+  for (let index = 0; index < documents.length; index += 1) {
+    const document = documents[index];
+    const brief = base.decision_brief_comparison.decision_briefs[index];
+    const packet = cues[index];
+    if (
+      packet.agreement.agreement_id !== document.agreement_id ||
+      packet.agreement.document_kind !== document.document_kind ||
+      packet.agreement.document_kind_basis !== document.document_kind_basis ||
+      packet.agreement.title !== brief.agreement.title ||
+      packet.agreement.family_key !== brief.agreement.family_key ||
+      packet.agreement.published_at !== brief.agreement.published_at ||
+      packet.agreement.artifact_sha256 !== brief.agreement.artifact_sha256 ||
+      packet.agreement.extraction_id !== brief.agreement.extraction_id ||
+      packet.agreement.extracted_text_sha256 !==
+        brief.agreement.extracted_text_sha256 ||
+      packet.agreement.text_basis !== document.text_basis ||
+      packet.source.slug !== base.selection_context.source_slug ||
+      packet.source.source_url !== document.source_url ||
+      packet.source.external_id !== brief.source.external_id ||
+      packet.source.observed_published_at !==
+        brief.source.observed_published_at
+    ) {
+      throw new TypeError("Family proposal lifecycle comparison is invalid");
+    }
+  }
+  return {
+    schema: FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA,
+    generated_at: generatedAt,
+    selection_context: base.selection_context,
+    decision_brief_comparison: base.decision_brief_comparison,
+    change_cue_packets: cues,
+    limitations: [
+      ...base.limitations,
+      "Change cues are positive deterministic wording matches only; they do not identify the changed instrument, resolve cross-document references, or establish direction or legal effect.",
+      "Each document returns at most twelve cues and at most one match per supported rule in a clause; inspect the complete documents for omitted or unmatched changes.",
+    ],
+    export_safety: base.export_safety,
   };
 }
 
@@ -9661,7 +10144,7 @@ function boot() {
     compareBriefs.type = "button";
     compareBriefs.setAttribute(
       "aria-label",
-      "Compare both proposed documents across the five evidence topics",
+      "Compare both proposed documents across five evidence topics and exact document-change cues",
     );
     compareBriefs.addEventListener(
       "click",
@@ -11434,6 +11917,28 @@ function boot() {
     return brief;
   }
 
+  async function fetchAgreementChangeCues(
+    agreementId,
+    token,
+    limit = AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT,
+  ) {
+    const payload = await requestJson(
+      buildAgreementChangeCuePath(agreementId, limit),
+      token,
+    );
+    const cues = agreementChangeCueEvidence(
+      record(payload).data,
+      agreementId,
+      limit,
+    );
+    if (cues === null) {
+      throw new ApiError(
+        "The change-cue packet did not match its evidence disclosure contract.",
+      );
+    }
+    return cues;
+  }
+
   function decisionBriefComparisonTopicCell(brief, topic) {
     const cell = element("td");
     append(
@@ -11549,7 +12054,11 @@ function boot() {
     );
   }
 
-  function renderDecisionBriefComparison(comparison, selectionContext = null) {
+  function renderDecisionBriefComparison(
+    comparison,
+    selectionContext = null,
+    changeCuePackets = [],
+  ) {
     const briefs = comparison.decision_briefs;
     const fragment = document.createDocumentFragment();
     if (selectionContext?.basis === "generated_family_candidate") {
@@ -11666,6 +12175,95 @@ function boot() {
     scroll.append(table);
     fragment.append(scroll);
 
+    if (changeCuePackets.length) {
+      append(
+        fragment,
+        element("h3", "", "Observed document-change cues"),
+        element(
+          "p",
+          "decision-brief-boundary",
+          "These generated labels point to exact amendment-mechanics wording. They do not identify the changed instrument, establish which document changes which, or determine incorporation, supersession or legal effect.",
+        ),
+      );
+      const cueGrid = element("div", "comparison-grid change-cue-grid");
+      cueGrid.tabIndex = 0;
+      cueGrid.setAttribute(
+        "aria-label",
+        "Side-by-side observed document-change cues",
+      );
+      for (const packet of changeCuePackets) {
+        const column = element("section", "comparison-column change-cue-column");
+        append(
+          column,
+          element(
+            "h4",
+            "",
+            displayText(packet.agreement.title, "Untitled agreement"),
+          ),
+          element(
+            "p",
+            "muted",
+            `${count(packet.coverage.returned_cue_count)} of ${
+              count(packet.coverage.matched_cue_count)
+            } positive cue(s) shown across ${
+              count(packet.coverage.matching_clause_count)
+            } clause(s).`,
+          ),
+        );
+        if (!packet.cues.length) {
+          column.append(
+            element(
+              "p",
+              "focus-note",
+              "No supported document-change wording matched. This is not evidence that the document makes no changes.",
+            ),
+          );
+        }
+        for (const cue of packet.cues) {
+          const evidence = cue.observed_evidence;
+          const details = element("details", "brief-comparison-more");
+          const summary = element("summary", "", cue.label);
+          append(
+            details,
+            summary,
+            element("span", "badge generated", "Generated change cue"),
+            element(
+              "p",
+              "muted",
+              `Clause ${count(cue.clause.sequence)}${
+                cue.clause.heading ? ` · ${cue.clause.heading}` : ""
+              } · rule ${cue.rule_id}`,
+            ),
+            element(
+              "p",
+              "muted",
+              `Exact observed match: “${evidence.matched_text}”`,
+            ),
+            element("p", "brief-comparison-evidence", evidence.excerpt),
+            element(
+              "p",
+              "muted tiny",
+              `Observed support characters ${evidence.clause_char_start}–${
+                evidence.clause_char_end
+              } · SHA-256 ${evidence.sha256}`,
+            ),
+          );
+          column.append(details);
+        }
+        if (packet.limits.cues_truncated) {
+          column.append(
+            element(
+              "p",
+              "muted",
+              "More supported cues exist than this bounded packet returns.",
+            ),
+          );
+        }
+        cueGrid.append(column);
+      }
+      fragment.append(cueGrid);
+    }
+
     const limitations = element("section", "decision-brief-limitations");
     append(limitations, element("h3", "", "Comparison limits"));
     const list = element("ul");
@@ -11676,7 +12274,12 @@ function boot() {
     fragment.append(limitations);
     decisionBriefComparisonBody.replaceChildren(fragment);
     decisionBriefComparisonDialogStatus.textContent = selectionContext
-      ? `${briefs.length} independently validated briefs loaded from the proposal-only pair.`
+      ? `${briefs.length} independently validated briefs and ${
+        changeCuePackets.reduce(
+          (total, packet) => total + packet.cues.length,
+          0,
+        )
+      } bounded change cue(s) loaded from the proposal-only pair.`
       : `${briefs.length} independently validated briefs loaded.`;
     downloadDecisionBriefComparisonButton.disabled = false;
   }
@@ -11695,30 +12298,50 @@ function boot() {
     state.decisionBriefComparison = null;
     state.decisionBriefComparisonExport = null;
     downloadDecisionBriefComparisonButton.disabled = true;
-    updateDecisionBriefComparisonControls("Loading exact decision briefs…");
+    updateDecisionBriefComparisonControls(
+      proposal
+        ? "Loading exact decision briefs and document-change cues…"
+        : "Loading exact decision briefs…",
+    );
     decisionBriefComparisonDialogStatus.textContent =
       "Loading independently validated agreement evidence…";
     const loading = element(
       "p",
       "muted",
-      "Loading the same five bounded wording topics for each agreement…",
+      proposal
+        ? "Loading the same five bounded wording topics and exact change cues for each agreement…"
+        : "Loading the same five bounded wording topics for each agreement…",
     );
     loading.setAttribute("role", "status");
     decisionBriefComparisonBody.replaceChildren(loading);
     openDialog(decisionBriefComparisonDialog);
 
     try {
-      const settled = await Promise.allSettled(
-        selected.map((item) =>
-          fetchAgreementDecisionBrief(
-            item.agreementId,
-            token,
-            AGREEMENT_DECISION_BRIEF_COMPARISON_EXAMPLES,
-          )
+      const [settled, cueSettled] = await Promise.all([
+        Promise.allSettled(
+          selected.map((item) =>
+            fetchAgreementDecisionBrief(
+              item.agreementId,
+              token,
+              AGREEMENT_DECISION_BRIEF_COMPARISON_EXAMPLES,
+            )
+          ),
         ),
-      );
+        proposal === null
+          ? Promise.resolve([])
+          : Promise.allSettled(
+            selected.map((item) =>
+              fetchAgreementChangeCues(
+                item.agreementId,
+                token,
+                AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT,
+              )
+            ),
+          ),
+      ]);
       if (state.token !== token) return;
-      const unauthorized = settled.find(
+      const allSettled = [...settled, ...cueSettled];
+      const unauthorized = allSettled.find(
         (result) =>
           result.status === "rejected" &&
           result.reason instanceof ApiError &&
@@ -11730,12 +12353,19 @@ function boot() {
         );
         return;
       }
-      const failure = settled.find((result) => result.status === "rejected");
+      const failure = allSettled.find(
+        (result) => result.status === "rejected",
+      );
       if (failure?.status === "rejected") throw failure.reason;
       const briefValues = settled.map((result) => result.value);
+      const cueValues = cueSettled.map((result) => result.value);
       const proposalPacket = proposal === null
         ? null
-        : buildFamilyProposalBriefComparison(proposal, briefValues);
+        : buildFamilyProposalLifecycleComparison(
+          proposal,
+          briefValues,
+          cueValues,
+        );
       const comparison = proposalPacket?.decision_brief_comparison ??
         buildAgreementDecisionBriefComparison(briefValues);
       state.decisionBriefComparison = comparison;
@@ -11743,6 +12373,7 @@ function boot() {
       renderDecisionBriefComparison(
         comparison,
         proposalPacket?.selection_context ?? null,
+        proposalPacket?.change_cue_packets ?? [],
       );
       updateDecisionBriefComparisonControls(
         proposalPacket
@@ -11834,7 +12465,9 @@ function boot() {
     const link = element("a");
     link.href = objectUrl;
     link.download = `${
-      output.schema === FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA
+      output.schema === FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA
+        ? "esheria-family-proposal-lifecycle-comparison"
+        : output.schema === FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA
         ? "esheria-family-proposal-brief-comparison"
         : "esheria-agreement-brief-comparison"
     }-${
@@ -11846,7 +12479,9 @@ function boot() {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
     decisionBriefComparisonDialogStatus.textContent =
-      output.schema === FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA
+      output.schema === FAMILY_PROPOSAL_LIFECYCLE_COMPARISON_SCHEMA
+        ? "Proposal-only lifecycle comparison JSON downloaded with exact change cues, the generated-candidate boundary, and no bearer token or private Storage path."
+        : output.schema === FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA
         ? "Proposal-only comparison JSON downloaded with the generated-candidate boundary and without a bearer token or private Storage path."
         : "Comparison JSON downloaded without a bearer token or private Storage path.";
   }
