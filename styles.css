@@ -398,6 +398,10 @@ select:focus {
 .assignment-search-form {
   grid-template-columns: minmax(230px, 1.2fr) 190px 135px 145px auto;
 }
+.vendor-search-form {
+  grid-template-columns: minmax(175px, .9fr) minmax(245px, 1.3fr) 185px 135px
+    145px auto;
+}
 .governing-law-search-form,
 .indemnity-search-form,
 .theme-search-form {

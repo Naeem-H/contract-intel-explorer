@@ -61,8 +61,7 @@ export const PARTY_DECISION_BRIEF_SHORTLIST_SCHEMA =
   "esheria.party-decision-brief-shortlist.v1";
 export const PARTY_DECISION_BRIEF_SHORTLIST_MATRIX_SCHEMA =
   "esheria.party-decision-brief-shortlist-matrix.v1";
-export const PARTY_DOSSIER_SCHEMA =
-  "observed-party-negotiation-dossier-v8";
+export const PARTY_DOSSIER_SCHEMA = "observed-party-negotiation-dossier-v8";
 export const PARTY_DOSSIER_EXPORT_SCHEMA =
   "esheria.observed-party-negotiation-dossier.v5";
 export const PARTY_DOSSIER_MATRIX_SCHEMA =
@@ -82,12 +81,12 @@ export const GOVERNING_LAW_POSITION_MATRIX_SCHEMA =
   "esheria.governing-law-position-matrix.v1";
 export const INDEMNITY_POSITION_MATRIX_SCHEMA =
   "esheria.indemnity-position-matrix.v1";
-export const EXPLORER_ACCESS_SUMMARY_SCHEMA =
-  "explorer-api-access-summary-v1";
+export const VENDOR_POSITION_MATRIX_SCHEMA =
+  "esheria.vendor-position-matrix.v1";
+export const EXPLORER_ACCESS_SUMMARY_SCHEMA = "explorer-api-access-summary-v1";
 export const EXPLORER_ACCESS_SUMMARY_HOURS = 24;
 export const EXPLORER_ACCESS_SUMMARY_HOURS_MAX = 168;
-export const ANCHOR_THEME_EVIDENCE_SCHEMA =
-  "anchor-clause-theme-evidence-v1";
+export const ANCHOR_THEME_EVIDENCE_SCHEMA = "anchor-clause-theme-evidence-v1";
 export const ANCHOR_THEME_EVIDENCE_MAX = 20;
 export const CONTRACT_THEME_SUMMARY_SCHEMA =
   "contract-theme-directory-summary-v1";
@@ -324,6 +323,8 @@ const EXPLORER_ACCESS_SUMMARY_ROUTES = new Set([
   "/api/termination-positions",
   "/api/theme-evidence",
   "/api/theme-summary",
+  "/api/vendor-positions",
+  "/api/vendor-summary",
   "/api/agreements/:agreement_id",
   "/api/agreements/:agreement_id/change-cues",
   "/api/agreements/:agreement_id/decision-brief",
@@ -459,6 +460,49 @@ const INDEMNITY_POSITION_SIGNALS = Object.freeze({
   survival_or_claim_period_language: "Survival or claims period",
 });
 export const INDEMNITY_POSITION_SIGNAL_MAX = 15;
+export const VENDOR_POSITION_TOPICS = Object.freeze([
+  "intellectual_property",
+  "payment_pricing",
+]);
+export const VENDOR_POSITION_SIGNAL_LABELS = Object.freeze({
+  intellectual_property: Object.freeze({
+    ownership_retention_language: "Ownership retention / vesting",
+    ownership_assignment_language: "Ownership assignment",
+    licence_grant_language: "Express licence grant",
+    licence_scope_language: "Licence scope",
+    background_ip_language: "Background / pre-existing IP",
+    developed_ip_language: "Developed IP / work product",
+    infringement_warranty_language: "Infringement warranty / covenant",
+    ip_indemnity_language: "IP infringement indemnity",
+    third_party_materials_restriction_language:
+      "Third-party materials restriction",
+    termination_or_exit_ip_language: "Termination / exit IP treatment",
+    source_code_escrow_language: "Source-code escrow",
+  }),
+  payment_pricing: Object.freeze({
+    charges_or_price_formula_language: "Charges / price formula",
+    payment_obligation_language: "Commercial payment obligation",
+    invoice_submission_language: "Invoice issue / submission",
+    payment_period_language: "Invoice-linked payment period",
+    disputed_invoice_language: "Disputed-invoice procedure",
+    late_payment_interest_language: "Late-payment interest",
+    tax_or_vat_allocation_language: "Tax / VAT allocation",
+    setoff_or_deduction_language: "Set-off / deduction",
+    price_adjustment_or_indexation_language: "Price adjustment / indexation",
+    reimbursable_expenses_language: "Reimbursable expenses",
+    nonpayment_remedy_language: "Non-payment remedy",
+    advance_or_milestone_payment_language: "Advance / milestone payment",
+  }),
+});
+export const VENDOR_POSITION_CONTEXTS = Object.freeze([
+  "commercial",
+  "vendor",
+  "other",
+  "finance",
+  "dispute_cost",
+  "all",
+]);
+export const VENDOR_POSITION_SIGNAL_MAX = 12;
 const TERMINATION_DURATION_CANDIDATE_SCHEMA =
   "esheria.termination-duration-candidates.v1";
 const LOCAL_TERMINATION_TERM_PATTERN =
@@ -630,6 +674,7 @@ function isAllowedApiTarget(url) {
     pathname === "/api/metrics" ||
     pathname === "/api/governing-law-summary" ||
     pathname === "/api/indemnity-summary" ||
+    pathname === "/api/vendor-summary" ||
     pathname === "/api/theme-summary"
   ) {
     return url.search === "";
@@ -654,6 +699,49 @@ function isAllowedApiTarget(url) {
     return (
       theme !== null &&
       CONTRACT_THEME_KEYS.includes(theme) &&
+      limit !== null &&
+      /^[1-9]\d*$/.test(limit) &&
+      Number(limit) <= 50 &&
+      offset !== null &&
+      /^(0|[1-9]\d*)$/.test(offset) &&
+      Number(offset) <= 5_000 &&
+      (kind === null || ["contract", "amendment"].includes(kind)) &&
+      (source === null || SOURCE_PATTERN.test(source))
+    );
+  }
+  if (pathname === "/api/vendor-positions") {
+    const allowed = new Set([
+      "topic",
+      "signal",
+      "context",
+      "limit",
+      "offset",
+      "kind",
+      "source",
+    ]);
+    if (![...url.searchParams.keys()].every((key) => allowed.has(key))) {
+      return false;
+    }
+    if (
+      ["topic", "context", "limit", "offset", "kind", "source"].some(
+        (key) => url.searchParams.getAll(key).length > 1,
+      )
+    ) {
+      return false;
+    }
+    const topic = url.searchParams.get("topic");
+    if (!VENDOR_POSITION_TOPICS.includes(topic)) return false;
+    const signals = url.searchParams.getAll("signal");
+    const supportedSignals = VENDOR_POSITION_SIGNAL_LABELS[topic];
+    const context = url.searchParams.get("context");
+    const limit = url.searchParams.get("limit");
+    const offset = url.searchParams.get("offset");
+    const kind = url.searchParams.get("kind");
+    const source = url.searchParams.get("source");
+    return (
+      signals.length <= VENDOR_POSITION_SIGNAL_MAX &&
+      signals.every((signal) => Object.hasOwn(supportedSignals, signal)) &&
+      (context === null || VENDOR_POSITION_CONTEXTS.includes(context)) &&
       limit !== null &&
       /^[1-9]\d*$/.test(limit) &&
       Number(limit) <= 50 &&
@@ -1115,6 +1203,57 @@ export function buildIndemnityPositionPath({
   return `/api/indemnity-positions?${params.toString()}`;
 }
 
+export function buildVendorPositionPath({
+  topic,
+  signalKeys = [],
+  context = "commercial",
+  kind = "",
+  source = "",
+  limit = 20,
+  offset = 0,
+} = {}) {
+  if (!VENDOR_POSITION_TOPICS.includes(topic)) {
+    throw new TypeError("Vendor topic is not supported");
+  }
+  const signals = [...new Set(array(signalKeys))];
+  const supportedSignals = VENDOR_POSITION_SIGNAL_LABELS[topic];
+  if (
+    signals.length > VENDOR_POSITION_SIGNAL_MAX ||
+    signals.some((key) => !Object.hasOwn(supportedSignals, key))
+  ) {
+    throw new TypeError("Vendor signal filter is invalid");
+  }
+  if (!VENDOR_POSITION_CONTEXTS.includes(context)) {
+    throw new TypeError("Vendor context is not supported");
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new TypeError("Position limit is outside the allowed range");
+  }
+  if (!Number.isInteger(offset) || offset < 0 || offset > 5_000) {
+    throw new TypeError("Position offset is outside the allowed range");
+  }
+  if (kind && !["contract", "amendment"].includes(kind)) {
+    throw new TypeError("Vendor document class is not supported");
+  }
+  const normalizedSource = typeof source === "string"
+    ? source.trim().toLowerCase()
+    : "";
+  if (normalizedSource && !SOURCE_PATTERN.test(normalizedSource)) {
+    throw new TypeError("Source slug is invalid");
+  }
+
+  const params = new URLSearchParams({
+    topic,
+    context,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  for (const signal of signals) params.append("signal", signal);
+  if (kind) params.set("kind", kind);
+  if (normalizedSource) params.set("source", normalizedSource);
+  return `/api/vendor-positions?${params.toString()}`;
+}
+
 export function buildContractThemeEvidencePath({
   theme,
   kind = "",
@@ -1194,9 +1333,13 @@ export function buildAmendmentChangeDirectoryPath({
   ) {
     throw new TypeError("Amendment change cue filter is invalid");
   }
-  const sources = [...new Set(sourceSlugs.map((source) =>
-    typeof source === "string" ? source.trim().toLowerCase() : source
-  ))];
+  const sources = [
+    ...new Set(
+      sourceSlugs.map((source) =>
+        typeof source === "string" ? source.trim().toLowerCase() : source
+      ),
+    ),
+  ];
   if (
     sources.length > 25 ||
     sources.some(
@@ -1987,7 +2130,7 @@ export function contractThemeSummaryEvidence(value) {
     limits.exact_support_establishes_legal_effect !== false ||
     coverage.supported_theme_count !== CONTRACT_THEME_KEYS.length ||
     coverage.exact_detector_support_matches +
-        coverage.without_exact_detector_support !==
+          coverage.without_exact_detector_support !==
       coverage.theme_assignments ||
     coverage.contract_records + coverage.amendment_records !==
       coverage.document_records ||
@@ -2055,7 +2198,7 @@ export function contractThemeSummaryEvidence(value) {
       integers.document_records > integers.clause_matches ||
       integers.distinct_artifacts > integers.document_records ||
       integers.exact_detector_support_matches +
-          integers.without_exact_detector_support !==
+            integers.without_exact_detector_support !==
         integers.clause_matches ||
       Object.values(basisCounts).reduce((sum, item) => sum + item, 0) !==
         integers.clause_matches ||
@@ -3276,13 +3419,14 @@ function boundedAmendmentReference(cue) {
         start = 0;
       }
       candidate = segment.slice(start).trim();
-      referenceKind = /^(?:the\s+)?(?:following\s+)?(?:defined\s+terms?|definitions?|terms?)\b/iu
-          .test(candidate)
-        ? "defined_term_reference"
-        : /^(?:the\s+)?(?:following\s+)?(?:exhibits?|schedules?|annex(?:es)?|appendix(?:es)?)\b/iu
-          .test(candidate)
-        ? "schedule_or_exhibit_reference"
-        : "provision_reference";
+      referenceKind =
+        /^(?:the\s+)?(?:following\s+)?(?:defined\s+terms?|definitions?|terms?)\b/iu
+            .test(candidate)
+          ? "defined_term_reference"
+          : /^(?:the\s+)?(?:following\s+)?(?:exhibits?|schedules?|annex(?:es)?|appendix(?:es)?)\b/iu
+              .test(candidate)
+          ? "schedule_or_exhibit_reference"
+          : "provision_reference";
     }
   }
 
@@ -3325,7 +3469,9 @@ function boundedAmendmentReference(cue) {
   ).length;
   const excerptCharEnd = excerptCharStart + Array.from(candidate).length;
   if (
-    Array.from(observed.excerpt).slice(excerptCharStart, excerptCharEnd).join("") !==
+    Array.from(observed.excerpt).slice(excerptCharStart, excerptCharEnd).join(
+      "",
+    ) !==
       candidate
   ) {
     return null;
@@ -3405,9 +3551,8 @@ export function amendmentChangeMapEvidence(value) {
   const candidatesByReference = new Map();
   for (const candidate of derivedCandidates) {
     const reference = candidate.observed_reference;
-    const identity = `${candidate.supporting_cue.anchor_clause_id}:${
-      reference.clause_char_start
-    }:${reference.clause_char_end}`;
+    const identity =
+      `${candidate.supporting_cue.anchor_clause_id}:${reference.clause_char_start}:${reference.clause_char_end}`;
     const existing = candidatesByReference.get(identity);
     const candidatePriority = AMENDMENT_CHANGE_ACTION_PRIORITY[
       candidate.action_key
@@ -3447,10 +3592,10 @@ export function amendmentChangeMapEvidence(value) {
       returned_cue_count: packet.coverage.returned_cue_count,
       actionable_cue_count: actionableCues.length,
       actionable_cues_with_bounded_reference: derivedCandidates.length,
-      actionable_cues_without_bounded_reference:
-        actionableCues.length - derivedCandidates.length,
-      duplicate_reference_candidates_suppressed:
-        derivedCandidates.length - candidates.length,
+      actionable_cues_without_bounded_reference: actionableCues.length -
+        derivedCandidates.length,
+      duplicate_reference_candidates_suppressed: derivedCandidates.length -
+        candidates.length,
       candidate_count: candidates.length,
       source_cues_truncated: packet.limits.cues_truncated,
     },
@@ -3658,8 +3803,9 @@ function amendmentChangeMapMatrixRows(value, generatedAt) {
         map.limits.legal_effect_determined,
       ),
       change_map_limitations: map.limitations.join(" | "),
-      cue_packet_limitations:
-        output.supporting_change_cues.limitations.join(" | "),
+      cue_packet_limitations: output.supporting_change_cues.limitations.join(
+        " | ",
+      ),
     };
   });
   return { agreementId: agreement.agreement_id, rows };
@@ -4434,9 +4580,8 @@ export function buildPartyDecisionBriefShortlistExport(
   }
 
   const shortlist = partyDecisionBriefShortlist(candidates, coverage);
-  const positiveBriefCount = coverage.filter((item) =>
-    item.matchedTopicCount > 0
-  ).length;
+  const positiveBriefCount =
+    coverage.filter((item) => item.matchedTopicCount > 0).length;
   const coverageByAgreement = new Map(
     coverage.map((item) => [item.agreementId, item]),
   );
@@ -4712,9 +4857,7 @@ function agreementDecisionBriefMatrixRows(
   comparison,
   selectionContext = null,
 ) {
-  const context = selectionContext === null
-    ? null
-    : record(selectionContext);
+  const context = selectionContext === null ? null : record(selectionContext);
   const review = record(context?.human_review);
   const claims = record(context?.claims);
   const rows = [];
@@ -4739,7 +4882,11 @@ function agreementDecisionBriefMatrixRows(
     ) {
       const topic = brief.topics[topicIndex];
       const exampleRows = topic.examples.length ? topic.examples : [null];
-      for (let exampleIndex = 0; exampleIndex < exampleRows.length; exampleIndex += 1) {
+      for (
+        let exampleIndex = 0;
+        exampleIndex < exampleRows.length;
+        exampleIndex += 1
+      ) {
         const exampleValue = exampleRows[exampleIndex];
         const example = record(exampleValue);
         const observed = record(example.observed_evidence);
@@ -4823,8 +4970,8 @@ function agreementDecisionBriefMatrixRows(
           topic_total_signal_matches: topic.total_signal_matches,
           topic_returned_examples: topic.returned_examples,
           topic_examples_truncated: matrixBoolean(topic.examples_truncated),
-          topic_omitted_matching_clause_count:
-            topic.total_matches - topic.returned_examples,
+          topic_omitted_matching_clause_count: topic.total_matches -
+            topic.returned_examples,
           evidence_row_present: matrixBoolean(exampleValue !== null),
           evidence_row_number: exampleValue === null ? null : exampleIndex + 1,
           clause_id: example.clause_id,
@@ -5190,7 +5337,8 @@ export function buildFamilyProposalBriefComparison(
       brief.source.slug !== proposal.source ||
       brief.source.source_url !== document.source_url ||
       (document.observed_published_at !== null &&
-        brief.source.observed_published_at !== document.observed_published_at) ||
+        brief.source.observed_published_at !==
+          document.observed_published_at) ||
       (document.observed_title !== null &&
         !document.observed_title_truncated &&
         brief.agreement.title !== document.observed_title)
@@ -5985,7 +6133,9 @@ function partyDossierThemeSupport(
   const observedText = typeof support.observed_text === "string"
     ? Array.from(support.observed_text)
     : null;
-  const excerptCharacters = typeof excerpt === "string" ? Array.from(excerpt) : [];
+  const excerptCharacters = typeof excerpt === "string"
+    ? Array.from(excerpt)
+    : [];
   const replayAvailable = relativeEnd !== null &&
     relativeEnd <= excerptCharacters.length;
   const observedContext = partyDossierThemeSupportContext(
@@ -6046,14 +6196,20 @@ function partyDossierThemeSupport(
   };
 }
 
-function partyDossierExample(value, theme, confidenceMinimum, confidenceMaximum) {
+function partyDossierExample(
+  value,
+  theme,
+  confidenceMinimum,
+  confidenceMaximum,
+) {
   const example = record(value);
   const clauseSequence = decisionBriefInteger(example.clause_sequence, 1);
   const charStart = decisionBriefInteger(example.char_start);
   const charEnd = decisionBriefInteger(example.char_end, 1);
-  const pageStart = example.page_start === null || example.page_start === undefined
-    ? null
-    : decisionBriefInteger(example.page_start, 1);
+  const pageStart =
+    example.page_start === null || example.page_start === undefined
+      ? null
+      : decisionBriefInteger(example.page_start, 1);
   const pageEnd = example.page_end === null || example.page_end === undefined
     ? null
     : decisionBriefInteger(example.page_end, 1);
@@ -6214,7 +6370,10 @@ export function buildPartyDossierExport(
       document_records: sourceCount,
     });
   }
-  const documentKinds = partyDossierCountMap(coverage.document_kinds, DOCUMENT_KINDS);
+  const documentKinds = partyDossierCountMap(
+    coverage.document_kinds,
+    DOCUMENT_KINDS,
+  );
   const observedRoles = partyDossierCountMap(coverage.observed_roles);
   const captureMethods = partyDossierCountMap(
     coverage.capture_methods,
@@ -6333,15 +6492,23 @@ export function buildPartyDossierExport(
 
   const themes = [];
   const themeRows = array(root.theme_coverage);
-  if (!Array.isArray(root.theme_coverage) || themeRows.length > limits.theme_limit) {
+  if (
+    !Array.isArray(root.theme_coverage) || themeRows.length > limits.theme_limit
+  ) {
     throw new TypeError("Party dossier export is invalid");
   }
   for (const [themeIndex, themeValue] of themeRows.entries()) {
     const theme = record(themeValue);
     const themeKey = decisionBriefString(theme.theme, 200);
-    const commercialPriority = decisionBriefInteger(theme.commercial_priority, 1);
+    const commercialPriority = decisionBriefInteger(
+      theme.commercial_priority,
+      1,
+    );
     const clauseMatches = decisionBriefInteger(theme.clause_matches, 1);
-    const themeDocumentRecords = decisionBriefInteger(theme.document_records, 1);
+    const themeDocumentRecords = decisionBriefInteger(
+      theme.document_records,
+      1,
+    );
     const basisCounts = partyDossierCountMap(
       theme.basis_counts,
       new Set(["observed", "generated", "reviewed"]),
@@ -6356,7 +6523,10 @@ export function buildPartyDossierExport(
       theme.detector_confidence_max,
       true,
     );
-    const qualityWarning = partyDossierOptionalText(theme.quality_warning, 1_000);
+    const qualityWarning = partyDossierOptionalText(
+      theme.quality_warning,
+      1_000,
+    );
     const themeSupportCoverage = partyDossierThemeSupportCoverage(
       theme.example_theme_support,
     );
@@ -6392,18 +6562,22 @@ export function buildPartyDossierExport(
       qualityWarning === undefined ||
       themeSupportCoverage === null ||
       !Array.isArray(theme.examples) ||
-      examples.length !== Math.min(limits.examples_per_theme, themeDocumentRecords) ||
+      examples.length !==
+        Math.min(limits.examples_per_theme, themeDocumentRecords) ||
       examples.some((example) => example === null) ||
       themeSupportCoverage.returned_examples !== examples.length ||
       themeSupportCoverage.exact_detector_span_examples !== examples.filter(
-        (example) => example?.theme_support.availability === "exact_detector_span",
-      ).length ||
+          (example) =>
+            example?.theme_support.availability === "exact_detector_span",
+        ).length ||
       new Set(examples.map((example) => example?.agreement_id)).size !==
         examples.length ||
       examples.some((example) =>
         partyDossierNormalizedName(example?.observed_party_name) !==
           normalizedQuery ||
-        !sources.some((source) => source.source_slug === example?.source_slug) ||
+        !sources.some((source) =>
+          source.source_slug === example?.source_slug
+        ) ||
         !Object.hasOwn(documentKinds, example?.document_kind) ||
         !Object.hasOwn(captureMethods, example?.party_capture_method) ||
         !Object.hasOwn(
@@ -6493,8 +6667,7 @@ export function buildPartyDossierExport(
       match_mode: scope.match_mode,
       matched_party_records: matchedPartyRecords,
       observed_name_variants: variants,
-      observed_name_variants_truncated:
-        scope.observed_name_variants_truncated,
+      observed_name_variants_truncated: scope.observed_name_variants_truncated,
       low_specificity_warning: scope.low_specificity_warning,
       identity_resolution_applied: false,
     },
@@ -6833,8 +7006,7 @@ function serializePartyDossierMatrix(output) {
         recorded_family_keys_are_reviewed_relationships: "FALSE",
         recorded_family_keys_are_unique_deals: "FALSE",
         raw_family_keys_exposed: "FALSE",
-        example_theme_support_scope:
-          output.limits.example_theme_support_scope,
+        example_theme_support_scope: output.limits.example_theme_support_scope,
         exact_theme_support_origin: output.limits.exact_theme_support_origin,
         exact_theme_support_offsets: output.limits.exact_theme_support_offsets,
         exact_theme_support_context_max_characters:
@@ -6869,12 +7041,11 @@ function serializePartyDossierMatrix(output) {
         detector_confidence_min: theme?.detector_confidence_min,
         detector_confidence_max: theme?.detector_confidence_max,
         theme_quality_warning: theme?.quality_warning,
-        theme_returned_examples:
-          theme?.example_theme_support.returned_examples,
-        theme_exact_detector_span_examples:
-          theme?.example_theme_support.exact_detector_span_examples,
-        theme_without_exact_detector_span:
-          theme?.example_theme_support.without_exact_detector_span,
+        theme_returned_examples: theme?.example_theme_support.returned_examples,
+        theme_exact_detector_span_examples: theme?.example_theme_support
+          .exact_detector_span_examples,
+        theme_without_exact_detector_span: theme?.example_theme_support
+          .without_exact_detector_span,
         example_row_present: matrixBoolean(example !== null),
         example_number: example === null ? null : exampleIndex + 1,
         agreement_id: example?.agreement_id,
@@ -6913,16 +7084,16 @@ function serializePartyDossierMatrix(output) {
         theme_support_availability: example?.theme_support.availability,
         theme_support_reason: example?.theme_support.reason,
         theme_support_observed_text: example?.theme_support.observed_text,
-        theme_support_observed_text_sha256:
-          example?.theme_support.observed_text_sha256,
-        theme_support_clause_relative_start:
-          example?.theme_support.clause_relative_start,
-        theme_support_clause_relative_end:
-          example?.theme_support.clause_relative_end,
-        theme_support_document_char_start:
-          example?.theme_support.document_char_start,
-        theme_support_document_char_end:
-          example?.theme_support.document_char_end,
+        theme_support_observed_text_sha256: example?.theme_support
+          .observed_text_sha256,
+        theme_support_clause_relative_start: example?.theme_support
+          .clause_relative_start,
+        theme_support_clause_relative_end: example?.theme_support
+          .clause_relative_end,
+        theme_support_document_char_start: example?.theme_support
+          .document_char_start,
+        theme_support_document_char_end: example?.theme_support
+          .document_char_end,
         theme_support_method: example?.theme_support.method,
         theme_support_origin: example?.theme_support.origin,
         theme_support_text_basis: example?.theme_support.text_basis,
@@ -6934,22 +7105,22 @@ function serializePartyDossierMatrix(output) {
         theme_support_excerpt_replay_available: example === null
           ? null
           : matrixBoolean(example.theme_support.excerpt_replay_available),
-        theme_support_context_observed_text:
-          example?.theme_support.observed_context?.observed_text,
-        theme_support_context_observed_text_sha256:
-          example?.theme_support.observed_context?.observed_text_sha256,
-        theme_support_context_clause_relative_start:
-          example?.theme_support.observed_context?.clause_relative_start,
-        theme_support_context_clause_relative_end:
-          example?.theme_support.observed_context?.clause_relative_end,
-        theme_support_context_document_char_start:
-          example?.theme_support.observed_context?.document_char_start,
-        theme_support_context_document_char_end:
-          example?.theme_support.observed_context?.document_char_end,
-        theme_support_context_support_relative_start:
-          example?.theme_support.observed_context?.support_relative_start,
-        theme_support_context_support_relative_end:
-          example?.theme_support.observed_context?.support_relative_end,
+        theme_support_context_observed_text: example?.theme_support
+          .observed_context?.observed_text,
+        theme_support_context_observed_text_sha256: example?.theme_support
+          .observed_context?.observed_text_sha256,
+        theme_support_context_clause_relative_start: example?.theme_support
+          .observed_context?.clause_relative_start,
+        theme_support_context_clause_relative_end: example?.theme_support
+          .observed_context?.clause_relative_end,
+        theme_support_context_document_char_start: example?.theme_support
+          .observed_context?.document_char_start,
+        theme_support_context_document_char_end: example?.theme_support
+          .observed_context?.document_char_end,
+        theme_support_context_support_relative_start: example?.theme_support
+          .observed_context?.support_relative_start,
+        theme_support_context_support_relative_end: example?.theme_support
+          .observed_context?.support_relative_end,
         theme_support_context_truncated_before: example === null ||
             example.theme_support.observed_context === undefined
           ? null
@@ -6964,7 +7135,7 @@ function serializePartyDossierMatrix(output) {
           ),
         theme_support_context_database_validated_against_clause:
           example === null ||
-              example.theme_support.observed_context === undefined
+            example.theme_support.observed_context === undefined
             ? null
             : matrixBoolean(
               example.theme_support.observed_context
@@ -6985,7 +7156,9 @@ function serializePartyDossierMatrix(output) {
   return "\uFEFF" + [
     PARTY_DOSSIER_MATRIX_COLUMNS.map(csvCell).join(","),
     ...rows.map((row) =>
-      PARTY_DOSSIER_MATRIX_COLUMNS.map((column) => csvCell(row[column])).join(",")
+      PARTY_DOSSIER_MATRIX_COLUMNS.map((column) => csvCell(row[column])).join(
+        ",",
+      )
     ),
   ].join("\r\n") + "\r\n";
 }
@@ -7512,6 +7685,61 @@ export function indemnityPositionEvidence(value) {
     signals,
     matchedSignalCount: citationInteger(coverage.matched_signal_count) ??
       signals.length,
+    supportedRuleCount: citationInteger(coverage.supported_rule_count),
+    limits: record(position.limits),
+    limitations: array(position.limitations)
+      .filter((item) => typeof item === "string")
+      .slice(0, 10),
+  };
+}
+
+export function vendorPositionEvidence(value) {
+  const position = record(value);
+  if (
+    position.api_version !== "vendor-position-signals-v1" ||
+    !VENDOR_POSITION_TOPICS.includes(position.topic) ||
+    ![
+      "vendor_commercial",
+      "other_commercial",
+      "finance",
+      "dispute_cost",
+    ].includes(position.context)
+  ) {
+    return null;
+  }
+  const supportedSignals = VENDOR_POSITION_SIGNAL_LABELS[position.topic];
+  const signals = array(position.signals)
+    .slice(0, VENDOR_POSITION_SIGNAL_MAX)
+    .map(record);
+  if (
+    signals.length !== array(position.signals).length ||
+    signals.some((signal) =>
+      signal.signal_basis !== "generated" ||
+      !Object.hasOwn(supportedSignals, signal.signal_key) ||
+      record(signal.observed_support).text_basis !== "observed"
+    )
+  ) {
+    return null;
+  }
+  const coverage = record(position.coverage);
+  const matchedSignalCount = citationInteger(coverage.matched_signal_count);
+  if (matchedSignalCount === null || matchedSignalCount !== signals.length) {
+    return null;
+  }
+  return {
+    apiVersion: position.api_version,
+    topic: position.topic,
+    context: position.context,
+    applicable: position.applicable === true,
+    reason: typeof position.reason === "string" ? position.reason : null,
+    detectorVersion: typeof position.detector_version === "string"
+      ? position.detector_version
+      : null,
+    scope: typeof position.scope === "string" ? position.scope : null,
+    analysisWindow: record(position.analysis_window),
+    eligibility: record(position.eligibility),
+    signals,
+    matchedSignalCount,
     supportedRuleCount: citationInteger(coverage.supported_rule_count),
     limits: record(position.limits),
     limitations: array(position.limitations)
@@ -8074,8 +8302,7 @@ export function familyProposalSearchEvidence(
       generatedAt: item.generated_at,
       corpusSnapshottedAt: item.corpus_snapshotted_at,
       proposalOnly: item.proposal_only,
-      relationshipWrittenAutomatically:
-        item.relationship_written_automatically,
+      relationshipWrittenAutomatically: item.relationship_written_automatically,
       documents,
       reviewStatus: review.status,
       currentDecisionCount: review.decisionCount,
@@ -8264,7 +8491,8 @@ function citationAnchorThemeEvidence(
         relativeEnd <= relativeStart ||
         relativeEnd - relativeStart !== Array.from(observedText).length ||
         relativeEnd > clauseText.length ||
-        clauseText.slice(relativeStart, relativeEnd).join("") !== observedText ||
+        clauseText.slice(relativeStart, relativeEnd).join("") !==
+          observedText ||
         !DECISION_BRIEF_HASH_PATTERN.test(support.observedTextSha256) ||
         documentStart !== clauseStart + relativeStart ||
         documentEnd !== clauseStart + relativeEnd ||
@@ -11243,6 +11471,13 @@ function boot() {
     indemnityKind: "",
     indemnitySource: "",
     indemnityLoading: false,
+    vendorTopic: "intellectual_property",
+    vendorSignal: "",
+    vendorContext: "commercial",
+    vendorKind: "",
+    vendorSource: "",
+    vendorLoading: false,
+    vendorSummary: null,
     themeKey: "",
     themeKind: "",
     themeSource: "",
@@ -11331,6 +11566,15 @@ function boot() {
   const indemnityButton = byId("indemnity-submit");
   const indemnityFacets = byId("indemnity-facets");
   const indemnityStatus = byId("indemnity-status");
+  const vendorForm = byId("vendor-form");
+  const vendorTopicInput = byId("vendor-topic");
+  const vendorSignalInput = byId("vendor-signal");
+  const vendorContextInput = byId("vendor-context");
+  const vendorKindInput = byId("vendor-kind");
+  const vendorSourceInput = byId("vendor-source");
+  const vendorButton = byId("vendor-submit");
+  const vendorFacets = byId("vendor-facets");
+  const vendorStatus = byId("vendor-status");
   const themeForm = byId("theme-form");
   const themeKeyInput = byId("theme-key");
   const themeKindInput = byId("theme-kind");
@@ -11479,6 +11723,33 @@ function boot() {
     ...document.querySelectorAll("[data-guide][data-query]"),
   ];
 
+  function populateVendorSignals() {
+    const topic = VENDOR_POSITION_TOPICS.includes(vendorTopicInput.value)
+      ? vendorTopicInput.value
+      : "intellectual_property";
+    const configured = VENDOR_POSITION_SIGNAL_LABELS[topic];
+    const selected = Object.hasOwn(configured, vendorSignalInput.value)
+      ? vendorSignalInput.value
+      : "";
+    const anyOption = element(
+      "option",
+      "",
+      topic === "intellectual_property"
+        ? "Any detected IP wording"
+        : "Any detected payment wording",
+    );
+    anyOption.value = "";
+    vendorSignalInput.replaceChildren(
+      anyOption,
+      ...Object.entries(configured).map(([signalKey, label]) => {
+        const option = element("option", "", label);
+        option.value = signalKey;
+        return option;
+      }),
+    );
+    vendorSignalInput.value = selected;
+  }
+
   function syncGuideSelection(query) {
     let selectedGuide = "";
     for (const button of guideButtons) {
@@ -11559,6 +11830,13 @@ function boot() {
     state.indemnityKind = "";
     state.indemnitySource = "";
     state.indemnityLoading = false;
+    state.vendorTopic = "intellectual_property";
+    state.vendorSignal = "";
+    state.vendorContext = "commercial";
+    state.vendorKind = "";
+    state.vendorSource = "";
+    state.vendorLoading = false;
+    state.vendorSummary = null;
     state.themeKey = "";
     state.themeKind = "";
     state.themeSource = "";
@@ -11625,6 +11903,11 @@ function boot() {
     indemnityFacets.replaceChildren(element("span", "", "Available evidence:"));
     indemnityStatus.textContent =
       "Browse positive wording matches across published, nonduplicate contracts and amendments.";
+    vendorForm.reset();
+    populateVendorSignals();
+    vendorFacets.replaceChildren(element("span", "", "Available evidence:"));
+    vendorStatus.textContent =
+      "Browse positive IP and payment wording while keeping obvious finance and dispute-cost noise visible but separate.";
     themeForm.reset();
     themeFacets.replaceChildren(element("span", "", "Available themes:"));
     themeStatus.textContent =
@@ -12471,6 +12754,91 @@ function boot() {
     }
   }
 
+  function renderVendorSummary(value) {
+    const summary = record(value);
+    if (summary.api_version !== "vendor-position-summary-v1") {
+      throw new Error(
+        "The vendor-position summary did not match its expected contract.",
+      );
+    }
+    state.vendorSummary = summary;
+    const current = record(summary.current);
+    const library = record(summary.published_position_library);
+    const topic = VENDOR_POSITION_TOPICS.includes(vendorTopicInput.value)
+      ? vendorTopicInput.value
+      : "intellectual_property";
+    const topicLabel = CONTRACT_THEME_LABELS[topic] ?? topic;
+    const topicCoverage = array(library.by_topic)
+      .map(record)
+      .find((facet) => facet.topic === topic) ?? {};
+
+    vendorFacets.replaceChildren(element("span", "", "Available evidence:"));
+    for (const facetValue of array(summary.published_signal_facets)) {
+      const facet = record(facetValue);
+      if (facet.topic !== topic || facet.signal_basis !== "generated") continue;
+      const signalKey = displayText(facet.signal_key);
+      const label = VENDOR_POSITION_SIGNAL_LABELS[topic][signalKey];
+      if (!label) continue;
+      const button = element(
+        "button",
+        "",
+        `${label} · ${count(facet.clauses)} clauses / ${
+          count(facet.distinct_agreements)
+        } agreements (all contexts)`,
+      );
+      button.type = "button";
+      button.addEventListener("click", () => {
+        vendorTopicInput.value = topic;
+        populateVendorSignals();
+        vendorSignalInput.value = signalKey;
+        vendorForm.requestSubmit();
+      });
+      vendorFacets.append(button);
+    }
+
+    const contextCoverage = array(library.by_context)
+      .map(record)
+      .filter((facet) => facet.topic === topic)
+      .map((facet) =>
+        `${displayText(facet.context).replaceAll("_", " ")} ${
+          count(facet.clauses)
+        }`
+      )
+      .join(" · ");
+    const repairStatus = Number(current.missing_clauses) === 0
+      ? "cache complete"
+      : `${count(current.missing_clauses)} cache rows missing`;
+    statusMessage(
+      vendorStatus,
+      `${
+        count(topicCoverage.commercial_context_clauses)
+      } commercial-context ${topicLabel.toLowerCase()} clauses; ${
+        count(topicCoverage.distinct_agreements)
+      } useful agreements and ${
+        count(topicCoverage.clauses)
+      } positive clauses across all generated contexts${
+        contextCoverage ? ` · ${contextCoverage}` : ""
+      }. ${count(current.cached_clauses)} / ${
+        count(current.eligible_clauses)
+      } eligible theme clauses cached (${repairStatus}). Generated navigation signals, not legal conclusions or prevalence.`,
+      "success",
+    );
+  }
+
+  async function loadVendorSummary() {
+    if (!state.token) return;
+    vendorFacets.replaceChildren(
+      element("span", "", "Loading available evidence…"),
+    );
+    statusMessage(vendorStatus, "Loading IP and payment wording coverage…");
+    try {
+      const payload = await requestJson("/api/vendor-summary", state.token);
+      renderVendorSummary(record(payload).data);
+    } catch (error) {
+      handleFailure(error, vendorStatus);
+    }
+  }
+
   function renderContractThemeSummary(value) {
     const summary = contractThemeSummaryEvidence(value);
     if (!summary) {
@@ -12484,9 +12852,9 @@ function boot() {
       const button = element(
         "button",
         "",
-        `${theme.label} · ${count(theme.distinctClauseTexts)} distinct texts / ${
-          count(theme.documentRecords)
-        } documents`,
+        `${theme.label} · ${
+          count(theme.distinctClauseTexts)
+        } distinct texts / ${count(theme.documentRecords)} documents`,
       );
       button.type = "button";
       button.addEventListener("click", () => {
@@ -12502,9 +12870,9 @@ function boot() {
         count(coverage.themeAssignments)
       } stored assignments across ${
         count(coverage.documentRecords)
-      } useful agreements · ${
-        count(coverage.exactDetectorSupportMatches)
-      }/${count(coverage.themeAssignments)} assignments have exact detector support. Counts describe this acquired corpus, not market prevalence.`,
+      } useful agreements · ${count(coverage.exactDetectorSupportMatches)}/${
+        count(coverage.themeAssignments)
+      } assignments have exact detector support. Counts describe this acquired corpus, not market prevalence.`,
       "success",
     );
     corpusDisclosure.append(
@@ -12540,6 +12908,7 @@ function boot() {
       await loadExplorerAccessSummary();
       await loadGoverningLawSummary();
       await loadIndemnitySummary();
+      await loadVendorSummary();
       await loadContractThemeSummary();
     } catch (error) {
       handleFailure(error, workspaceStatus);
@@ -12706,9 +13075,9 @@ function boot() {
             theme.confidence === null
               ? "not stated"
               : `${Math.round(theme.confidence * 100)}%`
-          } · taxonomy ${displayText(theme.taxonomyVersion, "not stated")} · generator ${
-            displayText(theme.generatedBy, "not stated")
-          }`,
+          } · taxonomy ${
+            displayText(theme.taxonomyVersion, "not stated")
+          } · generator ${displayText(theme.generatedBy, "not stated")}`,
         ),
       );
       if (theme.support.availability === "exact_detector_span") {
@@ -12719,11 +13088,7 @@ function boot() {
           element(
             "p",
             "muted",
-            `Clause characters ${theme.support.clauseRelativeStart}–${
-              theme.support.clauseRelativeEnd
-            } · document characters ${theme.support.documentCharStart}–${
-              theme.support.documentCharEnd
-            } · SHA-256 ${theme.support.observedTextSha256}`,
+            `Clause characters ${theme.support.clauseRelativeStart}–${theme.support.clauseRelativeEnd} · document characters ${theme.support.documentCharStart}–${theme.support.documentCharEnd} · SHA-256 ${theme.support.observedTextSha256}`,
           ),
         );
       } else {
@@ -13749,9 +14114,7 @@ function boot() {
         "p",
         "comparison-scope",
         comparisonScope.disclosure ??
-          `Retrieval scope: ${
-            comparisonScope.query || "unspecified query"
-          } · ${
+          `Retrieval scope: ${comparisonScope.query || "unspecified query"} · ${
             comparisonScope.kind || "all document classes"
           } · ${
             comparisonScope.source || "all published sources"
@@ -14818,7 +15181,11 @@ function boot() {
     );
     paragraph.append(
       document.createTextNode(characters.slice(0, relativeStart).join("")),
-      element("mark", "", characters.slice(relativeStart, relativeEnd).join("")),
+      element(
+        "mark",
+        "",
+        characters.slice(relativeStart, relativeEnd).join(""),
+      ),
       document.createTextNode(characters.slice(relativeEnd).join("")),
     );
     return paragraph;
@@ -14846,11 +15213,11 @@ function boot() {
       element(
         "p",
         "muted tiny",
-        `Exact observed ${reference.reference_kind.replaceAll("_", " ")} · clause characters ${
-          count(reference.clause_char_start)
-        }–${count(reference.clause_char_end)} · selected from support SHA-256 ${
-          reference.supporting_excerpt_sha256
-        }. The reference is not resolved to another document or provision.`,
+        `Exact observed ${
+          reference.reference_kind.replaceAll("_", " ")
+        } · clause characters ${count(reference.clause_char_start)}–${
+          count(reference.clause_char_end)
+        } · selected from support SHA-256 ${reference.supporting_excerpt_sha256}. The reference is not resolved to another document or provision.`,
       ),
     );
     return note;
@@ -14870,7 +15237,9 @@ function boot() {
       element(
         "p",
         "focus-note",
-        `${count(map.coverage.candidate_count)} bounded reference candidate(s) from ${
+        `${
+          count(map.coverage.candidate_count)
+        } bounded reference candidate(s) from ${
           count(map.coverage.actionable_cue_count)
         } actionable returned cue(s); ${
           count(map.coverage.actionable_cues_without_bounded_reference)
@@ -15038,7 +15407,9 @@ function boot() {
       element(
         "p",
         "muted",
-        `${count(totals.source_packets_truncated)} selected packet(s) report source-cue truncation. The selection is not asserted to be one document family; counts are navigation aids, quoted references are observed text, and no target, direction, relationship or legal effect is resolved.`,
+        `${
+          count(totals.source_packets_truncated)
+        } selected packet(s) report source-cue truncation. The selection is not asserted to be one document family; counts are navigation aids, quoted references are observed text, and no target, direction, relationship or legal effect is resolved.`,
       ),
     );
     const agreementCards = element("div", "results");
@@ -15131,9 +15502,9 @@ function boot() {
             `Observed ${
               AMENDMENT_CHANGE_REFERENCE_LABELS[example.reference_kind]
                 .toLowerCase()
-            } · clause ${count(example.clause_sequence)} · support SHA-256 ${
-              example.supporting_excerpt_sha256
-            }`,
+            } · clause ${
+              count(example.clause_sequence)
+            } · support SHA-256 ${example.supporting_excerpt_sha256}`,
           ),
         );
         examples.append(reference);
@@ -15143,7 +15514,9 @@ function boot() {
           element(
             "p",
             "muted",
-            `${count(item.candidate_examples_omitted)} additional candidate(s) are retained in the downloaded matrix.`,
+            `${
+              count(item.candidate_examples_omitted)
+            } additional candidate(s) are retained in the downloaded matrix.`,
           ),
         );
       }
@@ -15170,8 +15543,9 @@ function boot() {
         const objectUrl = URL.createObjectURL(blob);
         const link = element("a");
         link.href = objectUrl;
-        link.download =
-          `esheria-amendment-triage-${summary.generated_at.slice(0, 10)}.json`;
+        link.download = `esheria-amendment-triage-${
+          summary.generated_at.slice(0, 10)
+        }.json`;
         link.hidden = true;
         document.body.append(link);
         link.click();
@@ -15298,9 +15672,7 @@ function boot() {
         "muted tiny",
         `Clause ${count(cue.clause.sequence)}${
           cue.clause.heading ? ` · ${cue.clause.heading}` : ""
-        } · rule ${cue.rule_id} · observed support SHA-256 ${
-          cue.observed_evidence.sha256
-        }`,
+        } · rule ${cue.rule_id} · observed support SHA-256 ${cue.observed_evidence.sha256}`,
       ),
     );
     return details;
@@ -15371,9 +15743,7 @@ function boot() {
       element(
         "p",
         "muted",
-        `Exact detector match: “${
-          item.representative_cue.observed_evidence.matched_text
-        }”`,
+        `Exact detector match: “${item.representative_cue.observed_evidence.matched_text}”`,
       ),
       changeCueMarkedEvidence(item.representative_cue),
       element(
@@ -15383,9 +15753,7 @@ function boot() {
           item.representative_cue.clause.heading
             ? ` · ${item.representative_cue.clause.heading}`
             : ""
-        } · ${item.representative_cue.rule_id} · observed support SHA-256 ${
-          item.representative_cue.observed_evidence.sha256
-        }`,
+        } · ${item.representative_cue.rule_id} · observed support SHA-256 ${item.representative_cue.observed_evidence.sha256}`,
       ),
     );
 
@@ -15632,8 +16000,9 @@ function boot() {
       const objectUrl = URL.createObjectURL(blob);
       const link = element("a");
       link.href = objectUrl;
-      link.download =
-        `esheria-amendment-change-matrix-${generatedAt.slice(0, 10)}.csv`;
+      link.download = `esheria-amendment-change-matrix-${
+        generatedAt.slice(0, 10)
+      }.csv`;
       link.hidden = true;
       document.body.append(link);
       link.click();
@@ -15706,7 +16075,9 @@ function boot() {
     partyBriefRankButton.disabled = !canContainEligibleBriefs;
     partyBriefRankStatus.className = "muted";
     partyBriefRankStatus.textContent = canContainEligibleBriefs
-      ? `Fetch up to ${count(PARTY_DECISION_BRIEF_SCAN_MAX)} matching records and validate each eligible contract or amendment against the five tracked topics.${
+      ? `Fetch up to ${
+        count(PARTY_DECISION_BRIEF_SCAN_MAX)
+      } matching records and validate each eligible contract or amendment against the five tracked topics.${
         eligibleCount
           ? ` This page contains ${count(eligibleCount)} eligible record(s).`
           : " This page has no eligible record, but the bounded query set may."
@@ -15736,7 +16107,9 @@ function boot() {
     partyBriefRankButton.disabled = true;
     statusMessage(
       partyBriefRankStatus,
-      `Loading up to ${count(PARTY_DECISION_BRIEF_SCAN_MAX)} matching records for bounded brief validation…`,
+      `Loading up to ${
+        count(PARTY_DECISION_BRIEF_SCAN_MAX)
+      } matching records for bounded brief validation…`,
     );
 
     const coverage = [];
@@ -15779,7 +16152,9 @@ function boot() {
       }
       statusMessage(
         partyBriefRankStatus,
-        `Validating 0 of ${count(candidates.length)} eligible strict five-topic briefs…`,
+        `Validating 0 of ${
+          count(candidates.length)
+        } eligible strict five-topic briefs…`,
       );
 
       for (
@@ -15834,9 +16209,9 @@ function boot() {
         }
         statusMessage(
           partyBriefRankStatus,
-          `Validated ${count(Math.min(offset + batch.length, candidates.length))} of ${
-            count(candidates.length)
-          } strict five-topic briefs…`,
+          `Validated ${
+            count(Math.min(offset + batch.length, candidates.length))
+          } of ${count(candidates.length)} strict five-topic briefs…`,
         );
       }
 
@@ -15852,15 +16227,13 @@ function boot() {
         ? `Top ${count(shortlist.length)} evidence-bearing matching record(s)`
         : "No positive-match record in this bounded scan";
       partyBriefShortlistResults.replaceChildren(
-        ...(shortlist.length
-          ? shortlist.map(partyResultCard)
-          : [
-            element(
-              "p",
-              "empty",
-              "No validated brief returned a positive match across the five tracked detector topics. This does not establish that the provisions or consequences are absent.",
-            ),
-          ]),
+        ...(shortlist.length ? shortlist.map(partyResultCard) : [
+          element(
+            "p",
+            "empty",
+            "No validated brief returned a positive match across the five tracked detector topics. This does not establish that the provisions or consequences are absent.",
+          ),
+        ]),
       );
       partyBriefShortlist.hidden = false;
       updateDecisionBriefComparisonControls();
@@ -15910,11 +16283,15 @@ function boot() {
           count(zeroCount)
         } with no positive match.${
           failureCount
-            ? ` ${count(failureCount)} record(s) could not be validated and remain unranked.`
+            ? ` ${
+              count(failureCount)
+            } record(s) could not be validated and remain unranked.`
             : ""
         } ${
           scanWasTruncated
-            ? `The query exceeds the ${count(PARTY_DECISION_BRIEF_SCAN_MAX)}-record scan bound, so this is not the whole matching set.`
+            ? `The query exceeds the ${
+              count(PARTY_DECISION_BRIEF_SCAN_MAX)
+            }-record scan bound, so this is not the whole matching set.`
             : "The full returned matching set fit inside the scan bound."
         } The shortlist is generated navigation, not entity resolution, a risk score, prevalence measure or finding of absence.`,
         failureCount ? "error" : "success",
@@ -16027,7 +16404,8 @@ function boot() {
     const scope = record(root.party_scope);
     const coverage = record(root.coverage);
     const familyCoverage = partyDossierFamilyCoverage(root);
-    const returnedExampleSample = dossierExport.coverage.returned_example_sample;
+    const returnedExampleSample =
+      dossierExport.coverage.returned_example_sample;
     if (familyCoverage === null) {
       throw new ApiError(
         "The party dossier response did not match its family-coverage contract.",
@@ -16069,9 +16447,11 @@ function boot() {
       ),
       metric(
         "Exact theme supports",
-        `${count(
-          coverage.example_theme_support.exact_detector_span_examples,
-        )}/${count(coverage.example_theme_support.returned_examples)}`,
+        `${
+          count(
+            coverage.example_theme_support.exact_detector_span_examples,
+          )
+        }/${count(coverage.example_theme_support.returned_examples)}`,
         "Returned examples only · detector evidence",
       ),
       metric(
@@ -16082,7 +16462,9 @@ function boot() {
         `${count(returnedExampleSample.returned_examples)} rows · ${
           count(returnedExampleSample.cross_theme_reused_clauses)
         } clauses reused across themes · breadth-aware from up to ${
-          count(dossierExport.limits.example_selection_candidate_limit_per_theme)
+          count(
+            dossierExport.limits.example_selection_candidate_limit_per_theme,
+          )
         } candidates/theme · bounded, not representative`,
       ),
       metric("Sources", count(sources.length), "Rights-gated source systems"),
@@ -16206,9 +16588,13 @@ function boot() {
             element(
               "p",
               "muted tiny",
-              `Exact “${boundedText(themeSupport.observed_text, 1_000)}” · clause characters ${
+              `Exact “${
+                boundedText(themeSupport.observed_text, 1_000)
+              }” · clause characters ${
                 count(themeSupport.clause_relative_start)
-              }–${count(themeSupport.clause_relative_end)} · document characters ${
+              }–${
+                count(themeSupport.clause_relative_end)
+              } · document characters ${
                 count(themeSupport.document_char_start)
               }–${count(themeSupport.document_char_end)} · ${
                 displayText(themeSupport.method, "method unavailable")
@@ -16216,7 +16602,9 @@ function boot() {
                 displayText(themeSupport.observed_text_sha256)
               } · context clause characters ${
                 count(supportContext.clause_relative_start)
-              }–${count(supportContext.clause_relative_end)} · context SHA-256 ${
+              }–${
+                count(supportContext.clause_relative_end)
+              } · context SHA-256 ${
                 displayText(supportContext.observed_text_sha256)
               }`,
             ),
@@ -16280,10 +16668,12 @@ function boot() {
             : "";
           state.comparisonScope = {
             origin: "party_dossier",
-            query: `Observed party ${dossierExport.scope.party_query}; generated theme ${theme.theme}`,
+            query:
+              `Observed party ${dossierExport.scope.party_query}; generated theme ${theme.theme}`,
             kind: "",
             source: singleSource,
-            disclosure: `Exact observed-party scope “${dossierExport.scope.party_query}” · generated ${themeLabel} theme · ${comparisonSelections.length} bounded examples. Identity resolution was not applied, and this selected set is not a representative market sample.`,
+            disclosure:
+              `Exact observed-party scope “${dossierExport.scope.party_query}” · generated ${themeLabel} theme · ${comparisonSelections.length} bounded examples. Identity resolution was not applied, and this selected set is not a representative market sample.`,
           };
           updateComparisonControls(
             `${comparisonSelections.length} dossier examples selected. Loading bounded source context…`,
@@ -16291,7 +16681,9 @@ function boot() {
           partyDossierExportStatus.textContent =
             `Loading fresh bounded evidence context for ${comparisonSelections.length} ${themeLabel} examples…`;
           await compareSelected();
-          if (state.token && state.comparisonScope?.origin === "party_dossier") {
+          if (
+            state.token && state.comparisonScope?.origin === "party_dossier"
+          ) {
             partyDossierExportStatus.textContent =
               `${comparisonSelections.length} ${themeLabel} examples opened in the evidence comparison. Citation and applicable position-matrix exports use the exact-party dossier scope.`;
           }
@@ -16619,6 +17011,45 @@ function boot() {
         ),
       );
     }
+    const vendorPosition = vendorPositionEvidence(item.vendor_position);
+    const vendorSummary = vendorPosition?.applicable
+      ? element("div", "result-position-summary")
+      : null;
+    if (vendorSummary && vendorPosition) {
+      const signalLabels = vendorPosition.signals.map((signal) => {
+        const signalRecord = record(signal);
+        return displayText(
+          VENDOR_POSITION_SIGNAL_LABELS[vendorPosition.topic][
+            signalRecord.signal_key
+          ],
+          signalRecord.label ?? signalRecord.signal_key,
+        );
+      });
+      const topicLabel = CONTRACT_THEME_LABELS[vendorPosition.topic] ??
+        vendorPosition.topic;
+      append(
+        vendorSummary,
+        element(
+          "span",
+          "badge generated",
+          `Generated ${topicLabel.toLowerCase()} wording`,
+        ),
+        element(
+          "p",
+          "",
+          signalLabels.length
+            ? `Matched: ${signalLabels.join(" · ")}`
+            : `No supported ${topicLabel.toLowerCase()} wording matched this bounded window.`,
+        ),
+        element(
+          "p",
+          "muted",
+          `Generated context: ${
+            vendorPosition.context.replaceAll("_", " ")
+          }. Exact wording is observed evidence; ownership, licence validity, payment liability, amounts due, exceptions and legal effect require review.`,
+        ),
+      );
+    }
     const themeMatch = item.theme_evidence === undefined
       ? null
       : contractThemeEvidence(
@@ -16708,6 +17139,7 @@ function boot() {
       assignmentSummary,
       governingLawSummary,
       indemnitySummary,
+      vendorSummary,
       themeSummary,
       actions,
     );
@@ -16736,6 +17168,8 @@ function boot() {
             ? "No published governing-law/forum evidence matched these filters."
             : state.resultMode === "indemnity_positions"
             ? "No published indemnity-position evidence matched these filters."
+            : state.resultMode === "vendor_positions"
+            ? "No published vendor-diligence position evidence matched these filters."
             : state.resultMode === "theme_evidence"
             ? "No published theme evidence matched these filters."
             : "No published clause evidence matched this query.",
@@ -16789,6 +17223,17 @@ function boot() {
           rows.length === 1 ? "" : "s"
         } loaded below.`
         : "No indemnity wording matched these filters.";
+    } else if (state.resultMode === "vendor_positions") {
+      const topicLabel = CONTRACT_THEME_LABELS[state.vendorTopic] ??
+        state.vendorTopic;
+      searchStatus.textContent = rows.length
+        ? `Showing ${topicLabel.toLowerCase()} diligence evidence ${start}–${end}. Generated wording and context matches do not determine ownership, amounts due, compliance or legal effect.`
+        : `No ${topicLabel.toLowerCase()} diligence evidence returned. Detector and corpus coverage may be incomplete.`;
+      vendorStatus.textContent = rows.length
+        ? `${rows.length} bounded ${topicLabel.toLowerCase()} result${
+          rows.length === 1 ? "" : "s"
+        } loaded below.`
+        : `No ${topicLabel.toLowerCase()} wording matched these filters.`;
     } else if (state.resultMode === "theme_evidence") {
       const label = CONTRACT_THEME_LABELS[state.themeKey] ?? state.themeKey;
       searchStatus.textContent = rows.length
@@ -16820,6 +17265,7 @@ function boot() {
       state.assignmentLoading ||
       state.governingLawLoading ||
       state.indemnityLoading ||
+      state.vendorLoading ||
       state.themeLoading
     ) {
       return;
@@ -16831,6 +17277,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    vendorButton.disabled = true;
     themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
@@ -16854,6 +17301,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      vendorButton.disabled = false;
       themeButton.disabled = false;
     }
   }
@@ -16867,6 +17315,7 @@ function boot() {
       state.assignmentLoading ||
       state.governingLawLoading ||
       state.indemnityLoading ||
+      state.vendorLoading ||
       state.themeLoading
     ) {
       return;
@@ -16878,6 +17327,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    vendorButton.disabled = true;
     themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
@@ -16904,6 +17354,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      vendorButton.disabled = false;
       themeButton.disabled = false;
     }
   }
@@ -16917,6 +17368,7 @@ function boot() {
       state.assignmentLoading ||
       state.governingLawLoading ||
       state.indemnityLoading ||
+      state.vendorLoading ||
       state.themeLoading
     ) {
       return;
@@ -16928,6 +17380,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    vendorButton.disabled = true;
     themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
@@ -16954,6 +17407,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      vendorButton.disabled = false;
       themeButton.disabled = false;
     }
   }
@@ -16967,6 +17421,7 @@ function boot() {
       state.assignmentLoading ||
       state.governingLawLoading ||
       state.indemnityLoading ||
+      state.vendorLoading ||
       state.themeLoading
     ) {
       return;
@@ -16978,6 +17433,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    vendorButton.disabled = true;
     themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
@@ -17004,6 +17460,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      vendorButton.disabled = false;
       themeButton.disabled = false;
     }
   }
@@ -17017,6 +17474,7 @@ function boot() {
       state.assignmentLoading ||
       state.governingLawLoading ||
       state.indemnityLoading ||
+      state.vendorLoading ||
       state.themeLoading
     ) {
       return;
@@ -17028,6 +17486,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    vendorButton.disabled = true;
     themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
@@ -17053,6 +17512,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      vendorButton.disabled = false;
       themeButton.disabled = false;
     }
   }
@@ -17066,6 +17526,7 @@ function boot() {
       state.assignmentLoading ||
       state.governingLawLoading ||
       state.indemnityLoading ||
+      state.vendorLoading ||
       state.themeLoading
     ) {
       return;
@@ -17077,6 +17538,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    vendorButton.disabled = true;
     themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
@@ -17101,6 +17563,63 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      vendorButton.disabled = false;
+      themeButton.disabled = false;
+    }
+  }
+
+  async function performVendorBrowse() {
+    if (
+      !state.token ||
+      state.searching ||
+      state.positionLoading ||
+      state.terminationLoading ||
+      state.assignmentLoading ||
+      state.governingLawLoading ||
+      state.indemnityLoading ||
+      state.vendorLoading ||
+      state.themeLoading
+    ) {
+      return;
+    }
+    state.vendorLoading = true;
+    searchButton.disabled = true;
+    positionButton.disabled = true;
+    terminationButton.disabled = true;
+    assignmentButton.disabled = true;
+    governingLawButton.disabled = true;
+    indemnityButton.disabled = true;
+    vendorButton.disabled = true;
+    themeButton.disabled = true;
+    previous.disabled = true;
+    next.disabled = true;
+    const topicLabel = CONTRACT_THEME_LABELS[state.vendorTopic] ??
+      state.vendorTopic;
+    searchStatus.textContent =
+      `Loading published ${topicLabel.toLowerCase()} diligence wording…`;
+    vendorStatus.textContent = "Applying evidence and context filters…";
+    try {
+      const path = buildVendorPositionPath({
+        topic: state.vendorTopic,
+        signalKeys: state.vendorSignal ? [state.vendorSignal] : [],
+        context: state.vendorContext,
+        kind: state.vendorKind,
+        source: state.vendorSource,
+        limit: state.limit,
+        offset: state.offset,
+      });
+      renderSearch(await requestJson(path, state.token));
+    } catch (error) {
+      handleFailure(error, vendorStatus);
+    } finally {
+      state.vendorLoading = false;
+      searchButton.disabled = false;
+      positionButton.disabled = false;
+      terminationButton.disabled = false;
+      assignmentButton.disabled = false;
+      governingLawButton.disabled = false;
+      indemnityButton.disabled = false;
+      vendorButton.disabled = false;
       themeButton.disabled = false;
     }
   }
@@ -17114,6 +17633,7 @@ function boot() {
       state.assignmentLoading ||
       state.governingLawLoading ||
       state.indemnityLoading ||
+      state.vendorLoading ||
       state.themeLoading
     ) {
       return;
@@ -17125,6 +17645,7 @@ function boot() {
     assignmentButton.disabled = true;
     governingLawButton.disabled = true;
     indemnityButton.disabled = true;
+    vendorButton.disabled = true;
     themeButton.disabled = true;
     previous.disabled = true;
     next.disabled = true;
@@ -17149,6 +17670,7 @@ function boot() {
       assignmentButton.disabled = false;
       governingLawButton.disabled = false;
       indemnityButton.disabled = false;
+      vendorButton.disabled = false;
       themeButton.disabled = false;
     }
   }
@@ -17717,7 +18239,9 @@ function boot() {
         element(
           "summary",
           "",
-          `Show ${count(additionalExamples.length)} additional validated example${
+          `Show ${
+            count(additionalExamples.length)
+          } additional validated example${
             additionalExamples.length === 1 ? "" : "s"
           }`,
         ),
@@ -17768,9 +18292,9 @@ function boot() {
       element(
         "p",
         "muted tiny",
-        `${count(example.matched_signal_count)} generated signal(s) on clause ${
-          example.clause_ordinal
-        }${
+        `${
+          count(example.matched_signal_count)
+        } generated signal(s) on clause ${example.clause_ordinal}${
           example.clause_heading ? ` · ${example.clause_heading}` : ""
         } · observed support SHA-256 ${example.observed_evidence.sha256}`,
       ),
@@ -17813,7 +18337,9 @@ function boot() {
           "muted tiny",
           `Candidate ${selectionContext.candidate_id} · ${
             familyReviewStatusLabel(review.status, review.conflicting)
-          } · ${count(review.current_decision_count)} current review response(s).`,
+          } · ${
+            count(review.current_decision_count)
+          } current review response(s).`,
         ),
       );
     }
@@ -17851,7 +18377,9 @@ function boot() {
       );
       const recordedDates = [
         brief.source.observed_published_at
-          ? `Observed source publication ${date(brief.source.observed_published_at)}`
+          ? `Observed source publication ${
+            date(brief.source.observed_published_at)
+          }`
           : null,
         ...[
           ["execution", "execution date"],
@@ -17938,7 +18466,10 @@ function boot() {
         "Side-by-side observed document-change cues",
       );
       for (const packet of changeCuePackets) {
-        const column = element("section", "comparison-column change-cue-column");
+        const column = element(
+          "section",
+          "comparison-column change-cue-column",
+        );
         append(
           column,
           element(
@@ -17989,9 +18520,7 @@ function boot() {
             element(
               "p",
               "muted tiny",
-              `Observed support characters ${evidence.clause_char_start}–${
-                evidence.clause_char_end
-              } · SHA-256 ${evidence.sha256}`,
+              `Observed support characters ${evidence.clause_char_start}–${evidence.clause_char_end} · SHA-256 ${evidence.sha256}`,
             ),
           );
           column.append(details);
@@ -18076,17 +18605,15 @@ function boot() {
             )
           ),
         ),
-        proposal === null
-          ? Promise.resolve([])
-          : Promise.allSettled(
-            selected.map((item) =>
-              fetchAgreementChangeCues(
-                item.agreementId,
-                token,
-                AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT,
-              )
-            ),
+        proposal === null ? Promise.resolve([]) : Promise.allSettled(
+          selected.map((item) =>
+            fetchAgreementChangeCues(
+              item.agreementId,
+              token,
+              AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT,
+            )
           ),
+        ),
       ]);
       if (state.token !== token) return;
       const allSettled = [...settled, ...cueSettled];
@@ -18289,9 +18816,7 @@ function boot() {
         : output.schema === FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA
         ? "esheria-family-proposal-brief-comparison"
         : "esheria-agreement-brief-comparison"
-    }-${
-      output.generated_at.slice(0, 10)
-    }.json`;
+    }-${output.generated_at.slice(0, 10)}.json`;
     link.hidden = true;
     document.body.append(link);
     link.click();
@@ -18447,7 +18972,9 @@ function boot() {
     const clauses = array(data.clauses).slice(0, 40);
     const anchorClause = anchorClauseId === null
       ? null
-      : clauses.find((clauseValue) => record(clauseValue).id === anchorClauseId);
+      : clauses.find((clauseValue) =>
+        record(clauseValue).id === anchorClauseId
+      );
     const anchorThemeEvidence = anchorClauseId === null
       ? null
       : anchorClauseThemeEvidence(
@@ -19289,6 +19816,7 @@ function boot() {
       await loadExplorerAccessSummary();
       await loadGoverningLawSummary();
       await loadIndemnitySummary();
+      await loadVendorSummary();
       await loadContractThemeSummary();
     } catch (error) {
       handleFailure(error, authStatus);
@@ -19662,6 +20190,35 @@ function boot() {
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
+  vendorTopicInput.addEventListener("change", () => {
+    populateVendorSignals();
+    if (state.vendorSummary) renderVendorSummary(state.vendorSummary);
+  });
+  vendorForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearComparison();
+    state.resultMode = "vendor_positions";
+    state.vendorTopic = vendorTopicInput.value;
+    state.vendorSignal = vendorSignalInput.value;
+    state.vendorContext = vendorContextInput.value;
+    state.vendorKind = vendorKindInput.value;
+    state.vendorSource = vendorSourceInput.value.trim().toLowerCase();
+    const topicLabel = CONTRACT_THEME_LABELS[state.vendorTopic] ??
+      "Vendor diligence";
+    const signalLabel = vendorSignalInput.selectedOptions[0]?.textContent ??
+      "Any detected wording";
+    const contextLabel = vendorContextInput.selectedOptions[0]?.textContent ??
+      "Commercial context";
+    state.query = `${topicLabel} diligence: ${signalLabel}; ${contextLabel}`;
+    state.clauseParty = "";
+    state.kind = state.vendorKind;
+    state.source = state.vendorSource;
+    state.offset = 0;
+    syncGuideSelection("");
+    performVendorBrowse();
+    resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
   themeForm.addEventListener("submit", (event) => {
     event.preventDefault();
     clearComparison();
@@ -19715,6 +20272,8 @@ function boot() {
       performGoverningLawBrowse();
     } else if (state.resultMode === "indemnity_positions") {
       performIndemnityBrowse();
+    } else if (state.resultMode === "vendor_positions") {
+      performVendorBrowse();
     } else if (state.resultMode === "theme_evidence") {
       performContractThemeBrowse();
     } else performSearch();
@@ -19727,6 +20286,7 @@ function boot() {
           "assignment_positions",
           "governing_law_positions",
           "indemnity_positions",
+          "vendor_positions",
           "theme_evidence",
         ].includes(state.resultMode)
         ? 5_000
@@ -19742,6 +20302,8 @@ function boot() {
       performGoverningLawBrowse();
     } else if (state.resultMode === "indemnity_positions") {
       performIndemnityBrowse();
+    } else if (state.resultMode === "vendor_positions") {
+      performVendorBrowse();
     } else if (state.resultMode === "theme_evidence") {
       performContractThemeBrowse();
     } else performSearch();
@@ -19781,6 +20343,7 @@ function boot() {
   updateComparisonControls();
   updateDecisionBriefComparisonControls();
   updateAmendmentChangeMatrixControls();
+  populateVendorSignals();
   tokenInput.focus();
 }
 
