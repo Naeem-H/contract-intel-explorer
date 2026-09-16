@@ -185,15 +185,19 @@
             class="comparison-toolbar brief-comparison-toolbar"
             aria-labelledby="decision-brief-comparison-toolbar-title">
             <div>
-              <strong id="decision-brief-comparison-toolbar-title">Compare agreement briefs</strong>
+              <strong
+                id="decision-brief-comparison-toolbar-title">Compare agreement briefs</strong>
               <span id="decision-brief-comparison-status" class="muted"
-                role="status" aria-live="polite">Select 2–3 agreements to compare the same five positive-detector topics.</span>
+                role="status"
+                aria-live="polite">Select 2–3 agreements to compare the same five positive-detector topics.</span>
             </div>
             <div class="comparison-actions">
               <button id="clear-decision-brief-comparison"
-                class="button secondary" type="button" disabled>Clear selection</button>
+                class="button secondary" type="button"
+                disabled>Clear selection</button>
               <button id="open-decision-brief-comparison"
-                class="button primary" type="button" disabled>Compare selected briefs</button>
+                class="button primary" type="button"
+                disabled>Compare selected briefs</button>
             </div>
           </div>
           <div id="decision-brief-directory-results"
@@ -203,6 +207,35 @@
               class="button secondary" type="button" disabled>Previous</button>
             <button id="decision-brief-directory-next"
               class="button secondary" type="button" disabled>Next</button>
+          </div>
+        </section>
+
+        <section class="search-panel"
+          aria-labelledby="verified-family-links-title">
+          <p class="eyebrow">Human-reviewed document families</p>
+          <h2
+            id="verified-family-links-title">Browse review-verified family links</h2>
+          <p
+            class="search-note">These undirected pairs appear only when every current authenticated review says the documents belong to the same agreement family with at least 80% confidence, against an exact hash-pinned evidence packet. A link does not establish which document amends another, supersession, incorporation, or legal effect. Single-reviewer verification is disclosed.</p>
+          <div id="verified-family-links-summary" class="quick"
+            aria-label="Review-verified family-link status"><span>Loading verified-link status…</span></div>
+          <div class="result-actions">
+            <button id="verified-family-links-load" class="button primary"
+              type="button">Browse verified links</button>
+            <a class="button secondary"
+              href="https://aiuwscxsbsgaeunyhiak.supabase.co/functions/v1/review/login"
+              target="_blank" rel="noopener noreferrer"
+              referrerpolicy="no-referrer">Open secure review workspace ↗</a>
+          </div>
+          <p id="verified-family-links-status" class="muted" role="status"
+            aria-live="polite">Verified links are derived from current evidence-bound human decisions; no directed legal relationship is implied.</p>
+          <div id="verified-family-links-results"
+            class="results verified-family-links-results"></div>
+          <div class="pager">
+            <button id="verified-family-links-previous" class="button secondary"
+              type="button" disabled>Previous</button>
+            <button id="verified-family-links-next" class="button secondary"
+              type="button" disabled>Next</button>
           </div>
         </section>
 
@@ -264,7 +297,8 @@
               class="button primary" type="submit">Browse evidence</button>
           </form>
           <p id="amendment-change-directory-status" class="muted"
-            role="status" aria-live="polite">Browse positive amendment wording with one exact representative cue per agreement.</p>
+            role="status"
+            aria-live="polite">Browse positive amendment wording with one exact representative cue per agreement.</p>
           <div id="amendment-change-matrix-toolbar"
             class="comparison-toolbar amendment-change-matrix-toolbar"
             aria-labelledby="amendment-change-matrix-toolbar-title">
@@ -272,13 +306,16 @@
               <strong
                 id="amendment-change-matrix-toolbar-title">Build a multi-amendment triage</strong>
               <span id="amendment-change-matrix-status" class="muted"
-                role="status" aria-live="polite">Select 2–5 amendments to build an on-screen triage and evidence-linked CSV.</span>
+                role="status"
+                aria-live="polite">Select 2–5 amendments to build an on-screen triage and evidence-linked CSV.</span>
             </div>
             <div class="comparison-actions">
               <button id="clear-amendment-change-matrix"
-                class="button secondary" type="button" disabled>Clear selection</button>
+                class="button secondary" type="button"
+                disabled>Clear selection</button>
               <button id="download-amendment-change-matrix"
-                class="button primary" type="button" disabled>Build triage &amp; download CSV</button>
+                class="button primary" type="button"
+                disabled>Build triage &amp; download CSV</button>
             </div>
           </div>
           <section id="amendment-change-triage-summary"
@@ -620,7 +657,8 @@
             <label for="vendor-source">Source slug</label>
             <span aria-hidden="true"></span>
             <select id="vendor-topic" name="topic">
-              <option value="intellectual_property">Intellectual property</option>
+              <option
+                value="intellectual_property">Intellectual property</option>
               <option value="payment_pricing">Payment and pricing</option>
             </select>
             <select id="vendor-signal" name="signal">
@@ -654,7 +692,8 @@
         <section class="search-panel" aria-labelledby="theme-library-title">
           <p class="eyebrow">Complete theme directory</p>
           <h2 id="theme-library-title">Browse all contract themes</h2>
-          <p class="search-note">Explore the complete 14-theme taxonomy using stored labels and exact observed detector wording where available. Identical clause text is shown once with filter-scoped reuse counts; neither labels nor counts determine meaning, legal effect, or market prevalence.</p>
+          <p
+            class="search-note">Explore the complete 14-theme taxonomy using stored labels and exact observed detector wording where available. Identical clause text is shown once with filter-scoped reuse counts; neither labels nor counts determine meaning, legal effect, or market prevalence.</p>
           <form id="theme-form" class="search-form theme-search-form">
             <label for="theme-key">Contract theme</label>
             <label for="theme-kind">Document class</label>
@@ -664,13 +703,16 @@
               <option value="">Choose a theme</option>
               <option value="termination">Termination</option>
               <option value="indemnity">Indemnity</option>
-              <option value="limitation_of_liability">Limitation of liability</option>
-              <option value="assignment_change_control">Assignment / change of control</option>
+              <option
+                value="limitation_of_liability">Limitation of liability</option>
+              <option
+                value="assignment_change_control">Assignment / change of control</option>
               <option value="governing_law_forum">Governing law / forum</option>
               <option value="confidentiality">Confidentiality</option>
               <option value="data_protection">Data protection</option>
               <option value="force_majeure">Force majeure</option>
-              <option value="intellectual_property">Intellectual property</option>
+              <option
+                value="intellectual_property">Intellectual property</option>
               <option value="payment_pricing">Payment / pricing</option>
               <option value="warranties">Warranties</option>
               <option value="representations">Representations</option>
@@ -717,7 +759,8 @@
               <option value="other">Other</option>
             </select>
             <input id="party-source" name="source" type="text" maxlength="63"
-              pattern="[a-z0-9][a-z0-9_\-]{1,62}" placeholder="uk_find_a_tender">
+              pattern="[a-z0-9][a-z0-9_\-]{1,62}"
+              placeholder="uk_find_a_tender">
             <button id="party-search-submit" class="button primary"
               type="submit">Find agreements</button>
           </form>
@@ -727,12 +770,15 @@
             class="comparison-toolbar brief-comparison-toolbar"
             aria-labelledby="party-decision-brief-rank-title">
             <div>
-              <strong id="party-decision-brief-rank-title">Prioritize matching records</strong>
+              <strong
+                id="party-decision-brief-rank-title">Prioritize matching records</strong>
               <span id="party-decision-brief-rank-status" class="muted"
-                role="status" aria-live="polite">Run a party search, then build a bounded evidence-bearing shortlist from up to 50 matching records.</span>
+                role="status"
+                aria-live="polite">Run a party search, then build a bounded evidence-bearing shortlist from up to 50 matching records.</span>
             </div>
             <button id="party-rank-decision-briefs"
-              class="button secondary" type="button" disabled>Build brief shortlist</button>
+              class="button secondary" type="button"
+              disabled>Build brief shortlist</button>
           </div>
           <section id="party-decision-brief-shortlist"
             class="party-brief-shortlist"
@@ -772,13 +818,16 @@
               <strong
                 id="party-decision-brief-comparison-toolbar-title">Compare party agreements</strong>
               <span id="party-decision-brief-comparison-status" class="muted"
-                role="status" aria-live="polite">Add 2–3 contract or amendment results to compare their five-topic evidence briefs.</span>
+                role="status"
+                aria-live="polite">Add 2–3 contract or amendment results to compare their five-topic evidence briefs.</span>
             </div>
             <div class="comparison-actions">
               <button id="party-clear-decision-brief-comparison"
-                class="button secondary" type="button" disabled>Clear selection</button>
+                class="button secondary" type="button"
+                disabled>Clear selection</button>
               <button id="party-open-decision-brief-comparison"
-                class="button primary" type="button" disabled>Compare selected briefs</button>
+                class="button primary" type="button"
+                disabled>Compare selected briefs</button>
             </div>
           </div>
           <div id="party-results" class="results"></div>
@@ -870,7 +919,8 @@
               <div id="operations"></div>
               <h3>Protected API activity · 24 hours</h3>
               <div id="api-activity" aria-live="polite">
-                <p class="muted">Sign in to inspect aggregate API admissions.</p>
+                <p
+                  class="muted">Sign in to inspect aggregate API admissions.</p>
               </div>
             </article>
           </div>
@@ -961,7 +1011,8 @@
       aria-describedby="decision-brief-comparison-subtitle decision-brief-comparison-dialog-status">
       <div class="dialog-header">
         <div>
-          <strong id="decision-brief-comparison-title">Agreement brief comparison</strong>
+          <strong
+            id="decision-brief-comparison-title">Agreement brief comparison</strong>
           <span id="decision-brief-comparison-subtitle"
             class="dialog-subtitle">Side-by-side positive wording evidence with JSON and spreadsheet-ready CSV</span>
           <span id="decision-brief-comparison-dialog-status"
@@ -969,11 +1020,14 @@
         </div>
         <div class="dialog-actions">
           <button id="download-decision-brief-comparison-csv"
-            class="button secondary" type="button" disabled>Download comparison CSV</button>
+            class="button secondary" type="button"
+            disabled>Download comparison CSV</button>
           <button id="download-decision-brief-comparison"
-            class="button secondary" type="button" disabled>Download comparison JSON</button>
+            class="button secondary" type="button"
+            disabled>Download comparison JSON</button>
           <button id="close-decision-brief-comparison" class="icon-button"
-            type="button" aria-label="Close agreement brief comparison">×</button>
+            type="button"
+            aria-label="Close agreement brief comparison">×</button>
         </div>
       </div>
       <div id="decision-brief-comparison-body" class="dialog-body"></div>

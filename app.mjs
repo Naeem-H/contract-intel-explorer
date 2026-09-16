@@ -24,6 +24,8 @@ export const COMPARISON_CONNECTED_CONTEXT_ITEMS = 5;
 export const FAMILY_CONTEXT_ITEM_MAX = 10;
 export const FAMILY_PROPOSAL_PAGE_MAX = 20;
 export const FAMILY_PROPOSAL_OFFSET_MAX = 500;
+export const REVIEW_VERIFIED_FAMILY_LINK_PAGE_MAX = 20;
+export const REVIEW_VERIFIED_FAMILY_LINK_OFFSET_MAX = 500;
 export const AGREEMENT_DECISION_BRIEF_EXAMPLES_DEFAULT = 3;
 export const AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX = 5;
 export const AGREEMENT_CHANGE_CUE_LIMIT_DEFAULT = 12;
@@ -1311,6 +1313,36 @@ export function buildFamilyProposalPath({ limit = 20, offset = 0 } = {}) {
     throw new TypeError("Family proposal offset is outside the allowed range");
   }
   return `/api/family-proposals?${
+    new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    }).toString()
+  }`;
+}
+
+export function buildReviewVerifiedFamilyLinkPath({
+  limit = 20,
+  offset = 0,
+} = {}) {
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > REVIEW_VERIFIED_FAMILY_LINK_PAGE_MAX
+  ) {
+    throw new TypeError(
+      "Review-verified family-link limit is outside the allowed range",
+    );
+  }
+  if (
+    !Number.isInteger(offset) ||
+    offset < 0 ||
+    offset > REVIEW_VERIFIED_FAMILY_LINK_OFFSET_MAX
+  ) {
+    throw new TypeError(
+      "Review-verified family-link offset is outside the allowed range",
+    );
+  }
+  return `/api/family-links?${
     new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
@@ -8332,6 +8364,369 @@ export function familyProposalSearchEvidence(
   };
 }
 
+const REVIEW_VERIFIED_FAMILY_LINK_SUMMARY_KEYS = Object.freeze([
+  "api_version",
+  "generated_at",
+  "current_reviewed_pairs",
+  "verified_same_family_pairs",
+  "verified_family_members",
+  "single_reviewer_verified_pairs",
+  "multiple_reviewer_verified_pairs",
+  "conflicting_pairs",
+  "rejected_same_family_pairs",
+  "incomplete_review_pairs",
+  "agreement_relationship_ledger_rows",
+  "verification_policy",
+]);
+const REVIEW_VERIFIED_FAMILY_LINK_POLICY_KEYS = Object.freeze([
+  "question",
+  "relationship_semantics",
+  "minimum_current_reviewers",
+  "minimum_confidence",
+  "all_current_reviews_must_be_same_family",
+  "current_candidate_context_required",
+  "observed_evidence_packet_required",
+  "reviewer_identity_authenticated",
+  "single_reviewer_status_disclosed",
+  "amendment_direction_reviewed",
+  "legal_effect_determined",
+  "agreement_relationship_written",
+]);
+const REVIEW_VERIFIED_FAMILY_LINK_ROOT_KEYS = Object.freeze([
+  "api_version",
+  "relationship_semantics",
+  "relationship_ledger_included",
+  "items",
+  "page",
+  "limits",
+]);
+const REVIEW_VERIFIED_FAMILY_LINK_PAGE_KEYS = Object.freeze([
+  "limit",
+  "offset",
+  "returned_count",
+  "eligible_verified_pairs",
+  "has_more",
+]);
+const REVIEW_VERIFIED_FAMILY_LINK_LIMIT_KEYS = Object.freeze([
+  "maximum_page_size",
+  "maximum_offset",
+  "publication_and_redistribution_gates_required",
+  "current_observed_extractions_required",
+  "exact_content_duplicates_excluded",
+  "minimum_confidence",
+  "all_current_reviews_must_be_same_family",
+  "reviewer_identity_exposed",
+  "review_rationale_exposed",
+  "single_reviewer_verification_disclosed",
+  "amendment_direction_reviewed",
+  "legal_effect_determined",
+  "agreement_relationship_created",
+]);
+const REVIEW_VERIFIED_FAMILY_LINK_ITEM_KEYS = Object.freeze([
+  "family_link_sha256",
+  "source",
+  "relationship_semantics",
+  "documents",
+  "verification",
+]);
+const REVIEW_VERIFIED_FAMILY_LINK_DOCUMENT_KEYS = Object.freeze([
+  "agreement_id",
+  "observed_title",
+  "observed_title_truncated",
+  "document_kind",
+  "document_kind_basis",
+  "observed_published_at",
+  "canonical_url",
+  "canonical_url_omitted",
+  "text_basis",
+]);
+const REVIEW_VERIFIED_FAMILY_LINK_VERIFICATION_KEYS = Object.freeze([
+  "status",
+  "basis",
+  "verification_level",
+  "current_reviewer_count",
+  "minimum_same_family_confidence",
+  "observed_evidence_packet_sha256s",
+  "verification_evidence_sha256",
+  "latest_decision_at",
+  "reviewer_identity_exposed",
+  "review_rationale_exposed",
+  "direction_reviewed",
+  "legal_effect_determined",
+]);
+
+export function reviewVerifiedFamilyLinkSummaryEvidence(value) {
+  const summary = record(value);
+  const policy = record(summary.verification_policy);
+  if (
+    !hasExactKeys(summary, REVIEW_VERIFIED_FAMILY_LINK_SUMMARY_KEYS) ||
+    !hasExactKeys(policy, REVIEW_VERIFIED_FAMILY_LINK_POLICY_KEYS) ||
+    summary.api_version !== "review-verified-family-link-summary-v1" ||
+    !isValidFamilyTimestamp(summary.generated_at)
+  ) {
+    return null;
+  }
+
+  const currentReviewedPairs = familyInteger(summary.current_reviewed_pairs);
+  const verifiedSameFamilyPairs = familyInteger(
+    summary.verified_same_family_pairs,
+  );
+  const verifiedFamilyMembers = familyInteger(summary.verified_family_members);
+  const singleReviewerVerifiedPairs = familyInteger(
+    summary.single_reviewer_verified_pairs,
+  );
+  const multipleReviewerVerifiedPairs = familyInteger(
+    summary.multiple_reviewer_verified_pairs,
+  );
+  const conflictingPairs = familyInteger(summary.conflicting_pairs);
+  const rejectedSameFamilyPairs = familyInteger(
+    summary.rejected_same_family_pairs,
+  );
+  const incompleteReviewPairs = familyInteger(summary.incomplete_review_pairs);
+  const agreementRelationshipLedgerRows = familyInteger(
+    summary.agreement_relationship_ledger_rows,
+  );
+  if (
+    [
+      currentReviewedPairs,
+      verifiedSameFamilyPairs,
+      verifiedFamilyMembers,
+      singleReviewerVerifiedPairs,
+      multipleReviewerVerifiedPairs,
+      conflictingPairs,
+      rejectedSameFamilyPairs,
+      incompleteReviewPairs,
+      agreementRelationshipLedgerRows,
+    ].some((count) => count === null) ||
+    verifiedSameFamilyPairs > currentReviewedPairs ||
+    verifiedFamilyMembers > verifiedSameFamilyPairs * 2 ||
+    (verifiedSameFamilyPairs > 0 && verifiedFamilyMembers < 2) ||
+    singleReviewerVerifiedPairs + multipleReviewerVerifiedPairs !==
+      verifiedSameFamilyPairs ||
+    verifiedSameFamilyPairs + conflictingPairs + rejectedSameFamilyPairs +
+          incompleteReviewPairs !== currentReviewedPairs ||
+    policy.question !== "same_agreement_family" ||
+    policy.relationship_semantics !== "undirected_pair" ||
+    policy.minimum_current_reviewers !== 1 ||
+    Number(policy.minimum_confidence) !== 0.8 ||
+    policy.all_current_reviews_must_be_same_family !== true ||
+    policy.current_candidate_context_required !== true ||
+    policy.observed_evidence_packet_required !== true ||
+    policy.reviewer_identity_authenticated !== true ||
+    policy.single_reviewer_status_disclosed !== true ||
+    policy.amendment_direction_reviewed !== false ||
+    policy.legal_effect_determined !== false ||
+    policy.agreement_relationship_written !== false
+  ) {
+    return null;
+  }
+
+  return {
+    generatedAt: summary.generated_at,
+    currentReviewedPairs,
+    verifiedSameFamilyPairs,
+    verifiedFamilyMembers,
+    singleReviewerVerifiedPairs,
+    multipleReviewerVerifiedPairs,
+    conflictingPairs,
+    rejectedSameFamilyPairs,
+    incompleteReviewPairs,
+    agreementRelationshipLedgerRows,
+    minimumConfidence: 0.8,
+  };
+}
+
+export function reviewVerifiedFamilyLinkSearchEvidence(
+  value,
+  expectedLimit = REVIEW_VERIFIED_FAMILY_LINK_PAGE_MAX,
+  expectedOffset = 0,
+) {
+  if (
+    !Number.isInteger(expectedLimit) ||
+    expectedLimit < 1 ||
+    expectedLimit > REVIEW_VERIFIED_FAMILY_LINK_PAGE_MAX ||
+    !Number.isInteger(expectedOffset) ||
+    expectedOffset < 0 ||
+    expectedOffset > REVIEW_VERIFIED_FAMILY_LINK_OFFSET_MAX
+  ) {
+    return null;
+  }
+
+  const root = record(value);
+  const page = record(root.page);
+  const limits = record(root.limits);
+  const returnedCount = familyInteger(page.returned_count);
+  const eligibleVerifiedPairs = familyInteger(page.eligible_verified_pairs);
+  if (
+    !hasExactKeys(root, REVIEW_VERIFIED_FAMILY_LINK_ROOT_KEYS) ||
+    !hasExactKeys(page, REVIEW_VERIFIED_FAMILY_LINK_PAGE_KEYS) ||
+    !hasExactKeys(limits, REVIEW_VERIFIED_FAMILY_LINK_LIMIT_KEYS) ||
+    root.api_version !== "review-verified-family-link-search-v1" ||
+    root.relationship_semantics !== "undirected_same_agreement_family" ||
+    root.relationship_ledger_included !== false ||
+    familyInteger(page.limit) !== expectedLimit ||
+    familyInteger(page.offset) !== expectedOffset ||
+    returnedCount === null ||
+    eligibleVerifiedPairs === null ||
+    returnedCount > expectedLimit ||
+    returnedCount > eligibleVerifiedPairs ||
+    typeof page.has_more !== "boolean" ||
+    page.has_more !==
+      (expectedOffset + returnedCount < eligibleVerifiedPairs) ||
+    (expectedOffset < eligibleVerifiedPairs &&
+      returnedCount !== Math.min(
+          expectedLimit,
+          eligibleVerifiedPairs - expectedOffset,
+        )) ||
+    (expectedOffset >= eligibleVerifiedPairs && returnedCount !== 0) ||
+    limits.maximum_page_size !== REVIEW_VERIFIED_FAMILY_LINK_PAGE_MAX ||
+    limits.maximum_offset !== REVIEW_VERIFIED_FAMILY_LINK_OFFSET_MAX ||
+    limits.publication_and_redistribution_gates_required !== true ||
+    limits.current_observed_extractions_required !== true ||
+    limits.exact_content_duplicates_excluded !== true ||
+    Number(limits.minimum_confidence) !== 0.8 ||
+    limits.all_current_reviews_must_be_same_family !== true ||
+    limits.reviewer_identity_exposed !== false ||
+    limits.review_rationale_exposed !== false ||
+    limits.single_reviewer_verification_disclosed !== true ||
+    limits.amendment_direction_reviewed !== false ||
+    limits.legal_effect_determined !== false ||
+    limits.agreement_relationship_created !== false ||
+    !Array.isArray(root.items) ||
+    root.items.length !== returnedCount
+  ) {
+    return null;
+  }
+
+  const seenLinks = new Set();
+  let previousPairKey = null;
+  const items = [];
+  for (const itemValue of root.items) {
+    const item = record(itemValue);
+    const verification = record(item.verification);
+    if (
+      !hasExactKeys(item, REVIEW_VERIFIED_FAMILY_LINK_ITEM_KEYS) ||
+      !hasExactKeys(
+        verification,
+        REVIEW_VERIFIED_FAMILY_LINK_VERIFICATION_KEYS,
+      ) ||
+      !DECISION_BRIEF_HASH_PATTERN.test(item.family_link_sha256) ||
+      typeof item.source !== "string" ||
+      !SOURCE_PATTERN.test(item.source) ||
+      item.relationship_semantics !== "undirected_same_agreement_family" ||
+      !Array.isArray(item.documents) ||
+      item.documents.length !== 2 ||
+      item.documents.some((document) =>
+        !hasExactKeys(document, REVIEW_VERIFIED_FAMILY_LINK_DOCUMENT_KEYS)
+      ) ||
+      verification.status !== "verified_same_family" ||
+      verification.basis !== "reviewed" ||
+      ![
+        "single_authenticated_reviewer",
+        "multiple_authenticated_reviewers",
+      ].includes(verification.verification_level) ||
+      !Number.isSafeInteger(verification.current_reviewer_count) ||
+      verification.current_reviewer_count < 1 ||
+      verification.verification_level !==
+        (verification.current_reviewer_count === 1
+          ? "single_authenticated_reviewer"
+          : "multiple_authenticated_reviewers") ||
+      typeof verification.minimum_same_family_confidence !== "number" ||
+      verification.minimum_same_family_confidence < 0.8 ||
+      verification.minimum_same_family_confidence > 1 ||
+      !Array.isArray(verification.observed_evidence_packet_sha256s) ||
+      verification.observed_evidence_packet_sha256s.length !==
+        verification.current_reviewer_count ||
+      verification.observed_evidence_packet_sha256s.some((hash) =>
+        !DECISION_BRIEF_HASH_PATTERN.test(hash)
+      ) ||
+      !DECISION_BRIEF_HASH_PATTERN.test(
+        verification.verification_evidence_sha256,
+      ) ||
+      !isValidFamilyTimestamp(verification.latest_decision_at) ||
+      verification.reviewer_identity_exposed !== false ||
+      verification.review_rationale_exposed !== false ||
+      verification.direction_reviewed !== false ||
+      verification.legal_effect_determined !== false
+    ) {
+      return null;
+    }
+    const documents = item.documents.map(familyProposalDocument);
+    if (documents.some((document) => document === null)) return null;
+    const first = documents[0];
+    const second = documents[1];
+    if (first.agreementId >= second.agreementId) return null;
+    const pairKey = `${item.source}:${first.agreementId}:${second.agreementId}`;
+    if (
+      seenLinks.has(item.family_link_sha256) ||
+      (previousPairKey !== null && pairKey <= previousPairKey)
+    ) {
+      return null;
+    }
+    seenLinks.add(item.family_link_sha256);
+    previousPairKey = pairKey;
+    items.push({
+      familyLinkSha256: item.family_link_sha256,
+      source: item.source,
+      documents,
+      verificationLevel: verification.verification_level,
+      currentReviewerCount: verification.current_reviewer_count,
+      minimumSameFamilyConfidence: verification.minimum_same_family_confidence,
+      observedEvidencePacketSha256s: [
+        ...verification.observed_evidence_packet_sha256s,
+      ],
+      verificationEvidenceSha256: verification.verification_evidence_sha256,
+      latestDecisionAt: verification.latest_decision_at,
+    });
+  }
+
+  return {
+    items,
+    page: {
+      limit: expectedLimit,
+      offset: expectedOffset,
+      returnedCount,
+      eligibleVerifiedPairs,
+      hasMore: page.has_more,
+    },
+  };
+}
+
+async function sha256Utf8(value) {
+  if (!globalThis.crypto?.subtle) return null;
+  const bytes = new TextEncoder().encode(value);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((part) => part.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function reviewVerifiedFamilyLinkHashesValid(projection) {
+  if (!isRecord(projection) || !Array.isArray(projection.items)) return false;
+  for (const item of projection.items) {
+    const first = item.documents?.[0];
+    const second = item.documents?.[1];
+    if (!first || !second) return false;
+    const linkHash = await sha256Utf8(
+      `review-verified-family-link-v1:${item.source}:${first.agreementId}:${second.agreementId}`,
+    );
+    const evidenceHash = await sha256Utf8(
+      `agreement-family-link-evidence-v1:${item.source}:${first.agreementId}:${second.agreementId}:${
+        item.observedEvidencePacketSha256s.join(",")
+      }`,
+    );
+    if (
+      linkHash === null ||
+      evidenceHash === null ||
+      linkHash !== item.familyLinkSha256 ||
+      evidenceHash !== item.verificationEvidenceSha256
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function citationText(value, maximum = CITATION_TEXT_MAX_CHARS) {
   if (typeof value !== "string") return { text: null, truncated: false };
   return value.length > maximum
@@ -11494,6 +11889,10 @@ function boot() {
     familyProposalLimit: FAMILY_PROPOSAL_PAGE_MAX,
     familyProposalHasMore: false,
     familyProposalLoading: false,
+    familyLinkOffset: 0,
+    familyLinkLimit: REVIEW_VERIFIED_FAMILY_LINK_PAGE_MAX,
+    familyLinkHasMore: false,
+    familyLinkLoading: false,
     amendmentChangeCue: "",
     amendmentChangeSource: "",
     amendmentChangeOffset: 0,
@@ -11590,6 +11989,12 @@ function boot() {
   const themeButton = byId("theme-submit");
   const themeFacets = byId("theme-facets");
   const themeStatus = byId("theme-status");
+  const familyLinkSummary = byId("verified-family-links-summary");
+  const familyLinkLoadButton = byId("verified-family-links-load");
+  const familyLinkStatus = byId("verified-family-links-status");
+  const familyLinkResults = byId("verified-family-links-results");
+  const familyLinkPrevious = byId("verified-family-links-previous");
+  const familyLinkNext = byId("verified-family-links-next");
   const familyProposalLoadButton = byId("family-proposals-load");
   const familyProposalStatus = byId("family-proposals-status");
   const familyProposalResults = byId("family-proposals-results");
@@ -11852,6 +12257,9 @@ function boot() {
     state.familyProposalOffset = 0;
     state.familyProposalHasMore = false;
     state.familyProposalLoading = false;
+    state.familyLinkOffset = 0;
+    state.familyLinkHasMore = false;
+    state.familyLinkLoading = false;
     state.amendmentChangeCue = "";
     state.amendmentChangeSource = "";
     state.amendmentChangeOffset = 0;
@@ -11926,6 +12334,15 @@ function boot() {
     familyProposalStatus.textContent =
       "Load the current publication-gated proposal set. Candidate generation is bounded and is not exhaustive.";
     familyProposalResults.replaceChildren();
+    familyLinkLoadButton.disabled = false;
+    familyLinkPrevious.disabled = true;
+    familyLinkNext.disabled = true;
+    familyLinkSummary.replaceChildren(
+      element("span", "", "Sign in to load verified-link status."),
+    );
+    familyLinkStatus.textContent =
+      "Verified links are derived from current evidence-bound human decisions; no directed legal relationship is implied.";
+    familyLinkResults.replaceChildren();
     amendmentChangeForm.reset();
     amendmentChangeButton.disabled = false;
     amendmentChangePrevious.disabled = true;
@@ -12918,6 +13335,7 @@ function boot() {
       await loadIndemnitySummary();
       await loadVendorSummary();
       await loadContractThemeSummary();
+      await loadReviewVerifiedFamilyLinkSummary();
     } catch (error) {
       handleFailure(error, workspaceStatus);
     }
@@ -14972,6 +15390,211 @@ function boot() {
         state.decisionBriefDirectoryOffset +
               state.decisionBriefDirectoryLimit >
           DECISION_BRIEF_DIRECTORY_OFFSET_MAX;
+    }
+  }
+
+  function renderReviewVerifiedFamilyLinkSummary(value) {
+    const summary = reviewVerifiedFamilyLinkSummaryEvidence(value);
+    if (summary === null) {
+      throw new ApiError(
+        "The review-verified family-link summary did not match its disclosure contract.",
+      );
+    }
+    familyLinkSummary.replaceChildren(
+      element(
+        "span",
+        "badge basis-reviewed",
+        `${count(summary.verifiedSameFamilyPairs)} verified pair(s)`,
+      ),
+      element(
+        "span",
+        "badge",
+        `${count(summary.verifiedFamilyMembers)} family member(s)`,
+      ),
+      element(
+        "span",
+        "badge basis-generated",
+        `${count(summary.currentReviewedPairs)} reviewed pair(s)`,
+      ),
+      element(
+        "span",
+        "badge basis-unknown",
+        `${count(summary.conflictingPairs)} conflict(s)`,
+      ),
+      element(
+        "span",
+        "badge",
+        `${
+          count(summary.agreementRelationshipLedgerRows)
+        } directed ledger row(s)`,
+      ),
+    );
+    return summary;
+  }
+
+  async function loadReviewVerifiedFamilyLinkSummary() {
+    if (!state.token) return null;
+    familyLinkSummary.replaceChildren(
+      element("span", "", "Loading verified-link status…"),
+    );
+    try {
+      const payload = await requestJson(
+        "/api/family-link-summary",
+        state.token,
+      );
+      return renderReviewVerifiedFamilyLinkSummary(record(payload).data);
+    } catch (error) {
+      familyLinkSummary.replaceChildren(
+        element("span", "badge basis-unknown", "Status unavailable"),
+      );
+      handleFailure(error, familyLinkStatus);
+      return null;
+    }
+  }
+
+  function reviewVerifiedFamilyLinkCard(item) {
+    const card = element("article", "result-card family-proposal-card");
+    const top = element("div", "result-top");
+    append(
+      top,
+      element(
+        "span",
+        "badge basis-reviewed",
+        item.verificationLevel === "single_authenticated_reviewer"
+          ? "Verified same family · one reviewer"
+          : "Verified same family · multiple reviewers",
+      ),
+      element("span", "muted", `Source ${displayText(item.source)}`),
+    );
+    const documents = element("div", "family-documents");
+    item.documents.forEach((document, index) =>
+      documents.append(
+        familyProposalDocumentCard(document, index + 1, item.source),
+      )
+    );
+    const hashes = element("details", "evidence-hashes");
+    append(
+      hashes,
+      element("summary", "", "Verification evidence hashes"),
+      element(
+        "p",
+        "muted evidence-hash",
+        `Pair identity SHA-256: ${item.familyLinkSha256}`,
+      ),
+      element(
+        "p",
+        "muted evidence-hash",
+        `Evidence-set SHA-256: ${item.verificationEvidenceSha256}`,
+      ),
+      ...item.observedEvidencePacketSha256s.map((hash, index) =>
+        element(
+          "p",
+          "muted evidence-hash",
+          `Reviewer packet ${index + 1} SHA-256: ${hash}`,
+        )
+      ),
+    );
+    append(
+      card,
+      top,
+      element(
+        "p",
+        "focus-note",
+        "This is an undirected same-agreement-family verification. It does not identify amendment direction, supersession, incorporation, or legal effect.",
+      ),
+      documents,
+      dataList([
+        ["Current authenticated reviewers", count(item.currentReviewerCount)],
+        [
+          "Minimum same-family confidence",
+          `${Math.round(item.minimumSameFamilyConfidence * 100)}%`,
+        ],
+        ["Latest current decision", date(item.latestDecisionAt)],
+      ]),
+      hashes,
+    );
+    return card;
+  }
+
+  async function renderReviewVerifiedFamilyLinks(value, summary) {
+    const response = reviewVerifiedFamilyLinkSearchEvidence(
+      record(value).data,
+      state.familyLinkLimit,
+      state.familyLinkOffset,
+    );
+    if (
+      response === null ||
+      !(await reviewVerifiedFamilyLinkHashesValid(response)) ||
+      response.page.eligibleVerifiedPairs > summary.verifiedSameFamilyPairs
+    ) {
+      throw new ApiError(
+        "The review-verified family-link response failed its disclosure or hash contract.",
+      );
+    }
+    state.familyLinkHasMore = response.page.hasMore;
+    familyLinkPrevious.disabled = state.familyLinkOffset === 0;
+    familyLinkNext.disabled = !state.familyLinkHasMore ||
+      state.familyLinkOffset + state.familyLinkLimit >
+        REVIEW_VERIFIED_FAMILY_LINK_OFFSET_MAX;
+    familyLinkResults.replaceChildren(
+      ...(response.items.length
+        ? response.items.map(reviewVerifiedFamilyLinkCard)
+        : [
+          element(
+            "p",
+            "empty",
+            "No current publication-eligible review-verified family link exists yet. Use the secure review workspace to decide assigned pairs against their observed evidence.",
+          ),
+        ]),
+    );
+    const start = response.items.length ? state.familyLinkOffset + 1 : 0;
+    const end = state.familyLinkOffset + response.items.length;
+    statusMessage(
+      familyLinkStatus,
+      response.items.length
+        ? `Showing verified pairs ${start}–${end} of ${
+          count(response.page.eligibleVerifiedPairs)
+        }. All displayed pair and evidence-set hashes were replayed in this browser.`
+        : "Zero publication-eligible verified links. This is a visible review backlog, not evidence that the documents are unrelated.",
+      response.items.length ? "success" : "",
+    );
+  }
+
+  async function performReviewVerifiedFamilyLinkBrowse() {
+    if (!state.token || state.familyLinkLoading) return;
+    state.familyLinkLoading = true;
+    state.familyLinkHasMore = false;
+    familyLinkLoadButton.disabled = true;
+    familyLinkPrevious.disabled = true;
+    familyLinkNext.disabled = true;
+    statusMessage(
+      familyLinkStatus,
+      "Loading current evidence-bound human family decisions…",
+    );
+    try {
+      const [summaryPayload, linksPayload] = await Promise.all([
+        requestJson("/api/family-link-summary", state.token),
+        requestJson(
+          buildReviewVerifiedFamilyLinkPath({
+            limit: state.familyLinkLimit,
+            offset: state.familyLinkOffset,
+          }),
+          state.token,
+        ),
+      ]);
+      const summary = renderReviewVerifiedFamilyLinkSummary(
+        record(summaryPayload).data,
+      );
+      await renderReviewVerifiedFamilyLinks(linksPayload, summary);
+    } catch (error) {
+      handleFailure(error, familyLinkStatus);
+    } finally {
+      state.familyLinkLoading = false;
+      familyLinkLoadButton.disabled = false;
+      familyLinkPrevious.disabled = state.familyLinkOffset === 0;
+      familyLinkNext.disabled = !state.familyLinkHasMore ||
+        state.familyLinkOffset + state.familyLinkLimit >
+          REVIEW_VERIFIED_FAMILY_LINK_OFFSET_MAX;
     }
   }
 
@@ -19943,6 +20566,29 @@ function boot() {
     }
     state.familyProposalOffset += state.familyProposalLimit;
     performFamilyProposalBrowse();
+  });
+
+  familyLinkLoadButton.addEventListener("click", () => {
+    state.familyLinkOffset = 0;
+    performReviewVerifiedFamilyLinkBrowse();
+  });
+  familyLinkPrevious.addEventListener("click", () => {
+    state.familyLinkOffset = Math.max(
+      0,
+      state.familyLinkOffset - state.familyLinkLimit,
+    );
+    performReviewVerifiedFamilyLinkBrowse();
+  });
+  familyLinkNext.addEventListener("click", () => {
+    if (
+      !state.familyLinkHasMore ||
+      state.familyLinkOffset + state.familyLinkLimit >
+        REVIEW_VERIFIED_FAMILY_LINK_OFFSET_MAX
+    ) {
+      return;
+    }
+    state.familyLinkOffset += state.familyLinkLimit;
+    performReviewVerifiedFamilyLinkBrowse();
   });
 
   clearAmendmentChangeMatrixButton.addEventListener(
