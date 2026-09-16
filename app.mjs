@@ -34,6 +34,8 @@ export const AGREEMENT_DECISION_BRIEF_COMPARISON_EXAMPLES =
   AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX;
 export const AGREEMENT_DECISION_BRIEF_COMPARISON_SCHEMA =
   "esheria.agreement-decision-brief-comparison.v1";
+export const FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA =
+  "esheria.family-proposal-brief-comparison.v1";
 export const PARTY_DECISION_BRIEF_SCAN_CONCURRENCY = 3;
 export const PARTY_DECISION_BRIEF_SCAN_EXAMPLES = 1;
 export const PARTY_DECISION_BRIEF_SCAN_MAX = 50;
@@ -2172,6 +2174,180 @@ export function buildAgreementDecisionBriefComparison(
   };
 }
 
+function familyProposalComparisonDocument(value) {
+  const document = record(value);
+  const canonicalUrl = safeExternalUrl(document.canonicalUrl);
+  if (
+    !hasExactKeys(document, [
+      "agreementId",
+      "observedTitle",
+      "observedTitleTruncated",
+      "documentKind",
+      "documentKindBasis",
+      "observedPublishedAt",
+      "canonicalUrl",
+      "canonicalUrlOmitted",
+      "textBasis",
+    ]) ||
+    typeof document.agreementId !== "string" ||
+    !UUID_PATTERN.test(document.agreementId) ||
+    !(
+      document.observedTitle === null ||
+      (typeof document.observedTitle === "string" &&
+        document.observedTitle.trim().length > 0 &&
+        familyCharacterLength(document.observedTitle) <= 500)
+    ) ||
+    typeof document.observedTitleTruncated !== "boolean" ||
+    (document.observedTitleTruncated &&
+      familyCharacterLength(document.observedTitle) !== 500) ||
+    !FAMILY_DOCUMENT_KINDS.has(document.documentKind) ||
+    !FAMILY_DOCUMENT_KIND_BASES.has(document.documentKindBasis) ||
+    !(
+      document.observedPublishedAt === null ||
+      isValidFamilyTimestamp(document.observedPublishedAt)
+    ) ||
+    document.canonicalUrlOmitted !== false ||
+    canonicalUrl === null ||
+    document.textBasis !== "observed"
+  ) {
+    return null;
+  }
+  return {
+    agreement_id: document.agreementId,
+    observed_title: document.observedTitle,
+    observed_title_truncated: document.observedTitleTruncated,
+    document_kind: document.documentKind,
+    document_kind_basis: document.documentKindBasis,
+    observed_published_at: document.observedPublishedAt,
+    source_url: canonicalUrl,
+    text_basis: document.textBasis,
+  };
+}
+
+export function buildFamilyProposalBriefComparison(
+  proposalValue,
+  briefValues,
+  generatedAt = new Date().toISOString(),
+) {
+  const proposal = record(proposalValue);
+  const currentDecisionCount = familyInteger(proposal.currentDecisionCount);
+  if (
+    !hasExactKeys(proposal, [
+      "candidateId",
+      "source",
+      "candidateCurrent",
+      "generatedAt",
+      "corpusSnapshottedAt",
+      "proposalOnly",
+      "relationshipWrittenAutomatically",
+      "documents",
+      "reviewStatus",
+      "currentDecisionCount",
+      "conflicting",
+    ]) ||
+    typeof proposal.candidateId !== "string" ||
+    !UUID_PATTERN.test(proposal.candidateId) ||
+    typeof proposal.source !== "string" ||
+    !SOURCE_PATTERN.test(proposal.source) ||
+    proposal.candidateCurrent !== true ||
+    !isValidFamilyTimestamp(proposal.generatedAt) ||
+    !isValidFamilyTimestamp(proposal.corpusSnapshottedAt) ||
+    proposal.proposalOnly !== true ||
+    proposal.relationshipWrittenAutomatically !== false ||
+    !Array.isArray(proposal.documents) ||
+    proposal.documents.length !== 2 ||
+    !FAMILY_REVIEW_STATUSES.has(proposal.reviewStatus) ||
+    currentDecisionCount === null ||
+    (proposal.reviewStatus === "unreviewed") !==
+      (currentDecisionCount === 0) ||
+    (proposal.reviewStatus === "mixed" && currentDecisionCount < 2) ||
+    typeof proposal.conflicting !== "boolean" ||
+    (proposal.conflicting && proposal.reviewStatus !== "mixed") ||
+    !isValidFamilyTimestamp(generatedAt)
+  ) {
+    throw new TypeError("Family proposal brief comparison is invalid");
+  }
+
+  const documents = proposal.documents.map(familyProposalComparisonDocument);
+  if (
+    documents.some((document) => document === null) ||
+    documents[0].agreement_id >= documents[1].agreement_id
+  ) {
+    throw new TypeError("Family proposal brief comparison is invalid");
+  }
+  const comparison = buildAgreementDecisionBriefComparison(
+    briefValues,
+    generatedAt,
+  );
+  for (let index = 0; index < documents.length; index += 1) {
+    const document = documents[index];
+    const brief = comparison.decision_briefs[index];
+    if (
+      brief.agreement.agreement_id !== document.agreement_id ||
+      brief.agreement.document_kind !== document.document_kind ||
+      brief.agreement.document_kind_basis !== document.document_kind_basis ||
+      brief.agreement.text_basis !== document.text_basis ||
+      brief.source.slug !== proposal.source ||
+      brief.source.source_url !== document.source_url ||
+      (document.observed_published_at !== null &&
+        brief.source.observed_published_at !== document.observed_published_at) ||
+      (document.observed_title !== null &&
+        !document.observed_title_truncated &&
+        brief.agreement.title !== document.observed_title)
+    ) {
+      throw new TypeError("Family proposal brief comparison is invalid");
+    }
+  }
+
+  return {
+    schema: FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA,
+    generated_at: generatedAt,
+    selection_context: {
+      basis: "generated_family_candidate",
+      candidate_id: proposal.candidateId,
+      source_slug: proposal.source,
+      candidate_current: proposal.candidateCurrent,
+      candidate_generated_at: proposal.generatedAt,
+      corpus_snapshotted_at: proposal.corpusSnapshottedAt,
+      proposal_only: proposal.proposalOnly,
+      relationship_written_automatically:
+        proposal.relationshipWrittenAutomatically,
+      relationship_ledger_included: false,
+      review_question: "same_agreement_family",
+      human_review: {
+        status: proposal.reviewStatus,
+        current_decision_count: currentDecisionCount,
+        conflicting: proposal.conflicting,
+        reviewer_identity_included: false,
+        rationale_included: false,
+        direction_reviewed: false,
+      },
+      claims: {
+        same_family_established_by_candidate: false,
+        amendment_direction_determined: false,
+        legal_effect_determined: false,
+        relationship_materialized: false,
+      },
+      documents,
+    },
+    decision_brief_comparison: comparison,
+    limitations: [
+      "The selected pair is a generated same-family investigation candidate, not a recorded relationship or legal conclusion.",
+      "Document order, names and dates do not establish amendment direction, supersession, incorporation or legal effect.",
+      "Human-review aggregates may be pseudonymous in a small cohort and do not determine direction or legal effect.",
+      "The five-topic comparison contains positive deterministic wording evidence only; zero matches do not establish absence.",
+      "Read both complete documents and any other related instruments before relying on this packet.",
+    ],
+    export_safety: {
+      format: "application/json",
+      observed_text_preserved_verbatim: true,
+      spreadsheet_formula_execution: false,
+      private_storage_paths_included: false,
+      bearer_token_included: false,
+    },
+  };
+}
+
 export function decisionBriefComparisonExamples(value) {
   const topic = record(value);
   const returnedExamples = decisionBriefInteger(topic.returned_examples);
@@ -3412,8 +3588,12 @@ export function familyProposalSearchEvidence(
     items.push({
       candidateId: item.candidate_id,
       source: item.source,
+      candidateCurrent: item.candidate_current,
       generatedAt: item.generated_at,
       corpusSnapshottedAt: item.corpus_snapshotted_at,
+      proposalOnly: item.proposal_only,
+      relationshipWrittenAutomatically:
+        item.relationship_written_automatically,
       documents,
       reviewStatus: review.status,
       currentDecisionCount: review.decisionCount,
@@ -6397,6 +6577,7 @@ function boot() {
     decisionBriefDirectoryLoading: false,
     decisionBriefComparisonSelection: new Map(),
     decisionBriefComparison: null,
+    decisionBriefComparisonExport: null,
     decisionBriefComparing: false,
     decisionBrief: null,
     decisionBriefAgreementId: null,
@@ -6654,6 +6835,7 @@ function boot() {
     state.decisionBriefDirectoryLoading = false;
     state.decisionBriefComparisonSelection.clear();
     state.decisionBriefComparison = null;
+    state.decisionBriefComparisonExport = null;
     state.decisionBriefComparing = false;
     state.decisionBrief = null;
     state.decisionBriefAgreementId = null;
@@ -9065,7 +9247,8 @@ function boot() {
         state.decisionBriefComparing;
     }
     downloadDecisionBriefComparisonButton.disabled =
-      state.decisionBriefComparing || state.decisionBriefComparison === null;
+      state.decisionBriefComparing ||
+      state.decisionBriefComparisonExport === null;
     for (
       const status of [
         decisionBriefComparisonStatus,
@@ -9121,11 +9304,19 @@ function boot() {
         ? "The brief comparison already has three agreements"
         : "";
     }
+    for (
+      const button of familyProposalResults.querySelectorAll(
+        ".family-proposal-brief-compare-button",
+      )
+    ) {
+      button.disabled = state.decisionBriefComparing;
+    }
   }
 
   function clearDecisionBriefComparison() {
     state.decisionBriefComparisonSelection.clear();
     state.decisionBriefComparison = null;
+    state.decisionBriefComparisonExport = null;
     decisionBriefComparisonBody.replaceChildren();
     decisionBriefComparisonDialogStatus.textContent = "";
     downloadDecisionBriefComparisonButton.disabled = true;
@@ -9155,6 +9346,7 @@ function boot() {
       state.decisionBriefComparisonSelection.delete(agreementId);
     }
     state.decisionBriefComparison = null;
+    state.decisionBriefComparisonExport = null;
     decisionBriefComparisonDialogStatus.textContent =
       "Selection changed; compare again before exporting.";
     updateDecisionBriefComparisonControls();
@@ -9460,6 +9652,22 @@ function boot() {
         familyProposalDocumentCard(document, index + 1, item.source),
       )
     );
+    const actions = element("div", "result-actions");
+    const compareBriefs = element(
+      "button",
+      "button primary family-proposal-brief-compare-button",
+      "Compare pair evidence",
+    );
+    compareBriefs.type = "button";
+    compareBriefs.setAttribute(
+      "aria-label",
+      "Compare both proposed documents across the five evidence topics",
+    );
+    compareBriefs.addEventListener(
+      "click",
+      () => compareFamilyProposalBriefs(item),
+    );
+    append(actions, compareBriefs);
     append(
       card,
       top,
@@ -9469,6 +9677,7 @@ function boot() {
         "The two cards are ordered by identifier only. Their order and publication dates do not establish which document changes the other.",
       ),
       documents,
+      actions,
       element(
         "span",
         `badge ${reviewClass}`,
@@ -11340,9 +11549,27 @@ function boot() {
     );
   }
 
-  function renderDecisionBriefComparison(comparison) {
+  function renderDecisionBriefComparison(comparison, selectionContext = null) {
     const briefs = comparison.decision_briefs;
     const fragment = document.createDocumentFragment();
+    if (selectionContext?.basis === "generated_family_candidate") {
+      const review = record(selectionContext.human_review);
+      append(
+        fragment,
+        element(
+          "section",
+          "decision-brief-boundary family-proposal-comparison-boundary",
+          "Proposal-only lifecycle investigation: this pair came from a generated same-family candidate. It is not a recorded relationship, and document order or dates do not establish amendment direction, supersession, incorporation, or legal effect.",
+        ),
+        element(
+          "p",
+          "muted tiny",
+          `Candidate ${selectionContext.candidate_id} · ${
+            familyReviewStatusLabel(review.status, review.conflicting)
+          } · ${count(review.current_decision_count)} current review response(s).`,
+        ),
+      );
+    }
     append(
       fragment,
       element(
@@ -11375,6 +11602,34 @@ function boot() {
           `${brief.source.name} · ${brief.agreement.document_kind}`,
         ),
       );
+      const recordedDates = [
+        brief.source.observed_published_at
+          ? `Observed source publication ${date(brief.source.observed_published_at)}`
+          : null,
+        ...[
+          ["execution", "execution date"],
+          ["effective", "effective date"],
+          ["termination", "termination date"],
+        ].map(([dateType, label]) => {
+          const presentation = agreementDatePresentation(
+            brief.agreement,
+            dateType,
+            label,
+          );
+          return presentation.value
+            ? `${presentation.label} ${presentation.value}`
+            : null;
+        }),
+      ].filter(Boolean);
+      if (recordedDates.length) {
+        header.append(
+          element(
+            "p",
+            "muted tiny",
+            `Recorded date evidence: ${recordedDates.join(" · ")}`,
+          ),
+        );
+      }
       const actions = element("div", "result-actions");
       const open = element("button", "text-button", "Open full brief →");
       open.type = "button";
@@ -11420,13 +11675,13 @@ function boot() {
     limitations.append(list);
     fragment.append(limitations);
     decisionBriefComparisonBody.replaceChildren(fragment);
-    decisionBriefComparisonDialogStatus.textContent =
-      `${briefs.length} independently validated briefs loaded.`;
+    decisionBriefComparisonDialogStatus.textContent = selectionContext
+      ? `${briefs.length} independently validated briefs loaded from the proposal-only pair.`
+      : `${briefs.length} independently validated briefs loaded.`;
     downloadDecisionBriefComparisonButton.disabled = false;
   }
 
-  async function compareSelectedDecisionBriefs() {
-    const selected = [...state.decisionBriefComparisonSelection.values()];
+  async function compareDecisionBriefSelections(selected, proposal = null) {
     if (
       !state.token ||
       state.decisionBriefComparing ||
@@ -11438,6 +11693,7 @@ function boot() {
     const token = state.token;
     state.decisionBriefComparing = true;
     state.decisionBriefComparison = null;
+    state.decisionBriefComparisonExport = null;
     downloadDecisionBriefComparisonButton.disabled = true;
     updateDecisionBriefComparisonControls("Loading exact decision briefs…");
     decisionBriefComparisonDialogStatus.textContent =
@@ -11476,13 +11732,22 @@ function boot() {
       }
       const failure = settled.find((result) => result.status === "rejected");
       if (failure?.status === "rejected") throw failure.reason;
-      const comparison = buildAgreementDecisionBriefComparison(
-        settled.map((result) => result.value),
-      );
+      const briefValues = settled.map((result) => result.value);
+      const proposalPacket = proposal === null
+        ? null
+        : buildFamilyProposalBriefComparison(proposal, briefValues);
+      const comparison = proposalPacket?.decision_brief_comparison ??
+        buildAgreementDecisionBriefComparison(briefValues);
       state.decisionBriefComparison = comparison;
-      renderDecisionBriefComparison(comparison);
+      state.decisionBriefComparisonExport = proposalPacket ?? comparison;
+      renderDecisionBriefComparison(
+        comparison,
+        proposalPacket?.selection_context ?? null,
+      );
       updateDecisionBriefComparisonControls(
-        `${comparison.scope.agreement_count} agreement briefs compared. Raw positive-match counts are not scores.`,
+        proposalPacket
+          ? `${comparison.scope.agreement_count} proposal documents compared. The generated pair is not a recorded relationship.`
+          : `${comparison.scope.agreement_count} agreement briefs compared. Raw positive-match counts are not scores.`,
       );
     } catch (error) {
       decisionBriefComparisonDialogStatus.textContent =
@@ -11502,6 +11767,39 @@ function boot() {
         updateDecisionBriefComparisonControls();
       }
     }
+  }
+
+  function compareSelectedDecisionBriefs() {
+    return compareDecisionBriefSelections(
+      [...state.decisionBriefComparisonSelection.values()],
+    );
+  }
+
+  function compareFamilyProposalBriefs(proposal) {
+    if (
+      state.decisionBriefComparing ||
+      !Array.isArray(proposal.documents) ||
+      proposal.documents.length !== 2
+    ) {
+      return;
+    }
+    state.decisionBriefComparisonSelection.clear();
+    for (const document of proposal.documents) {
+      state.decisionBriefComparisonSelection.set(document.agreementId, {
+        agreementId: document.agreementId,
+        title: document.observedTitle,
+        source: { name: proposal.source },
+      });
+    }
+    state.decisionBriefComparison = null;
+    state.decisionBriefComparisonExport = null;
+    updateDecisionBriefComparisonControls(
+      "The proposal pair replaced the prior selection; loading strict evidence briefs…",
+    );
+    return compareDecisionBriefSelections(
+      [...state.decisionBriefComparisonSelection.values()],
+      proposal,
+    );
   }
 
   function downloadPartyDecisionBriefShortlist() {
@@ -11526,16 +11824,21 @@ function boot() {
   }
 
   function downloadDecisionBriefComparison() {
-    if (!state.decisionBriefComparison) return;
+    if (!state.decisionBriefComparisonExport) return;
+    const output = state.decisionBriefComparisonExport;
     const blob = new Blob(
-      [`${JSON.stringify(state.decisionBriefComparison, null, 2)}\n`],
+      [`${JSON.stringify(output, null, 2)}\n`],
       { type: "application/json;charset=utf-8" },
     );
     const objectUrl = URL.createObjectURL(blob);
     const link = element("a");
     link.href = objectUrl;
-    link.download = `esheria-agreement-brief-comparison-${
-      state.decisionBriefComparison.generated_at.slice(0, 10)
+    link.download = `${
+      output.schema === FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA
+        ? "esheria-family-proposal-brief-comparison"
+        : "esheria-agreement-brief-comparison"
+    }-${
+      output.generated_at.slice(0, 10)
     }.json`;
     link.hidden = true;
     document.body.append(link);
@@ -11543,7 +11846,9 @@ function boot() {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
     decisionBriefComparisonDialogStatus.textContent =
-      "Comparison JSON downloaded without a bearer token or private Storage path.";
+      output.schema === FAMILY_PROPOSAL_BRIEF_COMPARISON_SCHEMA
+        ? "Proposal-only comparison JSON downloaded with the generated-candidate boundary and without a bearer token or private Storage path."
+        : "Comparison JSON downloaded without a bearer token or private Storage path.";
   }
 
   async function loadAgreementDecisionBrief(agreementId) {
@@ -12872,6 +13177,7 @@ function boot() {
     state.comparisonEvidence = [];
     state.decisionBriefComparisonSelection.clear();
     state.decisionBriefComparison = null;
+    state.decisionBriefComparisonExport = null;
     tokenInput.value = "";
   });
   window.addEventListener("pageshow", (event) => {
