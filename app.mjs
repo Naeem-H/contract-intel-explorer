@@ -34,6 +34,8 @@ export const AGREEMENT_DECISION_BRIEF_COMPARISON_EXAMPLES =
   AGREEMENT_DECISION_BRIEF_EXAMPLES_MAX;
 export const AGREEMENT_DECISION_BRIEF_COMPARISON_SCHEMA =
   "esheria.agreement-decision-brief-comparison.v1";
+export const PARTY_DOSSIER_SCHEMA =
+  "observed-party-negotiation-dossier-v4";
 export const DECISION_BRIEF_DIRECTORY_PAGE_MAX = 20;
 export const DECISION_BRIEF_DIRECTORY_OFFSET_MAX = 500;
 export const COMMERCIAL_POSITION_SIGNAL_MAX = 4;
@@ -2126,6 +2128,60 @@ export function partyCapturePresentation(value) {
     return "Generated extraction from observed wording";
   }
   return "Party capture method unavailable";
+}
+
+export function partyDossierFamilyCoverage(value) {
+  const root = record(value);
+  const coverage = record(root.coverage);
+  const limits = record(root.limits);
+  const documentRecords = decisionBriefInteger(coverage.document_records);
+  const recordedFamilyGroups = decisionBriefInteger(
+    coverage.recorded_family_groups,
+  );
+  const documentsWithFamily = decisionBriefInteger(
+    coverage.document_records_with_recorded_family_key,
+  );
+  const documentsWithoutFamily = decisionBriefInteger(
+    coverage.document_records_without_recorded_family_key,
+  );
+  const multiDocumentFamilies = decisionBriefInteger(
+    coverage.multi_document_recorded_family_groups,
+  );
+  const largestFamilyDocuments = decisionBriefInteger(
+    coverage.largest_recorded_family_document_count,
+  );
+  if (
+    root.api_version !== PARTY_DOSSIER_SCHEMA ||
+    documentRecords === null ||
+    recordedFamilyGroups === null ||
+    documentsWithFamily === null ||
+    documentsWithoutFamily === null ||
+    multiDocumentFamilies === null ||
+    largestFamilyDocuments === null ||
+    documentsWithFamily + documentsWithoutFamily !== documentRecords ||
+    recordedFamilyGroups > documentsWithFamily ||
+    multiDocumentFamilies > recordedFamilyGroups ||
+    largestFamilyDocuments > documentsWithFamily ||
+    (recordedFamilyGroups === 0 &&
+      (documentsWithFamily !== 0 || largestFamilyDocuments !== 0)) ||
+    (recordedFamilyGroups > 0 && largestFamilyDocuments < 1) ||
+    (multiDocumentFamilies === 0 && largestFamilyDocuments > 1) ||
+    (multiDocumentFamilies > 0 && largestFamilyDocuments < 2) ||
+    limits.recorded_family_key_basis !== "caller_provided_grouping_hint" ||
+    limits.recorded_family_keys_are_reviewed_relationships !== false ||
+    limits.recorded_family_keys_are_unique_deals !== false ||
+    limits.raw_family_keys_exposed !== false
+  ) {
+    return null;
+  }
+  return {
+    documentRecords,
+    recordedFamilyGroups,
+    documentsWithFamily,
+    documentsWithoutFamily,
+    multiDocumentFamilies,
+    largestFamilyDocuments,
+  };
 }
 
 export function formatEvidenceLocation(value) {
@@ -9093,6 +9149,12 @@ function boot() {
     const root = record(record(payload).data);
     const scope = record(root.party_scope);
     const coverage = record(root.coverage);
+    const familyCoverage = partyDossierFamilyCoverage(root);
+    if (familyCoverage === null) {
+      throw new ApiError(
+        "The party dossier response did not match its family-coverage contract.",
+      );
+    }
     const themes = array(root.theme_coverage).slice(0, 20);
     const sources = array(coverage.sources);
     partyDossierTitle.textContent = `Observed-party dossier · ${
@@ -9117,6 +9179,15 @@ function boot() {
         "Party records",
         count(scope.matched_party_records),
         "Identity resolution not applied",
+      ),
+      metric(
+        "Recorded family groups",
+        count(familyCoverage.recordedFamilyGroups),
+        `${count(familyCoverage.documentsWithFamily)} of ${
+          count(familyCoverage.documentRecords)
+        } documents keyed · largest ${
+          count(familyCoverage.largestFamilyDocuments)
+        } · not reviewed deals`,
       ),
       metric("Sources", count(sources.length), "Rights-gated source systems"),
     );
@@ -9239,13 +9310,20 @@ function boot() {
       card.append(examples);
       partyDossierThemes.append(card);
     }
-    partyDossierStatus.textContent = scope.low_specificity_warning === true
-      ? "This is a low-specificity observed name. Treat every result as ambiguous and inspect source evidence."
+    const familySummary = familyCoverage.recordedFamilyGroups > 0
+      ? `${count(familyCoverage.documentRecords)} document records map to ${
+        count(familyCoverage.recordedFamilyGroups)
+      } recorded family group${
+        familyCoverage.recordedFamilyGroups === 1 ? "" : "s"
+      }; the largest contains ${
+        count(familyCoverage.largestFamilyDocuments)
+      } document${familyCoverage.largestFamilyDocuments === 1 ? "" : "s"}.`
       : `${
-        count(
-          coverage.document_records,
-        )
-      } exact-name document records. Identity resolution was not applied; theme counts are navigation aids, not market prevalence.`;
+        count(familyCoverage.documentRecords)
+      } document records have no recorded family grouping key.`;
+    partyDossierStatus.textContent = scope.low_specificity_warning === true
+      ? `${familySummary} This is a low-specificity observed name. Treat every result as ambiguous and inspect source evidence.`
+      : `${familySummary} Family keys are unreviewed grouping hints, not unique deals. Identity resolution was not applied; theme counts are navigation aids, not market prevalence.`;
   }
 
   async function loadPartyDossier(partyName) {
