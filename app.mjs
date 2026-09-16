@@ -5044,9 +5044,15 @@ function partyDossierReturnedExampleSample(value) {
   };
 }
 
-function partyDossierStringList(value, maximumItems = 20) {
+function partyDossierStringList(
+  value,
+  maximumItems = 20,
+  maximumCharacters = 200,
+) {
   if (!Array.isArray(value) || value.length > maximumItems) return null;
-  const items = value.map((item) => decisionBriefString(item, 200));
+  const items = value.map((item) =>
+    decisionBriefString(item, maximumCharacters)
+  );
   if (
     items.some((item) => item === undefined) ||
     new Set(items).size !== items.length
@@ -5468,6 +5474,7 @@ export function buildPartyDossierExport(
   const qualityObservations = partyDossierStringList(
     root.quality_observations,
     20,
+    500,
   );
   if (
     root.api_version !== PARTY_DOSSIER_SCHEMA ||
